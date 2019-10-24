@@ -1,0 +1,53 @@
+package com.vladykin.replicamap.kafka;
+
+import com.vladykin.replicamap.ReplicaMap;
+import com.vladykin.replicamap.base.FailureCallback;
+import com.vladykin.replicamap.base.ReplicaMapBase;
+import com.vladykin.replicamap.kafka.impl.util.Utils;
+import java.util.Map;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * Implementation of {@link ReplicaMap} over Kafka.
+ *
+ * @author Sergi Vladykin http://vladykin.com
+ */
+public class KReplicaMap<K,V> extends ReplicaMapBase<K,V> {
+    protected final KReplicaMapManager manager;
+
+    public KReplicaMap(
+        KReplicaMapManager manager,
+        Object id,
+        Map<K,V> map,
+        Semaphore opsSemaphore,
+        long sendTimeout,
+        TimeUnit timeUnit
+    ) {
+        super(id, map, opsSemaphore, sendTimeout, timeUnit);
+        this.manager = Utils.requireNonNull(manager, "mgr");
+    }
+
+    @Override
+    public Map<K,V> unwrap() {
+        manager.checkRunning();
+        return super.unwrap();
+    }
+
+    @Override
+    protected void beforeStart(AsyncOp<?,K,V> op) {
+        manager.checkRunning();
+    }
+
+    @Override
+    protected void sendUpdate(
+        long opId,
+        byte updateType,
+        K key,
+        V exp,
+        V upd,
+        FailureCallback onSendFailed
+    ) {
+        manager.sendUpdate(this, opId, updateType, key, exp, upd, onSendFailed);
+    }
+}
