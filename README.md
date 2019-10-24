@@ -6,8 +6,7 @@
 
 ### All the buzzwords description: 
 
-ReplicaMap is a replicated fault tolerant multi-master eventually consistent key-value 
-embeddable in-memory database written in Java backed by the persistent Kafka storage.
+ReplicaMap is a replicated fault tolerant multi-master eventually consistent key-value embeddable in-memory database written in Java backed by the persistent Kafka storage.
 
 ### Simpler description:
 
@@ -15,24 +14,19 @@ Think of it as a Java `ConcurrentMap<K,V>` that replicates all the updates over 
 
 ## Main features:
 
-+ ReplicaMap is multi-master. All the replicas are equal and writable:  
-  easy way to share mutable state between multiple processes.
++ ReplicaMap is multi-master. All the replicas are equal and writable: easy way to share mutable state between multiple processes.
 
 + All the atomic operations like `putIfAbsent` or `replace` work as expected.
 
-+ Asynchronous operations `asyncPut`, `asyncPutIfAbsent`, `asyncReplace` and `asyncRemove`  
-  are supported and return `CompletableFuture`.
++ Asynchronous operations `asyncPut`, `asyncPutIfAbsent`, `asyncReplace` and `asyncRemove` are supported and return `CompletableFuture`.
 
 + Kafka `Log Compaction` provides persistent backup of the replicated map contents.
 
-+ It is possible to wrap any thread-safe implementations of `Map<K,V>` with ReplicaMap.
-  The most obvious choice is `ConcurrentHashMap<K,V>` or `ConcurrentSkipListMap<K,V>`, but any
-  off-heap or on-disk or other implementations can be used as well.
++ It is possible to wrap any thread-safe implementations of `Map<K,V>` with ReplicaMap. The most obvious choice is `ConcurrentHashMap<K,V>` or `ConcurrentSkipListMap<K,V>`, but any off-heap or on-disk or other implementations can be used as well.
 
 + When `NavigableMap<K,V>` is needed, there is `ReplicaNavigableMap<K,V>`.
 
-+ If you already have a Kafka cluster, there is no need to deploy any new infrastructure,  
-  just add the ReplicaMap library to the application and you have a distributed database. 
++ If you already have a Kafka cluster, there is no need to deploy any new infrastructure, just add the ReplicaMap library to the application and you have a distributed database. 
   
 + If you already have a compacted Kafka topic, you can start using it with ReplicaMap.
   
@@ -221,7 +215,7 @@ bin/kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVER | grep $DATA_TOP
 1. Create empty `ops` and `flush` topics according to the instructions above.
 
 2. Stop all the updates to your existing `data` topic.  
-   __This one is very important, otherwise your data may be corrupted or lost 
+   __This step is very important, otherwise your data may be corrupted or lost 
    or ReplicaMap may have inconsistent state across the clients!!!__
 
 3. Alter the `data` topic configuration to meet the requirements above:
