@@ -55,7 +55,9 @@ tasks {
 
 tasks.named<Test>("test") {
     useJUnitPlatform()
+    minHeapSize = "1G"
+    maxHeapSize = "1G"
     testLogging {
-        events(STARTED, PASSED, FAILED, SKIPPED)
+        events(STARTED, PASSED, FAILED, SKIPPED, STANDARD_OUT, STANDARD_ERROR)
     }
 }

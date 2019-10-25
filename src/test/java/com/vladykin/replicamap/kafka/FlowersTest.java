@@ -1,18 +1,30 @@
-package com.vladykin.replicamap;
+package com.vladykin.replicamap.kafka;
 
-import com.vladykin.replicamap.kafka.KReplicaMapManager;
-import com.vladykin.replicamap.kafka.KReplicaMapManagerConfig;
+import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
+import com.vladykin.replicamap.ReplicaMap;
+import com.vladykin.replicamap.ReplicaMapManager;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.LongSerializer;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 public class FlowersTest {
+    @RegisterExtension
+    public static final SharedKafkaTestResource sharedKafkaTestResource = new SharedKafkaTestResource()
+        .withBrokers(3);
+
+    static String BOOTSTRAP_SERVER = "localhost:9092";
     static final long DELETE_DELAY_MS = 7200000;
-    static final String BOOTSTRAP_SERVER = "localhost:9092";
+
+    @BeforeEach
+    void beforeTest() {
+        BOOTSTRAP_SERVER = sharedKafkaTestResource.getKafkaConnectString();
+    }
 
     @Test
     void test() {

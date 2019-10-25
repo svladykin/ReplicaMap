@@ -60,8 +60,8 @@ The latest published version: [![Release](https://jitpack.io/v/com.vladykin/repl
 ```java
 // Setup the configuration like in Kafka (see all the options in KReplicaMapManagerConfig).
 Map<String,Object> cfg = new HashMap<>();
-cfg.put(KReplicaMapManagerConfig.BOOTSTRAP_SERVERS, "...");
-cfg.put(KReplicaMapManagerConfig.DATA_TOPIC, "flowers"); 
+cfg.put(KReplicaMapManagerConfig.BOOTSTRAP_SERVERS, BOOTSTRAP_SERVER);
+cfg.put(KReplicaMapManagerConfig.DATA_TOPIC, "flowers");
 cfg.put(KReplicaMapManagerConfig.OPS_TOPIC, "flowers_ops");
 cfg.put(KReplicaMapManagerConfig.FLUSH_TOPIC, "flowers_flush");
 
