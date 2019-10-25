@@ -204,7 +204,7 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
         }
         finally {
             exec.shutdownNow();
-            assertTrue(exec.awaitTermination(3, SECONDS));
+            assertTrue(exec.awaitTermination(10, SECONDS));
         }
     }
 

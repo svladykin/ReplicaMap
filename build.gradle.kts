@@ -1,10 +1,12 @@
+import org.gradle.api.tasks.testing.logging.TestLogEvent.*
+
 plugins {
     `java-library`
     maven
 }
 
 group = "com.vladykin"
-version = "0.1"
+version = "0.2-SNAPSHOT"
 
 repositories {
     mavenCentral()
@@ -48,5 +50,12 @@ tasks {
         add("archives", sourcesJar)
         add("archives", javadocJar)
         add("archives", jar)
+    }
+}
+
+tasks.named<Test>("test") {
+    useJUnitPlatform()
+    testLogging {
+        events(STARTED, PASSED, FAILED, SKIPPED)
     }
 }
