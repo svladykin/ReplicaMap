@@ -147,9 +147,8 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
 
                             long newVal = val + incr;
                             if (map.replace(key, val, newVal)) {
-                                long cnt = cnts[key].addAndGet(incr);
+                                cnts[key].addAndGet(incr);
 //                                System.out.println("-->  Updated val: " + newVal + ", cnt: " + cnt);
-                                assertTrue(cnt <= newVal);
                             }
                         }
                         catch (ReplicaMapException e) {
