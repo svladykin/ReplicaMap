@@ -2,7 +2,7 @@
 [![Release](https://jitpack.io/v/com.vladykin/replicamap.svg)](https://jitpack.io/#com.vladykin/replicamap)
 [![License](https://img.shields.io/badge/license-LGPLv3-blue.svg)](https://github.com/svladykin/replicamap/blob/master/LICENSE)
 [![Build Status](https://travis-ci.org/svladykin/replicamap.svg?branch=master)](https://travis-ci.org/svladykin/replicamap)
-![Coverage](https://img.shields.io/badge/coverage-94%25-green)
+![Coverage](https://img.shields.io/badge/coverage-93%25-green)
 
 ### All the buzzwords description: 
 
