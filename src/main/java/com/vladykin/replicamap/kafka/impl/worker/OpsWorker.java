@@ -148,9 +148,6 @@ public class OpsWorker extends Worker implements AutoCloseable {
             ConsumerRecords<Object,Object> recs = dataConsumer.poll(pollTimeout);
 
             if (recs.isEmpty()) {
-                if (Utils.isEndPosition(dataConsumer, dataPart))
-                    break;
-
                 long endOffsetData = Utils.endOffset(dataConsumer, dataPart);
 
                 if (log.isDebugEnabled()) {
@@ -159,12 +156,17 @@ public class OpsWorker extends Worker implements AutoCloseable {
                         dataPart, endOffsetData, flushOffsetData, loadedRecs, lastRecOffset);
                 }
 
-                if (endOffsetData < flushOffsetData) {
+                if (endOffsetData <= flushOffsetData) { // flushOffsetData is inclusive, endOffsetData is exclusive
                     throw new ReplicaMapException("Too low end offset of the data partition: " +
                         dataPart + ", endOffsetData: " + endOffsetData + ", flushOffsetData: " + flushOffsetData);
                 }
+
+                if (dataConsumer.position(dataPart) == endOffsetData)
+                    break; // we've loaded all the available data records
             }
             else {
+                assert recs.partitions().size() == 1;
+
                 for (ConsumerRecord<Object,Object> rec : recs.records(dataPart)) {
                     if (isOverMaxOffset(rec, flushOffsetData))
                         break outer;

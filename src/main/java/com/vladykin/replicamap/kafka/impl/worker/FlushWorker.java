@@ -417,10 +417,12 @@ public class FlushWorker extends Worker {
                 readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, flushOffsetData);
         }
         catch (Exception | AssertionError e) {
-            log.error("Failed to flush data for partition {}, flushOffsetData: {}, commitOffset: {}",
-                dataPart, flushOffsetData, commitOffset);
-
-            if (!Utils.isInterrupted(e))
+            if (Utils.isInterrupted(e) || e instanceof ReplicaMapException) {
+                log.warn("Failed to flush data for partition {}, flushOffsetData: {}, commitOffset: {}, " +
+                        "flushQueueSize: {}, reason: {}", dataPart, flushOffsetData, commitOffset,
+                        flushQueue.size(), e.getMessage());
+            }
+            else
                 log.error("Failed to flush data for partition " + dataPart + ", exception:", e);
 
             dataProducers.reset(part, dataProducer); // Producer may be broken, needs to be recreated on the next flush.

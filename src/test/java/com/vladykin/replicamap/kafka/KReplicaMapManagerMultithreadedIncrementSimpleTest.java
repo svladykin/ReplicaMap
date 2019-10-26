@@ -82,7 +82,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
 
     @Test
     void testMultithreadedIncrement() throws Exception {
-        int threadsCnt = 31;
+        int threadsCnt = 25;
         int managersCnt = 7;
         int keys = 9;
         int parts = 4;
@@ -119,7 +119,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
 
                     start.await();
 
-                    for (int j = 0; j < 500; j++) {
+                    for (int j = 0; j < 300; j++) {
                         int mgrId = rnd.nextInt(managersCnt);
 
                         KReplicaMapManager m = managers.get(mgrId, managersFactory);
