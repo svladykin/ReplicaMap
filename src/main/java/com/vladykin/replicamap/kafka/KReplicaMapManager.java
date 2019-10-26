@@ -244,7 +244,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
             onNewReplicaMapManager();
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             Utils.close(this);
             throw new ReplicaMapException("Failed to create ReplicaMap manager for topics [" +
                 dataTopic + ", " + opsTopic + ", " + flushTopic + "].", e);
@@ -630,7 +630,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             state = STOPPED;
             stoppedFut.complete(this);
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             stoppedFut.completeExceptionally(e);
 
             throw new ReplicaMapException("Failed to stop for topics [" +

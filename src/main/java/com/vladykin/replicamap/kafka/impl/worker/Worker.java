@@ -62,7 +62,7 @@ public abstract class Worker implements Runnable {
             checkInterrupted();
             doRun();
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             if (!Utils.isInterrupted(e))
                 log.error("Worker failed: " + getName(), e);
         }

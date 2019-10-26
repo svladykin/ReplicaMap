@@ -161,7 +161,7 @@ public final class Utils {
             try {
                 c.close();
             }
-            catch (Exception | AssertionError e) {
+            catch (Exception e) {
                 if (isInterrupted(e))
                     Thread.currentThread().interrupt();
                 else
@@ -170,10 +170,15 @@ public final class Utils {
         }
     }
 
-    public static boolean isInterrupted(Throwable e) {
+    public static boolean isInterrupted(Exception e) {
         return e instanceof InterruptedException ||
                e instanceof InterruptException ||
                e instanceof WakeupException;
+    }
+
+    public static String getMessage(Exception e) {
+        String msg = e.getMessage();
+        return msg != null ? msg : e.getClass().getSimpleName();
     }
 
     public static void maybeClose(Object c) {
@@ -251,7 +256,7 @@ public final class Utils {
             try {
                 c.wakeup();
             }
-            catch (Exception | AssertionError e) {
+            catch (Exception e) {
                 log.error("Failed to wakeup consumer.", e);
             }
         }
@@ -263,7 +268,7 @@ public final class Utils {
             try {
                 c = s.get();
             }
-            catch (Exception | AssertionError e) {
+            catch (Exception e) {
                 if (!isInterrupted(e))
                     log.error("Failed to get consumer for wakeup.", e);
             }

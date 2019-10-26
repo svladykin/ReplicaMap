@@ -187,9 +187,10 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
                     log.warn("Unexpected op type: {}", (char)updateType);
             }
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             ex = e;
-            log.error("Applying received update failed on key: " + key, e);
+            log.error("Failed to apply received update for key: " + key, e);
+            throw new ReplicaMapException("Unrecoverable error in map: " + id, e);
         }
         finally {
             if (myUpdate) {
@@ -214,7 +215,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
             try {
                 lsnr.onMapUpdate(this, myUpdate, key, old, upd);
             }
-            catch (Exception | AssertionError e) {
+            catch (Exception e) {
                 log.error("Listener failed.", e);
             }
         }
@@ -224,7 +225,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         try {
             sendUpdate(op.opKey.opId, op.updateType, op.opKey.key, op.exp, op.upd, op);
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             op.onError(e);
         }
     }
@@ -338,7 +339,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
             try {
                 map.beforeStart(this);
             }
-            catch (Exception | AssertionError e) {
+            catch (Exception e) {
                 finish(null, e, false);
                 return this;
             }

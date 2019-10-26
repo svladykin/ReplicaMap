@@ -469,7 +469,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
             seekOpsOffsets(opsOffsets);
             processOps();
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             // If the future is completed already, nothing will happen.
             steadyFut.completeExceptionally(e);
 

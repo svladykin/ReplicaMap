@@ -36,7 +36,7 @@ public class LazyList<T> implements AutoCloseable {
                 try {
                     fut.complete(factory.apply(index));
                 }
-                catch (Exception | AssertionError e) {
+                catch (Exception e) {
                     arr.compareAndSet(index, fut, null);
                     fut.completeExceptionally(e);
                 }

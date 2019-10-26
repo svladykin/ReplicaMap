@@ -202,7 +202,7 @@ public class FlushWorker extends Worker {
         try {
             flushConsumer = flushConsumers.get(workerId, this::newFlushConsumer);
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             if (!Utils.isInterrupted(e))
                 log.error("Failed to create flush consumer for topic " + flushTopic, e);
 
@@ -213,7 +213,7 @@ public class FlushWorker extends Worker {
         try {
             recs = flushConsumer.poll(millis(pollTimeoutMs));
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             if (!Utils.isInterrupted(e))
                 log.error("Failed to poll flush consumer for topic " + flushTopic, e);
 
@@ -249,7 +249,7 @@ public class FlushWorker extends Worker {
             try {
                 maxOp = loadFlushHistoryMax(flushConsumer, flushPart, flushRequest);
             }
-            catch (Exception | AssertionError e) {
+            catch (Exception e) {
                 if (!Utils.isInterrupted(e))
                     log.error("Failed to load history for partition: " + flushPart, e);
 
@@ -362,7 +362,7 @@ public class FlushWorker extends Worker {
         try {
             dataProducer = dataProducers.get(part, this::newDataProducer);
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             if (!Utils.isInterrupted(e))
                 log.error("Failed to create data producer for partition " + dataPart, e);
 
@@ -416,11 +416,11 @@ public class FlushWorker extends Worker {
             if (dataConsumer != null)
                 readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, flushOffsetData);
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             if (Utils.isInterrupted(e) || e instanceof ReplicaMapException) {
                 log.warn("Failed to flush data for partition {}, flushOffsetData: {}, commitOffset: {}, " +
                         "flushQueueSize: {}, reason: {}", dataPart, flushOffsetData, commitOffset,
-                        flushQueue.size(), e.getMessage());
+                        flushQueue.size(), Utils.getMessage(e));
             }
             else
                 log.error("Failed to flush data for partition " + dataPart + ", exception:", e);
@@ -507,7 +507,7 @@ public class FlushWorker extends Worker {
         try {
             opsProducer.send(flushNotification);
         }
-        catch (Exception | AssertionError e) {
+        catch (Exception e) {
             if (!Utils.isInterrupted(e))
                 log.error("Failed to send flush notification: " + flushNotification, e);
         }
