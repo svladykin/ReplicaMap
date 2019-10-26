@@ -42,6 +42,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIA
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedIncrementRestartTest.awaitEqual;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedIncrementSimpleTest.checkFlushedData;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.createTopics;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.kafkaClusterWith3Brokers;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -49,8 +50,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class KReplicaMapManagerMultithreadedWindowTest {
     @RegisterExtension
-    public static final SharedKafkaTestResource sharedKafkaTestResource = new SharedKafkaTestResource()
-        .withBrokers(3);
+    public static final SharedKafkaTestResource sharedKafkaTestResource = kafkaClusterWith3Brokers();
 
     Map<String,Object> getDefaultConfig() {
         HashMap<String,Object> cfg = new HashMap<>();

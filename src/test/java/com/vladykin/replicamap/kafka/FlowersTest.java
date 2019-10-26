@@ -15,8 +15,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 public class FlowersTest {
     @RegisterExtension
-    public static final SharedKafkaTestResource sharedKafkaTestResource = new SharedKafkaTestResource()
-        .withBrokers(3);
+    public static final SharedKafkaTestResource sharedKafkaTestResource = new SharedKafkaTestResource();
 
     static String BOOTSTRAP_SERVER = "localhost:9092";
     static final long DELETE_DELAY_MS = 7200000;

@@ -37,6 +37,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.createTopics;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.kafkaClusterWith3Brokers;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -45,8 +46,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 class KReplicaMapManagerMultithreadedFibonacciTest {
 
     @RegisterExtension
-    public static final SharedKafkaTestResource sharedKafkaTestResource = new SharedKafkaTestResource()
-        .withBrokers(3);
+    public static final SharedKafkaTestResource sharedKafkaTestResource = kafkaClusterWith3Brokers();
 
     Map<String,Object> getDefaultConfig() {
         HashMap<String,Object> cfg = new HashMap<>();

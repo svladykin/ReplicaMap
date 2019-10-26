@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.createTopics;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.kafkaClusterWith3Brokers;
 import static com.vladykin.replicamap.kafka.KReplicaMapTools.CMD_INIT_EXISTING;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.singletonList;
@@ -23,8 +24,7 @@ class KReplicaMapToolsInitExistingTest {
     static final String FLUSH = "my_flush";
 
     @RegisterExtension
-    public static final SharedKafkaTestResource sharedKafkaTestResource = new SharedKafkaTestResource()
-        .withBrokers(3);
+    public static final SharedKafkaTestResource sharedKafkaTestResource = kafkaClusterWith3Brokers();
 
     Map<String,Object> getDefaultConfig() {
         HashMap<String,Object> cfg = new HashMap<>();

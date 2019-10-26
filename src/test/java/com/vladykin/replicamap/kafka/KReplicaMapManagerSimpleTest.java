@@ -7,6 +7,7 @@ import com.vladykin.replicamap.ReplicaMapManager;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -40,8 +41,26 @@ class KReplicaMapManagerSimpleTest {
     static final String FLUSH_TOPIC = DEFAULT_DATA_TOPIC + DEFAULT_FLUSH_TOPIC_SUFFIX;
 
     @RegisterExtension
-    public static final SharedKafkaTestResource sharedKafkaTestResource = new SharedKafkaTestResource()
-        .withBrokers(3);
+    public static final SharedKafkaTestResource sharedKafkaTestResource = kafkaClusterWith3Brokers();
+
+    static SharedKafkaTestResource kafkaClusterWith3Brokers() {
+        return new SharedKafkaTestResource(getBrokerConfig()).withBrokers(3);
+    }
+
+    static Properties getBrokerConfig() {
+        Properties brokerProperties = new Properties();
+
+        brokerProperties.setProperty("offsets.topic.replication.factor", "3");
+        brokerProperties.setProperty("offset.storage.replication.factor", "3");
+        brokerProperties.setProperty("transaction.state.log.replication.factor", "3");
+        brokerProperties.setProperty("transaction.state.log.min.isr", "2");
+        brokerProperties.setProperty("transaction.state.log.num.partitions", "4");
+        brokerProperties.setProperty("config.storage.replication.factor", "3");
+        brokerProperties.setProperty("status.storage.replication.factor", "3");
+        brokerProperties.setProperty("default.replication.factor", "3");
+
+        return brokerProperties;
+    }
 
     Map<String,Object> getDefaultConfig() {
         HashMap<String,Object> cfg = new HashMap<>();
