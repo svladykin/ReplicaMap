@@ -106,7 +106,7 @@ class KReplicaMapManagerSimpleTest {
         assertSame(KReplicaMapManager.State.NEW, m.getState());
         CompletableFuture<ReplicaMapManager> startFut = m.start();
         assertSame(KReplicaMapManager.State.STARTING, m.getState());
-        assertSame(m, startFut.get(3, SECONDS));
+        assertSame(m, startFut.get(60, SECONDS));
         assertSame(KReplicaMapManager.State.RUNNING, m.getState());
 
         KReplicaMap<String,String> map = m.getMap();
