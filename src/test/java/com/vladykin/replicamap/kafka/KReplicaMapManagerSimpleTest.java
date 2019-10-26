@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 @SuppressWarnings("ConstantConditions")
 class KReplicaMapManagerSimpleTest {
+    static final int START_TIMEOUT = 60;
 
     static final String DATA_TOPIC = DEFAULT_DATA_TOPIC;
     static final String OPS_TOPIC = DEFAULT_DATA_TOPIC + DEFAULT_OPS_TOPIC_SUFFIX;
@@ -106,7 +107,7 @@ class KReplicaMapManagerSimpleTest {
         assertSame(KReplicaMapManager.State.NEW, m.getState());
         CompletableFuture<ReplicaMapManager> startFut = m.start();
         assertSame(KReplicaMapManager.State.STARTING, m.getState());
-        assertSame(m, startFut.get(60, SECONDS));
+        assertSame(m, startFut.get(START_TIMEOUT, SECONDS));
         assertSame(KReplicaMapManager.State.RUNNING, m.getState());
 
         KReplicaMap<String,String> map = m.getMap();
@@ -138,7 +139,7 @@ class KReplicaMapManagerSimpleTest {
         assertThrows(ReplicaMapException.class, () -> finalMap.put("c", "C"));
 
         m = new KReplicaMapManager(getDefaultConfig());
-        assertSame(m, m.start().get(3, SECONDS));
+        assertSame(m, m.start().get(START_TIMEOUT, SECONDS));
 
         assertNotSame(map, m.getMap());
         map = m.getMap();
@@ -159,7 +160,7 @@ class KReplicaMapManagerSimpleTest {
 
         m.close();
         m = new KReplicaMapManager(getDefaultConfig());
-        assertSame(m, m.start().get(3, SECONDS));
+        assertSame(m, m.start().get(START_TIMEOUT, SECONDS));
         map = m.getMap();
 
         assertEquals(4, map.size());
@@ -175,7 +176,7 @@ class KReplicaMapManagerSimpleTest {
 
         m.close();
         m = new KReplicaMapManager(getDefaultConfig());
-        assertSame(m, m.start().get(3, SECONDS));
+        assertSame(m, m.start().get(START_TIMEOUT, SECONDS));
         map = m.getMap();
 
         assertEquals(2, map.size());
@@ -189,8 +190,8 @@ class KReplicaMapManagerSimpleTest {
         m = new KReplicaMapManager(getDefaultConfig());
         KReplicaMapManager w = new KReplicaMapManager(getDefaultConfig());
 
-        assertSame(m, m.start().get(3, SECONDS));
-        assertSame(w, w.start().get(3, SECONDS));
+        assertSame(m, m.start().get(START_TIMEOUT, SECONDS));
+        assertSame(w, w.start().get(START_TIMEOUT, SECONDS));
 
         KReplicaMap<String,String> mMap = m.getMap();
         KReplicaMap<String,String> wMap = w.getMap();
@@ -214,7 +215,7 @@ class KReplicaMapManagerSimpleTest {
 
         m.close();
         m = new KReplicaMapManager(getDefaultConfig());
-        assertSame(m, m.start().get(3, SECONDS));
+        assertSame(m, m.start().get(START_TIMEOUT, SECONDS));
         mMap = m.getMap();
 
         awaitEqualMaps(mMap, wMap,
@@ -224,7 +225,7 @@ class KReplicaMapManagerSimpleTest {
 
         w.close();
         w = new KReplicaMapManager(getDefaultConfig());
-        assertSame(w, w.start().get(3, SECONDS));
+        assertSame(w, w.start().get(START_TIMEOUT, SECONDS));
         wMap = w.getMap();
 
         awaitEqualMaps(mMap, wMap,
