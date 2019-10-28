@@ -147,8 +147,9 @@ public class FlushQueue {
         }
     }
 
+    @SuppressWarnings("ConstantConditions")
     protected void updateMaxCleanOffset(long maxOffset) {
-        assert maxOffset <= maxAddOffset || queue.isEmpty();
+        assert maxOffset <= maxAddOffset || queue.isEmpty(): maxOffset + " " + maxAddOffset + " " + queue.isEmpty();
         maxCleanOffset = queue.isEmpty() ? maxAddOffset : maxOffset;
     }
 
