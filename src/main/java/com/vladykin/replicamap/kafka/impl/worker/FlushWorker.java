@@ -378,7 +378,11 @@ public class FlushWorker extends Worker {
                 Set<TopicPartition> dataPartSet = singleton(dataPart);
                 dataConsumer.assign(dataPartSet);
                 dataConsumer.seekToEnd(dataPartSet);
-                long dataConsumerOffset = dataConsumer.position(dataPart); // This line strangely fixes read-back issue.
+
+                // The next line is needed to make sure that we actually have fetched the current end position,
+                // because all the previous calls can go lazy and just do nothing and on poll() we will get to
+                // the wrong position.
+                long dataConsumerOffset = dataConsumer.position(dataPart);
 
                 if (log.isTraceEnabled())
                     log.trace("Data consumer initialized for partition {} at offset: {}", dataPart, dataConsumerOffset);
