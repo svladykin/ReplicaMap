@@ -35,7 +35,6 @@ import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.findMax;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.getLast;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
 import static java.util.Collections.singleton;
@@ -392,7 +391,7 @@ public class FlushWorker extends Worker {
             if (log.isTraceEnabled())
                 log.trace("Sent {} entries to TX for partition {}", dataBatchSize, dataPart);
 
-            commitOffset = new OffsetAndMetadata(getLast(flushRecs).offset() + 1);
+            commitOffset = new OffsetAndMetadata(flushConsumer.position(flushPart));
             dataProducer.sendOffsetsToTransaction(singletonMap(flushPart, commitOffset), flushConsumerGroupId);
 
             log.trace("Sent {} offset to TX for partition {}", commitOffset, flushPart);

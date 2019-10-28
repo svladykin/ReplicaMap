@@ -197,10 +197,6 @@ public final class Utils {
         return obj;
     }
 
-    public static <X> X getLast(List<X> list) {
-        return list.get(list.size() - 1);
-    }
-
     public static void clear(Collection<?> c) {
         if (c != null)
             c.clear();
