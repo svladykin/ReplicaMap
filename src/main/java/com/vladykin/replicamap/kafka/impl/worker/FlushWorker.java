@@ -411,9 +411,8 @@ public class FlushWorker extends Worker {
             // This flush reordering may break the state.
             // The check just before committing the TX makes sure that either we are still own the partition
             // or the other guy will fence us.
-            // This does not protect from "double flush"
-            if (!flushConsumer.assignment().contains(flushPart))
-                throw new ReplicaMapException("No longer own the partition: " + flushPart);
+            // This only protects from reordering but does not protect from "double flush".
+            checkConsumerOwnsPartition(flushConsumer, flushPart);
 
             dataProducer.commitTransaction();
             log.trace("TX committed for partition {}", dataPart);
@@ -463,6 +462,12 @@ public class FlushWorker extends Worker {
         }
 
         return true;
+    }
+
+    protected void checkConsumerOwnsPartition(Consumer<?,?> consumer, TopicPartition part) {
+        // FIXME probably does not work as expected, need some way
+        if (!consumer.assignment().contains(part))
+            throw new ReplicaMapException("No longer own the partition: " + part);
     }
 
     protected void readBackAndCheckCommittedRecords(
