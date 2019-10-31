@@ -342,21 +342,10 @@ public class FlushWorker extends Worker {
                 dataPart, dataBatchSize, collectedAll);
         }
 
-        if (isTooSmallBatch(dataBatchSize, collectedAll)) {
-            if (log.isDebugEnabled()) {
-                log.debug("Too small batch for partition {}, dataBatchSize: {}, collectedAll: {}",
-                     dataPart, dataBatchSize, collectedAll);
-            }
-
-            if (dataBatchSize == 0) // Looks like we are far behind, let someone else to handle flushes.
-                flushConsumers.reset(workerId, flushConsumer); // Initiate partition rebalance.
-
-            return false; // The next flush will take more records, this is ok.
-        }
-
         Producer<Object,Object> dataProducer;
         try {
-            dataProducer = dataProducers.get(part, this::newDataProducer);
+            dataProducer = dataProducers.get(part, null);
+            Utils.requireNonNull(dataProducer, "dataProducer");
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
@@ -371,6 +360,19 @@ public class FlushWorker extends Worker {
         OffsetAndMetadata flushConsumerOffset = null;
 
         try {
+            if (isTooSmallBatch(dataBatchSize, collectedAll)) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Too small batch for partition {}, dataBatchSize: {}, collectedAll: {}",
+                        dataPart, dataBatchSize, collectedAll);
+                }
+
+                // Looks like we are far behind, let someone else to handle flushes.
+                if (dataBatchSize == 0)
+                    throw new ReplicaMapException("The collected batch is empty, we are too far behind.");
+
+                return false;
+            }
+
             if (dataConsumers != null) {
                 dataConsumer = dataConsumers.get(workerId, this::newDataConsumer);
                 Set<TopicPartition> dataPartSet = singleton(dataPart);
@@ -404,16 +406,6 @@ public class FlushWorker extends Worker {
 
             log.trace("Sent {} offset to TX for partition {}", flushConsumerOffset, flushPart);
 
-            // The following check is needed to make sure that there is no race
-            // between this thread and any other flusher. Otherwise the following scenario may happen:
-            // we've read flush-request X, got to sleep, someone else reads flush-requests X and Y
-            // and successfully flushes them, then we wakeup, fence the previous guy and flush X once more.
-            // This flush reordering may break the state.
-            // The check just before committing the TX makes sure that either we are still own the partition
-            // or the other guy will fence us.
-            // This only protects from reordering but does not protect from "double flush".
-            checkConsumerOwnsPartition(flushConsumer, flushPart);
-
             dataProducer.commitTransaction();
             log.trace("TX committed for partition {}", dataPart);
 
@@ -433,7 +425,7 @@ public class FlushWorker extends Worker {
                 readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, flushOffsetData);
         }
         catch (Exception e) {
-            if (Utils.isInterrupted(e) || e instanceof ProducerFencedException || e instanceof ReplicaMapException) {
+            if (isKnownFlushFailure(e)) {
                 log.warn("Failed to flush data for partition {}, flushOffsetData: {}, flushConsumerOffset: {}, " +
                         "flushQueueSize: {}, reason: {}", dataPart, flushOffsetData, flushConsumerOffset,
                         flushQueue.size(), Utils.getMessage(e));
@@ -441,7 +433,7 @@ public class FlushWorker extends Worker {
             else
                 log.error("Failed to flush data for partition " + dataPart + ", exception:", e);
 
-            dataProducers.reset(part, dataProducer); // Producer may be broken, needs to be recreated on the next flush.
+            dataProducers.reset(part, dataProducer); // Producer may be broken, needs to be recreated.
             flushConsumers.reset(workerId, flushConsumer); // Initiate partition rebalance: maybe other flusher will be luckier.
 
             if (dataConsumer != null)
@@ -464,10 +456,10 @@ public class FlushWorker extends Worker {
         return true;
     }
 
-    protected void checkConsumerOwnsPartition(Consumer<?,?> consumer, TopicPartition part) {
-        // FIXME probably does not work as expected, need some way
-        if (!consumer.assignment().contains(part))
-            throw new ReplicaMapException("No longer own the partition: " + part);
+    protected boolean isKnownFlushFailure(Exception e) {
+        return Utils.isInterrupted(e)
+            || e instanceof ProducerFencedException
+            || e instanceof ReplicaMapException;
     }
 
     protected void readBackAndCheckCommittedRecords(
@@ -564,6 +556,28 @@ public class FlushWorker extends Worker {
             maxFlushRequests.remove(part);
     }
 
+    protected void initDataProducers(Collection<TopicPartition> flushPartitions) {
+        for (TopicPartition partition : flushPartitions) {
+            int part = partition.partition();
+
+            if (dataProducers.get(part, null) != null)
+                throw new IllegalStateException("Producer exists for part: " + part);
+
+            dataProducers.get(part, this::newDataProducer);
+        }
+    }
+
+    protected void resetDataProducers(Collection<TopicPartition> flushPartitions) {
+        for (TopicPartition partition : flushPartitions) {
+            int part = partition.partition();
+
+            Producer<Object,Object> dataProducer = dataProducers.get(part, null);
+
+            if (dataProducer != null)
+                dataProducers.reset(part, dataProducer);
+        }
+    }
+
     /**
      * We need to clean the cached max flush request here and reload the history
      * when the partition will be ours again because otherwise we may miss
@@ -571,15 +585,17 @@ public class FlushWorker extends Worker {
      */
     protected class MaxFlushRequestsCleaner implements ConsumerRebalanceListener {
         @Override
-        public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-            log.debug("Flush partitions revoked: {}", partitions);
-            clearMaxFlushRequests(partitions);
-        }
-
-        @Override
         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
             log.debug("Flush partitions assigned: {}", partitions);
             clearMaxFlushRequests(partitions);
+            initDataProducers(partitions);
+        }
+
+        @Override
+        public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+            log.debug("Flush partitions revoked: {}", partitions);
+            clearMaxFlushRequests(partitions);
+            resetDataProducers(partitions);
         }
     }
 }
