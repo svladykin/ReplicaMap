@@ -333,7 +333,8 @@ public class FlushWorker extends Worker {
         if (cleanOffsetOps >= 0)
             flushQueue.clean(cleanOffsetOps);
 
-        FlushQueue.Batch dataBatch = flushQueue.collectUpdateRecords();
+        long flushOffsetOps = flushRequest.value().getFlushOffsetOps();
+        FlushQueue.Batch dataBatch = flushQueue.collect(flushOffsetOps);
         int dataBatchSize = dataBatch.size();
         int collectedAll = dataBatch.getCollectedAll();
 
@@ -349,7 +350,7 @@ public class FlushWorker extends Worker {
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
-                log.error("Failed to create data producer for partition " + dataPart, e);
+                log.error("Failed to get data producer for partition " + dataPart, e);
 
             flushConsumers.reset(workerId, flushConsumer); // Initiate partition rebalance.
             return false; // The next flush will be our retry.
@@ -367,8 +368,12 @@ public class FlushWorker extends Worker {
                 }
 
                 // Looks like we are far behind, let someone else to handle flushes.
-                if (dataBatchSize == 0)
-                    throw new ReplicaMapException("The collected batch is empty, we are too far behind.");
+                if (dataBatchSize == 0) {
+                    throw new ReplicaMapException("The collected batch is empty, we are too far behind" +
+                        ", flushQueueSize: " + flushQueue.size() +
+                        ", flushRequest: " + flushRequest
+                    );
+                }
 
                 return false;
             }
@@ -442,7 +447,7 @@ public class FlushWorker extends Worker {
             return false; // No other handling, the next flush will be our retry.
         }
 
-        long flushOffsetOps = dataBatch.getMaxOffset();
+        flushOffsetOps = dataBatch.getMaxOffset();
 
         if (flushQueue.clean(flushOffsetOps) > 0) {
             sendFlushNotification(part, flushOffsetData, flushOffsetOps);

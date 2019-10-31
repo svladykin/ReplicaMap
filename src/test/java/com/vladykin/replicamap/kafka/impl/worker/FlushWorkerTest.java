@@ -182,7 +182,8 @@ class FlushWorkerTest {
 
         flushWorker.maxFlushRequests.put(new TopicPartition(TOPIC_FLUSH, 0),
             new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0, 0, 0));
-        initFlushConsumer(101, 98);
+        initFlushConsumer(101, 97);
+        flushWorker.initDataProducers(singleton(flushPart));
         assertFalse(flushWorker.processFlushRequests(0)); // No data in flush queue.
 
         FlushQueue flushQueue = flushQueues.get(0);
@@ -213,7 +214,8 @@ class FlushWorkerTest {
 
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(101, 98);
-        dataProducer.initTransactions();
+        dataProducer = new MockProducer<>();
+        flushWorker.initDataProducers(singleton(flushPart));
         dataProducer.fenceProducer();
 
         flushWorker.maxFlushRequests.put(new TopicPartition(TOPIC_FLUSH, 0),
@@ -223,11 +225,13 @@ class FlushWorkerTest {
         assertEquals(4, flushQueue.size());
 
         dataProducer = new MockProducer<>();
+        flushWorker.initDataProducers(singleton(flushPart));
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(101, 98);
 
         flushWorker.maxFlushRequests.put(flushPart,
             new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0, 0, 0));
+
         assertTrue(flushWorker.processFlushRequests(0));
         assertTrue(dataProducer.transactionCommitted());
         assertEquals(1, flushQueue.size());
@@ -263,6 +267,7 @@ class FlushWorkerTest {
         assertEquals(1, flushQueue.size());
 
         dataProducer = new MockProducer<>();
+        flushWorker.initDataProducers(singleton(flushPart));
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(102, 101);
         flushConsumer.setException(new KafkaException("test"));
@@ -272,6 +277,8 @@ class FlushWorkerTest {
 
         opsProducer.clear();
         dataProducer = new MockProducer<>();
+        flushWorker.resetDataProducers(singleton(flushPart));
+        flushWorker.initDataProducers(singleton(flushPart));
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(102, 101);
 

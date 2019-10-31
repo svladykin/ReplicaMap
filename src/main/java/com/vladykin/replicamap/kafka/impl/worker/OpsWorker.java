@@ -246,10 +246,8 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
             if (needFlush) {
                 OpMessage lastFlush = lastFlushNotifications.get(opsPart);
-                sendFlushRequest(
-                    opsPart.partition(),
-                    rec.offset(),
-                    lastFlush == null ? -1L : lastFlush.getFlushOffsetOps());
+                long lastCleanOffsetOps = lastFlush == null ? -1L : lastFlush.getFlushOffsetOps();
+                sendFlushRequest(opsPart.partition(), rec.offset(), lastCleanOffsetOps);
             }
             else if (needClean)
                 sendCleanRequest(rec);

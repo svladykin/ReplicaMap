@@ -226,7 +226,6 @@ public final class Utils {
         return Runtime.getRuntime().availableProcessors();
     }
 
-    // TODO inline
     public static boolean isOverMaxOffset(ConsumerRecord<?,?> rec, long maxOffset) {
         return rec.offset() > maxOffset;
     }

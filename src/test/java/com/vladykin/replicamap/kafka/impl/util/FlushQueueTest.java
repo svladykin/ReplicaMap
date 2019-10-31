@@ -34,7 +34,7 @@ class FlushQueueTest {
         assertEquals(0, q.maxAddOffset);
         assertEquals(1, q.queue.size());
 
-        FlushQueue.Batch batch = q.collectUpdateRecords();
+        FlushQueue.Batch batch = q.collect(1);
         int collectedAll = batch.getCollectedAll();
 
         assertEquals(1, q.size());
@@ -74,7 +74,7 @@ class FlushQueueTest {
         assertEquals(7, q.maxAddOffset);
         assertEquals(5, q.queue.size());
 
-        batch = q.collectUpdateRecords();
+        batch = q.collect(7);
         collectedAll = batch.getCollectedAll();
 
         assertEquals(7, collectedAll);
@@ -108,6 +108,8 @@ class FlushQueueTest {
         assertEquals(7, q.maxCleanOffset);
         assertEquals(9, q.maxAddOffset);
         assertEquals(1, q.queue.size());
+
+        System.out.println(q);
 
         q.clean(10);
 
@@ -159,7 +161,7 @@ class FlushQueueTest {
 
                     start.await();
 
-                    int cnt = 1000;
+                    int cnt = 500_000;
                     for (int i = 1; i <= cnt; i++) {
                         boolean update = i == cnt || rnd.nextInt(10) == 0;
                         boolean waitLock = i == cnt || rnd.nextInt(20) == 0;
@@ -176,7 +178,7 @@ class FlushQueueTest {
                     start.await();
 
                     while (!addFut.isDone() || q.size() > 0) {
-                        FlushQueue.Batch batch = q.collectUpdateRecords();
+                        FlushQueue.Batch batch = q.collect(lastAddedOffset.get());
 
                         int collectedAll = batch.getCollectedAll();
                         assertTrue(collectedAll >= batch.size());

@@ -45,7 +45,7 @@ public class FlushQueue {
      *                 to store the record into thread local buffer.
      */
     public void add(ConsumerRecord<Object,OpMessage> rec, boolean update, boolean waitLock) {
-        Utils.requireNonNull(rec, "rec");
+        assert rec != null;
 
         ArrayDeque<ConsumerRecord<Object,OpMessage>> tlq = threadLocalQueue.get();
 
@@ -57,11 +57,11 @@ public class FlushQueue {
                     if (r == null)
                         break;
 
-                    if (r.offset() > maxAddOffset)
+                    if (isOverMaxOffset(r, maxAddOffset))
                         queue.add(r);
                 }
 
-                if (rec.offset() > maxAddOffset) {
+                if (isOverMaxOffset(rec, maxAddOffset)) {
                     maxAddOffset = rec.offset();
 
                     if (update)
@@ -85,18 +85,23 @@ public class FlushQueue {
     }
 
     /**
-     * Collects update records to the given batch.
+     * Collects records to the given batch.
      * Does not modify the state.
      *
+     * @param maxOffset Max offset to collect (inclusive).
      * @return Collected batch.
      */
-    public Batch collectUpdateRecords() {
+    public Batch collect(long maxOffset) {
         lock.acquireUninterruptibly();
         try {
-            Batch dataBatch = new Batch(maxAddOffset, maxCleanOffset);
+            Batch dataBatch = new Batch(maxOffset, maxAddOffset, maxCleanOffset);
 
-            for (ConsumerRecord<Object,OpMessage> rec : queue)
+            for (ConsumerRecord<Object,OpMessage> rec : queue) {
+                if (isOverMaxOffset(rec, maxOffset))
+                    break;
+
                 dataBatch.put(rec.key(), rec.value().getUpdatedValue());
+            }
 
             return dataBatch;
         }
@@ -141,20 +146,20 @@ public class FlushQueue {
     }
 
     public static class Batch extends HashMap<Object,Object> {
-        protected final long maxAddOffset;
-        protected final long maxCleanOffset;
+        protected final long maxOffset;
+        protected final int collectedAll;
 
-        public Batch(long maxAddOffset, long maxCleanOffset) {
-            this.maxAddOffset = maxAddOffset;
-            this.maxCleanOffset = maxCleanOffset;
+        public Batch(long maxOffset, long maxAddOffset, long maxCleanOffset) {
+            this.maxOffset = Math.min(maxOffset, maxAddOffset);
+            this.collectedAll = (int)Math.max(0, this.maxOffset - maxCleanOffset);
         }
 
         public int getCollectedAll() {
-            return (int)(maxAddOffset - maxCleanOffset);
+            return collectedAll;
         }
 
         public long getMaxOffset() {
-            return maxAddOffset;
+            return maxOffset;
         }
     }
 }
