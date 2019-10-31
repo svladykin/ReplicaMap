@@ -30,6 +30,7 @@ import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.ProducerFencedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -171,12 +172,12 @@ public class FlushWorker extends Worker {
             int part = cleanRequest.partition();
 
             FlushQueue flushQueue = flushQueues.get(part);
-            int cleanedUpdates = flushQueue.clean(flushOffsetOps);
+            long cleanedCnt = flushQueue.clean(flushOffsetOps);
 
             if (log.isDebugEnabled()) {
-                log.debug("Processed clean request {} for partition {}, cleanedUpdates: {}, flushQueueSize: {}",
-                    cleanRequest, new TopicPartition(cleanRequest.topic(), cleanRequest.partition()),
-                    cleanedUpdates, flushQueue.size());
+                log.debug("Processed clean request {} for partition {}, flushQueueSize: {}, cleanedCnt: {}",
+                    cleanRequest, new TopicPartition(cleanRequest.topic(), cleanRequest.partition()), cleanedCnt,
+                    flushQueue.size());
             }
         }
     }
@@ -231,8 +232,8 @@ public class FlushWorker extends Worker {
         return flushed;
     }
 
-    protected boolean isTooSmallBatch(int batchSize, int collectedUpdates, int collectedAll) {
-        assert 0 <= batchSize && batchSize <= collectedUpdates && collectedUpdates <= collectedAll;
+    protected boolean isTooSmallBatch(int batchSize, int collectedAll) {
+        assert 0 <= batchSize && batchSize <= collectedAll;
         return batchSize == 0 || collectedAll < flushMinOps;
     }
 
@@ -320,35 +321,31 @@ public class FlushWorker extends Worker {
         TopicPartition dataPart = new TopicPartition(dataTopic, part);
 
         ConsumerRecord<Object,OpMessage> flushRequest = findMax(flushRecs, FLUSH_OFFSET_OPS_CMP);
+
         if (!isMaxFlushOffset(flushConsumer, flushPart, flushRequest))
             return false; // ignore racy flush request
-
-        OpMessage flushRequestOp = flushRequest.value();
-        long flushOffsetOps = flushRequestOp.getFlushOffsetOps();
-        long cleanOffsetOps = flushRequestOp.getCleanOffsetOps();
 
         log.debug("Processing flush request {} for partition {}", flushRequest, dataPart);
 
         FlushQueue flushQueue = flushQueues.get(part);
 
+        long cleanOffsetOps = flushRequest.value().getCleanOffsetOps();
         if (cleanOffsetOps >= 0)
             flushQueue.clean(cleanOffsetOps);
 
-        Map<Object,Object> dataBatch = new HashMap<>();
-        long x = flushQueue.collectUpdateRecords(dataBatch, flushOffsetOps);
-        int collectedUpdates = FlushQueue.collectedUpdates(x);
-        int collectedAll = FlushQueue.collectedAll(x);
+        FlushQueue.Batch dataBatch = flushQueue.collectUpdateRecords();
         int dataBatchSize = dataBatch.size();
+        int collectedAll = dataBatch.getCollectedAll();
 
         if (log.isDebugEnabled()) {
-            log.debug("Collected batch for partition {}, dataBatchSize: {}, collectedUpdates: {}, collectedAll: {}",
-                dataPart, dataBatchSize, collectedUpdates, collectedAll);
+            log.debug("Collected batch for partition {}, dataBatchSize: {}, collectedAll: {}",
+                dataPart, dataBatchSize, collectedAll);
         }
 
-        if (isTooSmallBatch(dataBatchSize, collectedUpdates, collectedAll)) {
+        if (isTooSmallBatch(dataBatchSize, collectedAll)) {
             if (log.isDebugEnabled()) {
-                log.debug("Too small batch for partition {}, dataBatchSize: {}, collectedUpdates: {}, collectedAll: {}",
-                     dataPart, dataBatchSize, collectedUpdates, collectedAll);
+                log.debug("Too small batch for partition {}, dataBatchSize: {}, collectedAll: {}",
+                     dataPart, dataBatchSize, collectedAll);
             }
 
             if (dataBatchSize == 0) // Looks like we are far behind, let someone else to handle flushes.
@@ -371,7 +368,8 @@ public class FlushWorker extends Worker {
 
         Consumer<Object,Object> dataConsumer = null;
         long flushOffsetData = -1;
-        OffsetAndMetadata commitOffset = null;
+        OffsetAndMetadata flushConsumerOffset = null;
+
         try {
             if (dataConsumers != null) {
                 dataConsumer = dataConsumers.get(workerId, this::newDataConsumer);
@@ -392,19 +390,32 @@ public class FlushWorker extends Worker {
             log.trace("TX started for partition {}", dataPart);
 
             Future<RecordMetadata> lastDataRecMetaFut = null;
-            for (Map.Entry<Object,Object> entry : dataBatch.entrySet())
-                lastDataRecMetaFut = dataProducer.send(new ProducerRecord<>(dataTopic, part, entry.getKey(), entry.getValue()));
+            for (Map.Entry<Object,Object> entry : dataBatch.entrySet()) {
+                lastDataRecMetaFut = dataProducer.send(new ProducerRecord<>(
+                    dataTopic, part, entry.getKey(), entry.getValue()));
+            }
 
             if (log.isTraceEnabled())
                 log.trace("Sent {} entries to TX for partition {}", dataBatchSize, dataPart);
 
-            commitOffset = new OffsetAndMetadata(flushConsumer.position(flushPart));
-            dataProducer.sendOffsetsToTransaction(singletonMap(flushPart, commitOffset), flushConsumerGroupId);
+            flushConsumerOffset = new OffsetAndMetadata(flushConsumer.position(flushPart));
+            dataProducer.sendOffsetsToTransaction(
+                singletonMap(flushPart, flushConsumerOffset), flushConsumerGroupId);
 
-            log.trace("Sent {} offset to TX for partition {}", commitOffset, flushPart);
+            log.trace("Sent {} offset to TX for partition {}", flushConsumerOffset, flushPart);
+
+            // The following check is needed to make sure that there is no race
+            // between this thread and any other flusher. Otherwise the following scenario may happen:
+            // we've read flush-request X, got to sleep, someone else reads flush-requests X and Y
+            // and successfully flushes them, then we wakeup, fence the previous guy and flush X once more.
+            // This flush reordering may break the state.
+            // The check just before committing the TX makes sure that either we are still own the partition
+            // or the other guy will fence us.
+            // This does not protect from "double flush"
+            if (!flushConsumer.assignment().contains(flushPart))
+                throw new ReplicaMapException("No longer own the partition: " + flushPart);
 
             dataProducer.commitTransaction();
-
             log.trace("TX committed for partition {}", dataPart);
 
             // In isTooSmallBatch method we check that the batch is not empty,
@@ -423,9 +434,9 @@ public class FlushWorker extends Worker {
                 readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, flushOffsetData);
         }
         catch (Exception e) {
-            if (Utils.isInterrupted(e) || e instanceof ReplicaMapException) {
-                log.warn("Failed to flush data for partition {}, flushOffsetData: {}, commitOffset: {}, " +
-                        "flushQueueSize: {}, reason: {}", dataPart, flushOffsetData, commitOffset,
+            if (Utils.isInterrupted(e) || e instanceof ProducerFencedException || e instanceof ReplicaMapException) {
+                log.warn("Failed to flush data for partition {}, flushOffsetData: {}, flushConsumerOffset: {}, " +
+                        "flushQueueSize: {}, reason: {}", dataPart, flushOffsetData, flushConsumerOffset,
                         flushQueue.size(), Utils.getMessage(e));
             }
             else
@@ -440,12 +451,15 @@ public class FlushWorker extends Worker {
             return false; // No other handling, the next flush will be our retry.
         }
 
-        flushOffsetOps = flushQueue.cleanCollected(collectedUpdates, collectedAll);
-        sendFlushNotification(part, flushOffsetData, flushOffsetOps);
+        long flushOffsetOps = dataBatch.getMaxOffset();
 
-        if (log.isDebugEnabled()) {
-            log.debug("Successfully flushed {} data records for partition {}, flushOffsetOps: {}, flushOffsetData: {}, flushQueueSize: {}",
-                dataBatchSize, dataPart, flushOffsetOps, flushOffsetData, flushQueue.size());
+        if (flushQueue.clean(flushOffsetOps) > 0) {
+            sendFlushNotification(part, flushOffsetData, flushOffsetOps);
+
+            if (log.isDebugEnabled()) {
+                log.debug("Successfully flushed {} data records for partition {}, flushOffsetOps: {}, flushOffsetData: {}, flushQueueSize: {}",
+                    dataBatchSize, dataPart, flushOffsetOps, flushOffsetData, flushQueue.size());
+            }
         }
 
         return true;

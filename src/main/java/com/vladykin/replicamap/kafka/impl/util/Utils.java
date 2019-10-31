@@ -20,7 +20,10 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.errors.AuthorizationException;
 import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.errors.OutOfOrderSequenceException;
+import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -176,9 +179,16 @@ public final class Utils {
                e instanceof WakeupException;
     }
 
+    public static boolean isUnrecoverable(Exception e) {
+        return e instanceof ProducerFencedException ||
+               e instanceof OutOfOrderSequenceException ||
+               e instanceof AuthorizationException;
+    }
+
     public static String getMessage(Exception e) {
+        String name = e.getClass().getSimpleName();
         String msg = e.getMessage();
-        return msg != null ? msg : e.getClass().getSimpleName();
+        return msg != null ? name + ": " + msg : name;
     }
 
     public static void maybeClose(Object c) {
@@ -216,6 +226,7 @@ public final class Utils {
         return Runtime.getRuntime().availableProcessors();
     }
 
+    // TODO inline
     public static boolean isOverMaxOffset(ConsumerRecord<?,?> rec, long maxOffset) {
         return rec.offset() > maxOffset;
     }

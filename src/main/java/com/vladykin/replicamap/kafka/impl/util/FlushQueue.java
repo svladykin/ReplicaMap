@@ -2,7 +2,7 @@ package com.vladykin.replicamap.kafka.impl.util;
 
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import java.util.ArrayDeque;
-import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.Semaphore;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
@@ -51,15 +51,22 @@ public class FlushQueue {
 
         if (lock(waitLock)) {
             try {
-                assert rec.offset() > maxAddOffset: rec.offset();
+                for (;;) {
+                    ConsumerRecord<Object,OpMessage> r = tlq.poll();
 
-                while (!tlq.isEmpty())
-                    queue.add(tlq.poll());
+                    if (r == null)
+                        break;
 
-                if (update)
-                    queue.add(rec);
+                    if (r.offset() > maxAddOffset)
+                        queue.add(r);
+                }
 
-                maxAddOffset = rec.offset();
+                if (rec.offset() > maxAddOffset) {
+                    maxAddOffset = rec.offset();
+
+                    if (update)
+                        queue.add(rec);
+                }
             }
             finally {
                 lock.release();
@@ -79,105 +86,75 @@ public class FlushQueue {
 
     /**
      * Collects update records to the given batch.
-     * Does not modify state.
+     * Does not modify the state.
      *
-     * @param dataBatch Data batch to collect records into.
-     * @param maxOffset Max offset.
-     * @return Number of all collected records and number of collected updates as a single long value.
-     * @see #collectedAll(long)
-     * @see #collectedUpdates(long)
+     * @return Collected batch.
      */
-    public long collectUpdateRecords(Map<Object,Object> dataBatch, long maxOffset) {
-        assert dataBatch.isEmpty();
-
+    public Batch collectUpdateRecords() {
         lock.acquireUninterruptibly();
         try {
-            int collectedUpdates = 0;
-            for (ConsumerRecord<Object,OpMessage> rec : queue) {
-                if (isOverMaxOffset(rec, maxOffset))
-                    break;
+            Batch dataBatch = new Batch(maxAddOffset, maxCleanOffset);
 
-                collectedUpdates++;
+            for (ConsumerRecord<Object,OpMessage> rec : queue)
                 dataBatch.put(rec.key(), rec.value().getUpdatedValue());
-            }
 
-            long collectedAll = Math.min(maxAddOffset, maxOffset) - maxCleanOffset;
-
-            if (collectedAll <= 0) {
-                assert collectedUpdates == 0;
-                return 0L;
-            }
-
-            return (collectedAll << 32) | collectedUpdates;
+            return dataBatch;
         }
         finally {
             lock.release();
         }
-    }
-
-    public static int collectedUpdates(long collectUpdateRecordsResult) {
-        return (int)collectUpdateRecordsResult;
-    }
-
-    public static int collectedAll(long collectUpdateRecordsResult) {
-        return (int)(collectUpdateRecordsResult >>> 32);
-    }
-
-    /**
-     * Cleans the flush queue for the collected updates.
-     *
-     * @param collectedUpdates Collected updates.
-     * @param collectedAll Collected all events.
-     * @return New cleaned offset of this flush queue.
-     */
-    public long cleanCollected(int collectedUpdates, int collectedAll) {
-        assert collectedUpdates >= 0 && collectedAll >= collectedUpdates;
-
-        lock.acquireUninterruptibly();
-        try {
-            for (int i = 0; i < collectedUpdates; i++)
-                queue.poll();
-
-            updateMaxCleanOffset(maxCleanOffset + collectedAll);
-
-            return maxCleanOffset;
-        }
-        finally {
-            lock.release();
-        }
-    }
-
-    @SuppressWarnings("ConstantConditions")
-    protected void updateMaxCleanOffset(long maxOffset) {
-        assert maxOffset <= maxAddOffset || queue.isEmpty(): maxOffset + " " + maxAddOffset + " " + queue.isEmpty();
-        maxCleanOffset = queue.isEmpty() ? maxAddOffset : maxOffset;
     }
 
     /**
      * Cleans the flush queue until the given max offset.
      * @param maxOffset Max offset.
-     * @return Number of cleaned updates.
+     * @return Actual number of cleaned events.
      */
-    public int clean(long maxOffset) {
+    public long clean(long maxOffset) {
         lock.acquireUninterruptibly();
         try {
-            int cleanedUpdates = 0;
+            if (maxCleanOffset >= maxOffset)
+                return 0;
+
             for (;;) {
                 ConsumerRecord<Object,OpMessage> rec = queue.peek();
 
                 if (rec == null || isOverMaxOffset(rec, maxOffset))
                     break;
 
-                cleanedUpdates++;
                 queue.poll();
             }
 
-            updateMaxCleanOffset(maxOffset);
+            long cleanedCnt = maxOffset - maxCleanOffset;
+            maxCleanOffset = maxOffset;
 
-            return cleanedUpdates;
+            if (maxCleanOffset > maxAddOffset) {
+                assert queue.isEmpty();
+                maxAddOffset = maxCleanOffset;
+            }
+
+            return cleanedCnt;
         }
         finally {
             lock.release();
+        }
+    }
+
+    public static class Batch extends HashMap<Object,Object> {
+        protected final long maxAddOffset;
+        protected final long maxCleanOffset;
+
+        public Batch(long maxAddOffset, long maxCleanOffset) {
+            this.maxAddOffset = maxAddOffset;
+            this.maxCleanOffset = maxCleanOffset;
+        }
+
+        public int getCollectedAll() {
+            return (int)(maxAddOffset - maxCleanOffset);
+        }
+
+        public long getMaxOffset() {
+            return maxAddOffset;
         }
     }
 }
