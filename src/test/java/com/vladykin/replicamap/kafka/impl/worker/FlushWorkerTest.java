@@ -167,10 +167,10 @@ class FlushWorkerTest {
 
     @Test
     void testAwaitOpsSteady() throws ExecutionException, InterruptedException {
-        assertFalse(flushWorker.awaitOpsSteady(0));
-        assertFalse(flushWorker.awaitOpsSteady(1));
+        assertFalse(flushWorker.awaitOpsWorkersSteady(0));
+        assertFalse(flushWorker.awaitOpsWorkersSteady(1));
         opsSteadyFut.complete(null);
-        assertTrue(flushWorker.awaitOpsSteady(1));
+        assertTrue(flushWorker.awaitOpsWorkersSteady(1));
     }
 
     @Test
@@ -180,11 +180,11 @@ class FlushWorkerTest {
 
         assertFalse(flushWorker.processFlushRequests(0)); // No flush requests.
 
-        flushWorker.maxFlushRequests.put(new TopicPartition(TOPIC_FLUSH, 0),
-            new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0, 0, 0));
         initFlushConsumer(101, 97);
         flushWorker.initDataProducers(singleton(flushPart));
+        flushWorker.initUnprocessedFlushRequests(flushPart);
         assertFalse(flushWorker.processFlushRequests(0)); // No data in flush queue.
+        assertFalse(flushWorker.unprocessedFlushRequests.isEmpty());
 
         FlushQueue flushQueue = flushQueues.get(0);
 
@@ -206,31 +206,29 @@ class FlushWorkerTest {
 
         assertEquals(5, flushQueue.size());
 
-        assertNull(flushWorker.flushConsumers.get(0, null));
+        flushWorker.flushConsumers.reset(0, flushConsumer);
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(101, 98);
         flushConsumer.close();
         assertFalse(flushWorker.processFlushRequests(0)); // Exception on creating the consumer.
+        assertFalse(flushWorker.unprocessedFlushRequests.isEmpty());
 
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(101, 98);
         dataProducer = new MockProducer<>();
+        flushWorker.resetDataProducers(singleton(flushPart));
         flushWorker.initDataProducers(singleton(flushPart));
         dataProducer.fenceProducer();
 
-        flushWorker.maxFlushRequests.put(new TopicPartition(TOPIC_FLUSH, 0),
-            new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0, 0, 0));
         assertFalse(flushWorker.processFlushRequests(0));
         assertFalse(dataProducer.transactionCommitted());
-        assertEquals(4, flushQueue.size());
+        assertTrue(flushWorker.unprocessedFlushRequests.isEmpty());
 
+        flushWorker.initUnprocessedFlushRequests(flushPart);
         dataProducer = new MockProducer<>();
         flushWorker.initDataProducers(singleton(flushPart));
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(101, 98);
-
-        flushWorker.maxFlushRequests.put(flushPart,
-            new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0, 0, 0));
 
         assertTrue(flushWorker.processFlushRequests(0));
         assertTrue(dataProducer.transactionCommitted());
@@ -261,6 +259,7 @@ class FlushWorkerTest {
 
         dataProducer.fenceProducer();
         initFlushConsumer(102, 101);
+        flushWorker.initUnprocessedFlushRequests(flushPart);
 
         assertEquals(1, flushQueue.size());
         assertFalse(flushWorker.processFlushRequests(0));
@@ -282,8 +281,7 @@ class FlushWorkerTest {
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(102, 101);
 
-        flushWorker.maxFlushRequests.put(flushPart,
-            new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0, 0, 0));
+        flushWorker.initUnprocessedFlushRequests(flushPart);
         assertTrue(flushWorker.processFlushRequests(0));
         assertEquals(0, flushQueue.size());
         assertEquals(1, dataProducer.history().size());
@@ -306,9 +304,16 @@ class FlushWorkerTest {
             new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0L, flushOffsetOps, 1000));
     }
 
-    private void initFlushConsumer() {
+    @Test
+    void testLoadFlushHistoryMax() {
+        flushConsumer.subscribe(singleton(TOPIC_FLUSH));
+        flushConsumer.rebalance(singletonList(flushPart));
+
+        flushConsumer.seek(flushPart, 1);
+        assertNull(flushWorker.loadFlushHistoryMax(flushConsumer, flushPart, 0));
+
         flushConsumer.addRecord(newFlushRequest(100, 1011));
-        flushConsumer.addRecord(newFlushRequest(101, 1012));
+        flushConsumer.addRecord(newFlushRequest(101, 1017));
         flushConsumer.addRecord(newFlushRequest(102, 1015));
         flushConsumer.addRecord(newFlushRequest(103, 1014));
         flushConsumer.addRecord(newFlushRequest(104, 1013));
@@ -320,51 +325,12 @@ class FlushWorkerTest {
         flushConsumer.addRecord(newFlushRequest(110, 1005));
         flushConsumer.addRecord(newFlushRequest(111, 1004));
         flushConsumer.addRecord(newFlushRequest(112, 1003));
-    }
 
-    @Test
-    void testLoadFlushHistoryMax() {
-        flushConsumer.subscribe(singleton(TOPIC_FLUSH));
-        flushConsumer.rebalance(singletonList(flushPart));
-
-        flushConsumer.seek(flushPart, 1);
-        assertNull(flushWorker.loadFlushHistoryMax(flushConsumer, flushPart,
-            newFlushRequest(0, 1000)));
-
-        initFlushConsumer();
         flushConsumer.seek(flushPart, 113);
-        OpMessage flush = flushWorker.loadFlushHistoryMax(flushConsumer, flushPart,
-            newFlushRequest(112, 1003));
+        OpMessage flush = flushWorker.loadFlushHistoryMax(flushConsumer, flushPart, 112);
         assertEquals(113, flushConsumer.position(flushPart));
 
-        assertEquals(1014, flush.getFlushOffsetOps());
-        assertNull(flushWorker.maxFlushRequests.get(flushPart));
-    }
-
-    @Test
-    void testIsMaxFlushOffset() {
-        flushConsumer.subscribe(singleton(TOPIC_FLUSH));
-        flushConsumer.rebalance(singletonList(flushPart));
-
-        assertNull(flushWorker.maxFlushRequests.get(flushPart));
-        flushConsumer.seek(flushPart, 1);
-        assertTrue(flushWorker.isMaxFlushOffset(flushConsumer, flushPart,
-            newFlushRequest(0, 1008)));
-        assertEquals(1008, flushWorker.maxFlushRequests.get(flushPart).getFlushOffsetOps());
-
-        flushWorker.maxFlushRequests.clear();
-        initFlushConsumer();
-        flushConsumer.seek(flushPart, 113);
-        assertFalse(flushWorker.isMaxFlushOffset(flushConsumer, flushPart,
-            newFlushRequest(112, 1003)));
-        assertEquals(1014, flushWorker.maxFlushRequests.get(flushPart).getFlushOffsetOps());
-
-        assertFalse(flushWorker.isMaxFlushOffset(null, flushPart,
-            newFlushRequest(112, 1014)));
-
-        assertTrue(flushWorker.isMaxFlushOffset(null, flushPart,
-            newFlushRequest(112, 1016)));
-        assertEquals(1016, flushWorker.maxFlushRequests.get(flushPart).getFlushOffsetOps());
+        assertEquals(1015, flush.getFlushOffsetOps());
     }
 
     @Test

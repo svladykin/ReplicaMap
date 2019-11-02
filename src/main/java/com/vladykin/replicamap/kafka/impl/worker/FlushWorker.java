@@ -9,10 +9,12 @@ import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -20,7 +22,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.IntFunction;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -40,7 +41,9 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
+import static java.util.Comparator.comparingLong;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Processes flush requests (flushes the collected updates to the `data` topic)
@@ -51,10 +54,8 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
 public class FlushWorker extends Worker {
     private static final Logger log = LoggerFactory.getLogger(FlushWorker.class);
 
-    protected static final Comparator<ConsumerRecord<Object,OpMessage>> FLUSH_OFFSET_OPS_CMP =
-        Comparator.comparingLong(rec -> rec.value().getFlushOffsetOps());
-    protected static final Comparator<ConsumerRecord<?,?>> OFFSET_CMP =
-        Comparator.comparingLong(ConsumerRecord::offset);
+    protected static final Comparator<ConsumerRecord<?,?>> RECORD_OFFSET_CMP =
+        comparingLong(ConsumerRecord::offset);
 
     protected final long clientId;
 
@@ -86,7 +87,7 @@ public class FlushWorker extends Worker {
     protected final long maxPollTimeout;
     protected final long readBackTimeout;
 
-    protected final Map<TopicPartition, OpMessage> maxFlushRequests = new HashMap<>();
+    protected final Map<TopicPartition,TreeSet<OpMessage>> unprocessedFlushRequests = new HashMap<>();
 
     public FlushWorker(
         long clientId,
@@ -182,7 +183,28 @@ public class FlushWorker extends Worker {
         }
     }
 
-    protected boolean awaitOpsSteady(long pollTimeoutMs) throws ExecutionException, InterruptedException {
+    protected void clearUnprocessedFlushRequestsUntil(TopicPartition flushPart, long maxOffsetOps) {
+        TreeSet<OpMessage> flushRequests = unprocessedFlushRequests.get(flushPart);
+
+        if (flushRequests == null)
+            return;
+
+        Iterator<OpMessage> iter = flushRequests.iterator();
+
+        while (iter.hasNext()) {
+            OpMessage request = iter.next();
+
+            if (request.getFlushOffsetOps() > maxOffsetOps)
+                break;
+
+            iter.remove();
+        }
+
+        if (flushRequests.isEmpty())
+            unprocessedFlushRequests.remove(flushPart, flushRequests);
+    }
+
+    protected boolean awaitOpsWorkersSteady(long pollTimeoutMs) throws ExecutionException, InterruptedException {
         try {
             opsSteadyFut.get(pollTimeoutMs, TimeUnit.MILLISECONDS);
         }
@@ -195,7 +217,7 @@ public class FlushWorker extends Worker {
     protected boolean processFlushRequests(long pollTimeoutMs) throws InterruptedException, ExecutionException {
         // We start consuming flush requests only when the ops workers are steady,
         // because otherwise we may have not enough data to flush.
-        if (!awaitOpsSteady(pollTimeoutMs))
+        if (!awaitOpsWorkersSteady(pollTimeoutMs))
             return false;
 
         Consumer<Object,OpMessage> flushConsumer;
@@ -212,24 +234,58 @@ public class FlushWorker extends Worker {
         ConsumerRecords<Object,OpMessage> recs;
         try {
             recs = flushConsumer.poll(millis(pollTimeoutMs));
+
+            // Add new records to unprocessed set and load history if it is the first flush for the partition.
+            for (TopicPartition flushPart : recs.partitions()) {
+                List<ConsumerRecord<Object,OpMessage>> partRecs = recs.records(flushPart);
+
+                TreeSet<OpMessage> flushRequests = unprocessedFlushRequests.get(flushPart);
+
+                // If it is the first batch of records for this partition we need to initialize the processing for it.
+                if (flushRequests == null) {
+                    // Load flush history and clean the flushQueue until the max historical offset,
+                    // after that even if the OpsWorker is behind the flushQueue will not accept outdated records.
+                    // We do not need to keep the history and can safely assume that no double flushes will happen.
+                    OpMessage maxHistoryReq = loadFlushHistoryMax(flushConsumer, flushPart, partRecs.get(0).offset());
+                    if (maxHistoryReq != null)
+                        flushQueues.get(flushPart.partition()).clean(maxHistoryReq.getFlushOffsetOps());
+
+                    flushRequests = initUnprocessedFlushRequests(flushPart);
+                }
+
+                for (ConsumerRecord<Object,OpMessage> rec : partRecs)
+                    flushRequests.add(rec.value());
+            }
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
                 log.error("Failed to poll flush consumer for topic " + flushTopic, e);
 
-            flushConsumers.reset(workerId, flushConsumer);
+            resetFlushConsumer(flushConsumer);
             return false;
         }
 
-        if (recs.isEmpty())
-            return false;
-
         boolean flushed = false;
 
-        for (TopicPartition flushPart : recs.partitions())
-             flushed |= flushPartition(flushConsumer, flushPart, recs.records(flushPart));
+        // Try process the unprocessed set.
+        for (Map.Entry<TopicPartition,TreeSet<OpMessage>> entry : unprocessedFlushRequests.entrySet())
+             flushed |= flushPartition(flushConsumer, entry.getKey(), entry.getValue());
 
         return flushed;
+    }
+
+    protected void resetFlushConsumer(Consumer<Object,OpMessage> flushConsumer) {
+        if (flushConsumer != null && flushConsumers.reset(workerId, flushConsumer))
+            unprocessedFlushRequests.clear();
+    }
+
+    protected TreeSet<OpMessage> initUnprocessedFlushRequests(TopicPartition flushPart) {
+        TreeSet<OpMessage> flushRequests = new TreeSet<>(comparingLong(OpMessage::getFlushOffsetOps));
+
+        if (unprocessedFlushRequests.put(flushPart, flushRequests) != null)
+            throw new IllegalStateException("Flush requests already initialized for partition: " + flushPart);
+
+        return flushRequests;
     }
 
     protected boolean isTooSmallBatch(int batchSize, int collectedAll) {
@@ -237,104 +293,73 @@ public class FlushWorker extends Worker {
         return batchSize == 0 || collectedAll < flushMinOps;
     }
 
-    protected boolean isMaxFlushOffset(
-        Consumer<Object,OpMessage> flushConsumer,
-        TopicPartition flushPart,
-        ConsumerRecord<Object,OpMessage> flushRequest
-    ) {
-        OpMessage flushOp = flushRequest.value();
-        OpMessage maxOp = maxFlushRequests.get(flushPart);
-
-        if (maxOp == null) {
-            try {
-                maxOp = loadFlushHistoryMax(flushConsumer, flushPart, flushRequest);
-            }
-            catch (Exception e) {
-                if (!Utils.isInterrupted(e))
-                    log.error("Failed to load history for partition: " + flushPart, e);
-
-                flushConsumers.reset(workerId, flushConsumer);
-                return false;
-            }
-
-            if (maxOp == null) {
-                maxFlushRequests.put(flushPart, flushOp);
-                return true;
-            }
-            maxFlushRequests.put(flushPart, maxOp);
-        }
-
-        if (maxOp.getFlushOffsetOps() >= flushOp.getFlushOffsetOps())
-            return false;
-
-        maxFlushRequests.put(flushPart, flushOp);
-        return true;
-    }
-
     protected OpMessage loadFlushHistoryMax(
         Consumer<Object,OpMessage> flushConsumer,
         TopicPartition flushPart,
-        ConsumerRecord<Object,OpMessage> req
+        long maxOffset
     ) {
         long currentPosition = flushConsumer.position(flushPart);
-        assert currentPosition >= req.offset() + 1;
-        long startOffset = currentPosition - historyFlushRecords;
+        assert currentPosition >= maxOffset + 1: currentPosition + " " + maxOffset;
 
+        long startOffset = maxOffset - historyFlushRecords;
         if (startOffset < 0)
             startOffset = 0;
-
         flushConsumer.seek(flushPart, startOffset);
+
+        Comparator<ConsumerRecord<Object,OpMessage>> cmpFlushOffsetOps =
+            comparingLong(r -> r.value().getFlushOffsetOps());
 
         ConsumerRecord<Object,OpMessage> max = null;
 
-        while (flushConsumer.position(flushPart) < req.offset()) {
-            List<ConsumerRecord<Object,OpMessage>> flushRecs =
-                flushConsumer.poll(seconds(1)).records(flushPart);
+        while (flushConsumer.position(flushPart) < maxOffset) {
+            List<ConsumerRecord<Object,OpMessage>> flushRecs = flushConsumer.poll(seconds(1))
+                .records(flushPart);
 
             if (flushRecs.isEmpty())
                 continue;
 
             flushRecs = flushRecs.stream()
-                .filter(r -> OFFSET_CMP.compare(r, req) < 0)
-                .collect(Collectors.toList());
+                .filter(r -> r.offset() < maxOffset)
+                .collect(toList());
 
             if (flushRecs.isEmpty())
                 break;
 
-            ConsumerRecord<Object,OpMessage> newMax = findMax(flushRecs, FLUSH_OFFSET_OPS_CMP);
-            if (max == null || FLUSH_OFFSET_OPS_CMP.compare(max, newMax) < 0)
-                max = newMax;
+            ConsumerRecord<Object,OpMessage> nextMax = findMax(flushRecs, cmpFlushOffsetOps);
+
+            if (max == null || cmpFlushOffsetOps.compare(max, nextMax) < 0)
+                max = nextMax;
         }
 
         flushConsumer.seek(flushPart, currentPosition);
-
         return max == null ? null : max.value();
     }
 
     protected boolean flushPartition(
         Consumer<Object,OpMessage> flushConsumer,
         TopicPartition flushPart,
-        List<ConsumerRecord<Object,OpMessage>> flushRecs
+        TreeSet<OpMessage> flushRequests
     ) {
+        if (flushRequests.isEmpty())
+            throw new IllegalStateException("No flush requests to process for partition " + flushPart);
+
         // Here we must not modify any local state until transaction is successfully committed.
         int part = flushPart.partition();
         TopicPartition dataPart = new TopicPartition(dataTopic, part);
 
-        ConsumerRecord<Object,OpMessage> flushRequest = findMax(flushRecs, FLUSH_OFFSET_OPS_CMP);
-
-        if (!isMaxFlushOffset(flushConsumer, flushPart, flushRequest))
-            return false; // ignore racy flush request
-
-        log.debug("Processing flush request {} for partition {}", flushRequest, dataPart);
+        log.debug("Processing flush requests {} for partition {}", flushRequests, dataPart);
 
         FlushQueue flushQueue = flushQueues.get(part);
 
-        long cleanOffsetOps = flushRequest.value().getCleanOffsetOps();
-        if (cleanOffsetOps >= 0)
-            flushQueue.clean(cleanOffsetOps);
+        flushQueue.clean(flushRequests.stream()
+            .mapToLong(OpMessage::getCleanOffsetOps).max().getAsLong());
 
-        long flushOffsetOps = flushRequest.value().getFlushOffsetOps();
-        FlushQueue.Batch dataBatch = flushQueue.collect(flushOffsetOps);
+        FlushQueue.Batch dataBatch = flushQueue.collect(flushRequests.stream()
+            .mapToLong(OpMessage::getFlushOffsetOps));
+
+        if (dataBatch == null)
+            return false; // No enough data.
+
         int dataBatchSize = dataBatch.size();
         int collectedAll = dataBatch.getCollectedAll();
 
@@ -349,10 +374,10 @@ public class FlushWorker extends Worker {
             Utils.requireNonNull(dataProducer, "dataProducer");
         }
         catch (Exception e) {
-            if (!Utils.isInterrupted(e))
+            if (!Utils.isInterrupted(e) && !(e instanceof ReplicaMapException))
                 log.error("Failed to get data producer for partition " + dataPart, e);
 
-            flushConsumers.reset(workerId, flushConsumer); // Initiate partition rebalance.
+            resetFlushConsumer(flushConsumer); // Initiate partition rebalance.
             return false; // The next flush will be our retry.
         }
 
@@ -368,10 +393,10 @@ public class FlushWorker extends Worker {
                 }
 
                 // Looks like we are far behind, let someone else to handle flushes.
-                if (dataBatchSize == 0) {
+                if (dataBatchSize == 0 && flushRequests.size() > 1) {
                     throw new ReplicaMapException("The collected batch is empty, we are too far behind" +
                         ", flushQueueSize: " + flushQueue.size() +
-                        ", flushRequest: " + flushRequest
+                        ", flushRequests: " + flushRequests
                     );
                 }
 
@@ -439,7 +464,7 @@ public class FlushWorker extends Worker {
                 log.error("Failed to flush data for partition " + dataPart + ", exception:", e);
 
             dataProducers.reset(part, dataProducer); // Producer may be broken, needs to be recreated.
-            flushConsumers.reset(workerId, flushConsumer); // Initiate partition rebalance: maybe other flusher will be luckier.
+            resetFlushConsumer(flushConsumer); // Initiate partition rebalance: maybe other flusher will be luckier.
 
             if (dataConsumer != null)
                 dataConsumers.reset(workerId, dataConsumer);
@@ -447,13 +472,13 @@ public class FlushWorker extends Worker {
             return false; // No other handling, the next flush will be our retry.
         }
 
-        flushOffsetOps = dataBatch.getMaxOffset();
-
+        long flushOffsetOps = dataBatch.getMaxOffset();
+        clearUnprocessedFlushRequestsUntil(flushPart, flushOffsetOps);
         if (flushQueue.clean(flushOffsetOps) > 0) {
             sendFlushNotification(part, flushOffsetData, flushOffsetOps);
-
             if (log.isDebugEnabled()) {
-                log.debug("Successfully flushed {} data records for partition {}, flushOffsetOps: {}, flushOffsetData: {}, flushQueueSize: {}",
+                log.debug("Successfully flushed {} data records for partition {}, flushOffsetOps: {}" +
+                        ", flushOffsetData: {}, flushQueueSize: {}",
                     dataBatchSize, dataPart, flushOffsetOps, flushOffsetData, flushQueue.size());
             }
         }
@@ -556,12 +581,18 @@ public class FlushWorker extends Worker {
         return dataConsumerFactory.get();
     }
 
-    protected void clearMaxFlushRequests(Collection<TopicPartition> partitions) {
-        for (TopicPartition part : partitions)
-            maxFlushRequests.remove(part);
+    protected void clearUnprocessedFlushRequests(Collection<TopicPartition> flushPartitions) {
+        log.debug("Clearing unprocessed flush requests for partitions: {}", flushPartitions);
+        for (TopicPartition part : flushPartitions)
+            unprocessedFlushRequests.remove(part);
     }
 
     protected void initDataProducers(Collection<TopicPartition> flushPartitions) {
+        if (log.isDebugEnabled()) {
+            log.debug("Initializing data producers for partitions: {}", flushPartitions.stream()
+                .map(p -> new TopicPartition(dataTopic, p.partition())).collect(toList()));
+        }
+
         for (TopicPartition partition : flushPartitions) {
             int part = partition.partition();
 
@@ -573,6 +604,11 @@ public class FlushWorker extends Worker {
     }
 
     protected void resetDataProducers(Collection<TopicPartition> flushPartitions) {
+        if (log.isDebugEnabled()) {
+            log.debug("Resetting data producers for partitions: {}", flushPartitions.stream()
+                .map(p -> new TopicPartition(dataTopic, p.partition())).collect(toList()));
+        }
+
         for (TopicPartition partition : flushPartitions) {
             int part = partition.partition();
 
@@ -584,22 +620,21 @@ public class FlushWorker extends Worker {
     }
 
     /**
-     * We need to clean the cached max flush request here and reload the history
-     * when the partition will be ours again because otherwise we may miss
-     * flush requests with greater offsets that were processed by other clients.
+     * We initialize transactional data producer in the listener to make sure
+     * it happens before the fetch, otherwise races are possible on rebalancing.
      */
     protected class MaxFlushRequestsCleaner implements ConsumerRebalanceListener {
         @Override
         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
             log.debug("Flush partitions assigned: {}", partitions);
-            clearMaxFlushRequests(partitions);
+            clearUnprocessedFlushRequests(partitions);
             initDataProducers(partitions);
         }
 
         @Override
         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
             log.debug("Flush partitions revoked: {}", partitions);
-            clearMaxFlushRequests(partitions);
+            clearUnprocessedFlushRequests(partitions);
             resetDataProducers(partitions);
         }
     }

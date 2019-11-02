@@ -3,7 +3,9 @@ package com.vladykin.replicamap.kafka.impl.util;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.OptionalLong;
 import java.util.concurrent.Semaphore;
+import java.util.stream.LongStream;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
@@ -88,13 +90,21 @@ public class FlushQueue {
      * Collects records to the given batch.
      * Does not modify the state.
      *
-     * @param maxOffset Max offset to collect (inclusive).
+     * @param maxOffsets Max offsets to collect (inclusive). The stream is expected to be sorted.
      * @return Collected batch.
      */
-    public Batch collect(long maxOffset) {
+    public Batch collect(LongStream maxOffsets) {
         lock.acquireUninterruptibly();
         try {
-            Batch dataBatch = new Batch(maxOffset, maxAddOffset, maxCleanOffset);
+            OptionalLong maxOffsetOptional = maxOffsets
+                .filter(offset -> offset <= maxAddOffset)
+                .max();
+
+            if (!maxOffsetOptional.isPresent())
+                return null;
+
+            long maxOffset = maxOffsetOptional.getAsLong();
+            Batch dataBatch = new Batch(maxOffset, maxCleanOffset);
 
             for (ConsumerRecord<Object,OpMessage> rec : queue) {
                 if (isOverMaxOffset(rec, maxOffset))
@@ -149,9 +159,9 @@ public class FlushQueue {
         protected final long maxOffset;
         protected final int collectedAll;
 
-        public Batch(long maxOffset, long maxAddOffset, long maxCleanOffset) {
-            this.maxOffset = Math.min(maxOffset, maxAddOffset);
-            this.collectedAll = (int)Math.max(0, this.maxOffset - maxCleanOffset);
+        public Batch(long maxOffset, long maxCleanOffset) {
+            this.maxOffset = maxOffset;
+            this.collectedAll = (int)Math.max(0, maxOffset - maxCleanOffset);
         }
 
         public int getCollectedAll() {

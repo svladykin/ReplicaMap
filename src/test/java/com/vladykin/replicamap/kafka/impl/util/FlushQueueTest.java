@@ -11,12 +11,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.LongStream;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_PUT;
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FlushQueueTest {
@@ -34,7 +36,10 @@ class FlushQueueTest {
         assertEquals(0, q.maxAddOffset);
         assertEquals(1, q.queue.size());
 
-        FlushQueue.Batch batch = q.collect(1);
+        FlushQueue.Batch batch = q.collect(iterator(1));
+        assertNull(batch);
+
+        batch = q.collect(iterator(0));
         int collectedAll = batch.getCollectedAll();
 
         assertEquals(1, q.size());
@@ -74,7 +79,7 @@ class FlushQueueTest {
         assertEquals(7, q.maxAddOffset);
         assertEquals(5, q.queue.size());
 
-        batch = q.collect(7);
+        batch = q.collect(iterator(7));
         collectedAll = batch.getCollectedAll();
 
         assertEquals(7, collectedAll);
@@ -116,6 +121,10 @@ class FlushQueueTest {
         assertEquals(10, q.maxCleanOffset);
         assertEquals(10, q.maxAddOffset);
         assertEquals(0, q.queue.size());
+    }
+
+    LongStream iterator(long... x) {
+        return LongStream.of(x);
     }
 
     @Test
@@ -178,7 +187,10 @@ class FlushQueueTest {
                     start.await();
 
                     while (!addFut.isDone() || q.size() > 0) {
-                        FlushQueue.Batch batch = q.collect(lastAddedOffset.get());
+                        FlushQueue.Batch batch = q.collect(iterator(lastAddedOffset.get()));
+
+                        if (batch == null)
+                            continue;
 
                         int collectedAll = batch.getCollectedAll();
                         assertTrue(collectedAll >= batch.size());
