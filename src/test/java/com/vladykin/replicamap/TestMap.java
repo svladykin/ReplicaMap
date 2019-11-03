@@ -3,6 +3,7 @@ package com.vladykin.replicamap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 
 public class TestMap<K,V> implements ReplicaMap<K,V> {
     private Object id;
@@ -98,6 +99,23 @@ public class TestMap<K,V> implements ReplicaMap<K,V> {
             fut.completeExceptionally(e);
         }
         return fut;
+    }
+
+    @Override
+    public CompletableFuture<V> asyncCompute(K key, BiFunction<? super K,? super V,? extends V> remappingFunction) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<V> asyncComputeIfPresent(K key,
+        BiFunction<? super K,? super V,? extends V> remappingFunction) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<V> asyncMerge(K key, V value,
+        BiFunction<? super V,? super V,? extends V> remappingFunction) {
+        throw new UnsupportedOperationException();
     }
 
     @Override

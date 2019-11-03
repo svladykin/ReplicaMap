@@ -220,6 +220,7 @@ class FlushQueueTest {
     }
 
     public static ConsumerRecord<Object,OpMessage> newRecord(long offset) {
-        return new ConsumerRecord<>("", 0, offset, offset, new OpMessage(OP_PUT, 777, 100500, null, offset));
+        return new ConsumerRecord<>("", 0, offset, offset,
+            new OpMessage(OP_PUT, 777, 100500, null, offset, null));
     }
 }

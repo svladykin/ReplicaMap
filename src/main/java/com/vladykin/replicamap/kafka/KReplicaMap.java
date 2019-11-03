@@ -7,6 +7,7 @@ import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiFunction;
 
 /**
  * Implementation of {@link ReplicaMap} over Kafka.
@@ -46,8 +47,14 @@ public class KReplicaMap<K,V> extends ReplicaMapBase<K,V> {
         K key,
         V exp,
         V upd,
+        BiFunction<?,?,?> function,
         FailureCallback onSendFailed
     ) {
-        manager.sendUpdate(this, opId, updateType, key, exp, upd, onSendFailed);
+        manager.sendUpdate(this, opId, updateType, key, exp, upd, function, onSendFailed);
+    }
+
+    @Override
+    protected boolean canSendFunction(BiFunction<?,?,?> function) {
+        return manager.canSendFunction(function);
     }
 }

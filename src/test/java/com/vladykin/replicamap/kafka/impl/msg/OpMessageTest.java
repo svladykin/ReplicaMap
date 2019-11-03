@@ -2,6 +2,7 @@ package com.vladykin.replicamap.kafka.impl.msg;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.function.BiFunction;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serializer;
 import org.junit.jupiter.api.Test;
@@ -29,18 +30,19 @@ class OpMessageTest {
 
         String v1 = "abcxyz";
         String v2 = "qwerty";
+        BiFunction<?,?,?> function = null;
 
-        OpMessage msg = new OpMessage((byte)1, clientId, 1, v1, v2);
+        OpMessage msg = new OpMessage((byte)1, clientId, 1, v1, v2, function);
         byte[] msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 6, msgBytes.length);
         assertEquals(msg, des.deserialize(null, msgBytes));
 
-        msg = new OpMessage((byte)1, clientId, 1, null, v2);
+        msg = new OpMessage((byte)1, clientId, 1, null, v2, function);
         msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 0 + 1 + 6, msgBytes.length);
         assertEquals(msg, des.deserialize(null, msgBytes));
 
-        msg = new OpMessage((byte)1, clientId, 1, v1, null);
+        msg = new OpMessage((byte)1, clientId, 1, v1, null, function);
         msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 0, msgBytes.length);
         assertEquals(msg, des.deserialize(null, msgBytes));

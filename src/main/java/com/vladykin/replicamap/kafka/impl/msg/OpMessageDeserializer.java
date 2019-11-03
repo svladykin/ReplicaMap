@@ -66,7 +66,8 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
             ByteUtils.readVarlong(buf),
             ByteUtils.readVarlong(buf),
             readValue(topic, headers, buf),
-            readValue(topic, headers, buf)
+            readValue(topic, headers, buf),
+            null // FIXME
         );
     }
 

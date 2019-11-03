@@ -45,7 +45,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class FlushWorkerTest {
-    static final int FLUSH_MIN_OPS = 1;
     static final int HISTORY_RECS = 10;
     static final long MAX_POLL_TIMEOUT = 20;
     static final long READ_BACK_TIMEOUT = 100;
@@ -88,7 +87,6 @@ class FlushWorkerTest {
             CLIENT1_ID, TOPIC_DATA, TOPIC_OPS, TOPIC_FLUSH,
             0,
             "flush-consumer-group-id",
-            FLUSH_MIN_OPS,
             HISTORY_RECS,
             dataProducers,
             opsProducer,
@@ -189,19 +187,19 @@ class FlushWorkerTest {
         FlushQueue flushQueue = flushQueues.get(0);
 
         flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 98, "a",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "a")),
+                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "a", null)),
             true, true);
         flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 99, "b",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "b")),
+                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "b", null)),
             true, true);
         flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 100, "a",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "x")),
+                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "x", null)),
             true, true);
         flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 101, "b",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "y")),
+                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "y", null)),
             true, true);
         flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 102, "a",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "z")),
+                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "z", null)),
             true, true);
 
         assertEquals(5, flushQueue.size());

@@ -25,7 +25,6 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DATA_TOPIC;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MIN_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
@@ -53,7 +52,6 @@ class KReplicaMapManagerMultithreadedPutSimpleTest {
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
 
         cfg.put(FLUSH_PERIOD_OPS, 50);
-        cfg.put(FLUSH_MIN_OPS, 10);
 
         cfg.put(DATA_TOPIC, "data");
         cfg.put(OPS_TOPIC, "ops");

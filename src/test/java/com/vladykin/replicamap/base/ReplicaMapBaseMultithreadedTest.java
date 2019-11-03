@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
@@ -381,7 +382,7 @@ public class ReplicaMapBaseMultithreadedTest {
                 while (!Thread.interrupted()) {
                     TestReplicaMapUpdate<K,V> upd = s.get();
                     if (upd != null) {
-                        onReceiveUpdate(upd.srcId.equals(this.id), upd.opId, upd.updateType, upd.key, upd.exp, upd.upd);
+                        onReceiveUpdate(upd.srcId.equals(this.id), upd.opId, upd.updateType, upd.key, upd.exp, upd.upd, null);
                         numAppliedOps.incrementAndGet();
                     }
                 }
@@ -401,7 +402,7 @@ public class ReplicaMapBaseMultithreadedTest {
         }
 
         @Override
-        protected void sendUpdate(long opId, byte updateType, K key, V exp, V upd, FailureCallback callback) {
+        protected void sendUpdate(long opId, byte updateType, K key, V exp, V upd, BiFunction<?,?,?> function, FailureCallback callback) {
             if (failOps.remove(opId)) {
                 if (ThreadLocalRandom.current().nextBoolean())
                     throw new TestException();
@@ -413,7 +414,7 @@ public class ReplicaMapBaseMultithreadedTest {
                     return;
             }
 
-            super.sendUpdate(opId, updateType, key, exp, upd, callback);
+            super.sendUpdate(opId, updateType, key, exp, upd, function, callback);
             numSentOps.incrementAndGet();
         }
 

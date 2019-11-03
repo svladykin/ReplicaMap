@@ -18,9 +18,8 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_S
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MIN_OPS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -67,7 +66,6 @@ class KReplicaMapManagerSimpleTest {
         HashMap<String,Object> cfg = new HashMap<>();
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
         cfg.put(FLUSH_PERIOD_OPS, 4);
-        cfg.put(FLUSH_MIN_OPS, 1);
         cfg.put(FLUSH_MAX_POLL_TIMEOUT_MS, 1L);
         return cfg;
     }

@@ -5,14 +5,18 @@ import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapListener;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +43,11 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
     public static final byte OP_REMOVE_ANY = 'r';
     public static final byte OP_REMOVE_EXACT = 'R';
+
+    public static final byte OP_COMPUTE = 'x';
+    public static final byte OP_COMPUTE_IF_PRESENT = 'X';
+
+    public static final byte OP_MERGE = 'm';
 
     public static final byte OP_FLUSH_REQUEST = 'f';
     public static final byte OP_FLUSH_NOTIFICATION = 'F';
@@ -123,6 +132,83 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         return new RemoveExact<>(this, key, value).start();
     }
 
+    @Override
+    public CompletableFuture<V> asyncCompute(K key, BiFunction<? super K,? super V,? extends V> remappingFunction) {
+        checkCanSendFunction(remappingFunction);
+        return new Compute<>(this, key, remappingFunction).start();
+    }
+
+    @Override
+    public CompletableFuture<V> asyncComputeIfPresent(
+        K key,
+        BiFunction<? super K,? super V,? extends V> remappingFunction
+    ) {
+        checkCanSendFunction(remappingFunction);
+        return new ComputeIfPresent<>(this, key, remappingFunction).start();
+    }
+
+    @Override
+    public CompletableFuture<V> asyncMerge(
+        K key,
+        V value,
+        BiFunction<? super V,? super V,? extends V> remappingFunction
+    ) {
+        checkCanSendFunction(remappingFunction);
+        return new Merge<>(this, key, value, remappingFunction).start();
+    }
+
+    @Override
+    public V compute(K key, BiFunction<? super K,? super V,? extends V> remappingFunction) {
+        if (canSendNonNullFunction(remappingFunction)) {
+            try {
+                return asyncCompute(key, remappingFunction).get();
+            }
+            catch (InterruptedException | ExecutionException e) {
+                throw new ReplicaMapException(e);
+            }
+        }
+
+        return ReplicaMap.super.compute(key, remappingFunction);
+    }
+
+    @Override
+    public V computeIfAbsent(K key, Function<? super K,? extends V> mappingFunction) {
+        try {
+            return asyncComputeIfAbsent(key, mappingFunction).get();
+        }
+        catch (InterruptedException | ExecutionException e) {
+            throw new ReplicaMapException(e);
+        }
+    }
+
+    @Override
+    public V computeIfPresent(K key, BiFunction<? super K,? super V,? extends V> remappingFunction) {
+        if (canSendNonNullFunction(remappingFunction)) {
+            try {
+                return asyncComputeIfPresent(key, remappingFunction).get();
+            }
+            catch (InterruptedException | ExecutionException e) {
+                throw new ReplicaMapException(e);
+            }
+        }
+
+        return ReplicaMap.super.computeIfPresent(key, remappingFunction);
+    }
+
+    @Override
+    public V merge(K key, V value, BiFunction<? super V,? super V,? extends V> remappingFunction) {
+        if (canSendNonNullFunction(remappingFunction)) {
+            try {
+                return asyncMerge(key, value, remappingFunction).get();
+            }
+            catch (InterruptedException | ExecutionException e) {
+                throw new ReplicaMapException(e);
+            }
+        }
+
+        return ReplicaMap.super.merge(key, value, remappingFunction);
+    }
+
     /**
      * Must be called by the external processor of the updates queue.
      *
@@ -136,14 +222,23 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
      * @param key Key.
      * @param exp Expected value or {@code null} if none.
      * @param upd New value or {@code null} if none.
+     * @param function Function to apply.
      * @return {@code true} If the map was actually updated, {@code false} if not.
      */
     @SuppressWarnings({"unchecked", "UnusedReturnValue"})
-    public boolean onReceiveUpdate(boolean myUpdate, long opId, byte updateType, K key, V exp, V upd) {
+    public boolean onReceiveUpdate(
+        boolean myUpdate,
+        long opId,
+        byte updateType,
+        K key,
+        V exp,
+        V upd,
+        BiFunction<?,?,?> function
+    ) {
         Object result = null;
         Throwable ex = null;
-        boolean updated = false;
-        V old = exp;
+        boolean updated;
+        V old;
 
         Map<K,V> m = map;
 
@@ -157,34 +252,58 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
                 case OP_PUT_IF_ABSENT:
                     result = m.putIfAbsent(key, upd);
-                    updated = result == null;
+                    old = (V)result;
+                    updated = old == null;
                     break;
 
                 case OP_REPLACE_EXACT:
                     result = m.replace(key, exp, upd);
+                    old = exp;
                     updated = (boolean)result;
                     break;
 
                 case OP_REPLACE_ANY:
                     result = m.replace(key, upd);
                     old = (V)result;
-                    updated = result != null;
+                    updated = old != null;
                     break;
 
                 case OP_REMOVE_ANY:
                     result = m.remove(key);
                     old = (V)result;
-                    updated = result != null;
+                    updated = old != null;
                     break;
 
                 case OP_REMOVE_EXACT:
                     result = m.remove(key, exp);
+                    old = exp;
                     updated = (boolean)result;
+                    break;
+
+                case OP_COMPUTE:
+                    old = m.get(key);
+                    result = m.compute(key, (BiFunction<? super K,? super V,? extends V>)function);
+                    updated = wasUpdated(old, result, function);
+                    break;
+
+                case OP_COMPUTE_IF_PRESENT:
+                    old = m.get(key);
+                    result = m.computeIfPresent(key, (BiFunction<? super K,? super V,? extends V>)function);
+                    updated = wasUpdated(old, result, function);
+                    break;
+
+                case OP_MERGE:
+                    old = m.get(key);
+                    result = m.merge(key, upd, (BiFunction<? super V,? super V,? extends V>)function);
+                    updated = wasUpdated(old, result, function);
                     break;
 
                 default:
                     assert !myUpdate;
                     log.warn("Unexpected op type: {}", (char)updateType);
+                    old = null;
+                    result = null;
+                    updated = false;
             }
         }
         catch (Exception e) {
@@ -208,6 +327,13 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         return updated;
     }
 
+    protected boolean wasUpdated(Object oldValue, Object newValue, BiFunction<?,?,?> function) {
+        if (function instanceof WasUpdated)
+            return ((WasUpdated)function).wasUpdated();
+
+        return !Objects.equals(oldValue, newValue);
+    }
+
     protected void onMapUpdate(boolean myUpdate, K key, V old, V upd) {
         ReplicaMapListener<K,V> lsnr = getListener();
 
@@ -223,11 +349,17 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
     protected void doSendUpdate(AsyncOp<?,K,V> op) {
         try {
-            sendUpdate(op.opKey.opId, op.updateType, op.opKey.key, op.exp, op.upd, op);
+            sendUpdate(op.opKey.opId, op.updateType, op.opKey.key, op.exp, op.upd, op.function, op);
         }
         catch (Exception e) {
             op.onError(e);
         }
+    }
+
+    protected void checkCanSendFunction(BiFunction<?,?,?> remappingFunction) {
+        if (!canSendNonNullFunction(remappingFunction))
+            throw new ReplicaMapException(
+                "Async API is unavailable for functions that can not be sent: " + remappingFunction);
     }
 
     protected void beforeStart(AsyncOp<?,K,V> op) {
@@ -258,6 +390,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
      * @param key Key.
      * @param exp Expected value or {@code null} if none.
      * @param upd New value or {@code null} if none.
+     * @param function Function to send.
      * @param onSendFailed Callback for asynchronous send failure handling.
      * @throws Exception If failed.
      */
@@ -267,8 +400,20 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         K key,
         V exp,
         V upd,
+        BiFunction<?,?,?> function,
         FailureCallback onSendFailed
     ) throws Exception;
+
+    /**
+     * @param function Function to send.
+     * @return {@code true} If this map supports sending functions.
+     */
+    protected abstract boolean canSendFunction(BiFunction<?,?,?> function);
+
+    protected boolean canSendNonNullFunction(BiFunction<?,?,?> remappingFunction) {
+        Utils.requireNonNull(remappingFunction, "remappingFunction");
+        return canSendFunction(remappingFunction);
+    }
 
     protected long nextOpId() {
         return LAST_OP_ID.incrementAndGet(this);
@@ -307,7 +452,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
             '}';
     }
 
-    protected static abstract class AsyncOp<X,K,V> extends CompletableFuture<X> implements FailureCallback {
+    protected static abstract class AsyncOp<R,K,V> extends CompletableFuture<R> implements FailureCallback {
         protected static final AtomicReferenceFieldUpdater<AsyncOp, OpState> STATE =
             AtomicReferenceFieldUpdater.newUpdater(AsyncOp.class, OpState.class, "state");
 
@@ -315,17 +460,26 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         protected final byte updateType;
         protected final V exp;
         protected final V upd;
+        protected final BiFunction<?,?,?> function;
 
         protected volatile OpState state;
         protected final ReplicaMapBase<K,V> map;
 
-        public AsyncOp(ReplicaMapBase<K,V> map, byte updateType, K key, V exp, V upd) {
+        public AsyncOp(
+            ReplicaMapBase<K,V> map,
+            byte updateType,
+            K key,
+            V exp,
+            V upd,
+            BiFunction<?,?,?> function
+        ) {
             Utils.requireNonNull(key, "key");
 
             this.map = map;
             this.updateType = updateType;
             this.exp = exp;
             this.upd = upd;
+            this.function = function;
             opKey = new OpKey<>(key, map.nextOpId());
         }
 
@@ -335,7 +489,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
         protected abstract boolean checkPrecondition(boolean releaseOnFail);
 
-        public AsyncOp<X,K,V> start() {
+        public AsyncOp<R,K,V> start() {
             try {
                 map.beforeStart(this);
             }
@@ -378,7 +532,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
             finish(null, th, true);
         }
 
-        public void finish(X x, Throwable th, boolean release) {
+        public void finish(R result, Throwable error, boolean release) {
             for (;;) {
                 OpState s = state;
 
@@ -394,10 +548,10 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
                 map.opsSemaphore.release();
             }
 
-            if (th == null)
-                complete(x);
+            if (error == null)
+                complete(result);
             else if (!isDone())
-                completeExceptionally(map.wrapOpError(this, th, opKey.key));
+                completeExceptionally(map.wrapOpError(this, error, opKey.key));
         }
     }
 
@@ -407,8 +561,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
     protected static class Put<K,V> extends AsyncOp<V,K,V> {
         public Put(ReplicaMapBase<K,V> m, K key, V value) {
-            super(m, OP_PUT, key, null,
-                Utils.requireNonNull(value, "value"));
+            super(m, OP_PUT, key, null, Utils.requireNonNull(value, "value"), null);
         }
 
         @Override
@@ -425,8 +578,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
     protected static class PutIfAbsent<K,V> extends AsyncOp<V,K,V> {
         public PutIfAbsent(ReplicaMapBase<K,V> m, K key, V value) {
-            super(m, OP_PUT_IF_ABSENT, key, null,
-                Utils.requireNonNull(value, "value"));
+            super(m, OP_PUT_IF_ABSENT, key, null, Utils.requireNonNull(value, "value"), null);
         }
 
         @Override
@@ -445,7 +597,8 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         public ReplaceExact(ReplicaMapBase<K,V> m, K key, V oldValue, V newValue) {
             super(m, OP_REPLACE_EXACT, key,
                 Utils.requireNonNull(oldValue, "oldValue"),
-                Utils.requireNonNull(newValue, "newValue"));
+                Utils.requireNonNull(newValue, "newValue"),
+                null);
         }
 
         @Override
@@ -460,8 +613,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
     protected static class ReplaceAny<K,V> extends AsyncOp<V,K,V> {
         public ReplaceAny(ReplicaMapBase<K,V> m, K key, V value) {
-            super(m, OP_REPLACE_ANY, key, null,
-                Utils.requireNonNull(value, "value"));
+            super(m, OP_REPLACE_ANY, key, null, Utils.requireNonNull(value, "value"), null);
         }
 
         @Override
@@ -476,7 +628,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
     protected static class RemoveAny<K,V> extends AsyncOp<V,K,V> {
         public RemoveAny(ReplicaMapBase<K,V> m, K key) {
-            super(m, OP_REMOVE_ANY, key, null, null);
+            super(m, OP_REMOVE_ANY, key, null, null, null);
         }
 
         @Override
@@ -491,8 +643,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
     protected static class RemoveExact<K,V> extends AsyncOp<Boolean,K,V> {
         public RemoveExact(ReplicaMapBase<K,V> m, K key, V value) {
-            super(m, OP_REMOVE_EXACT, key,
-                Utils.requireNonNull(value, "value"), null);
+            super(m, OP_REMOVE_EXACT, key, Utils.requireNonNull(value, "value"), null, null);
         }
 
         @Override
@@ -502,6 +653,60 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
             finish(Boolean.FALSE, null, releaseOnFail);
             return false;
+        }
+    }
+
+    protected static class Compute<K,V> extends AsyncOp<V,K,V> {
+        public Compute(
+            ReplicaMapBase<K,V> map,
+            K key,
+            BiFunction<? super K, ? super V, ? extends V> remappingFunction
+        ) {
+            super(map, OP_COMPUTE, key, null, null,
+                Utils.requireNonNull(remappingFunction, "remappingFunction"));
+        }
+
+        @Override
+        protected boolean checkPrecondition(boolean releaseOnFail) {
+            return true;
+        }
+    }
+
+    protected static class ComputeIfPresent<K,V> extends AsyncOp<V,K,V> {
+        public ComputeIfPresent(
+            ReplicaMapBase<K,V> map,
+            K key,
+            BiFunction<? super K, ? super V, ? extends V> remappingFunction
+        ) {
+            super(map, OP_COMPUTE_IF_PRESENT, key, null, null,
+                Utils.requireNonNull(remappingFunction, "remappingFunction"));
+        }
+
+        @Override
+        protected boolean checkPrecondition(boolean releaseOnFail) {
+            if (map.map.containsKey(opKey.key))
+                return true;
+
+            finish(null, null, releaseOnFail);
+            return false;
+        }
+    }
+
+    protected static class Merge<K,V> extends AsyncOp<V,K,V> {
+        public Merge(
+            ReplicaMapBase<K,V> map,
+            K key,
+            V value,
+            BiFunction<?,?,?> remappingFunction
+        ) {
+            super(map, OP_MERGE, key, null,
+                Utils.requireNonNull(value, "value"),
+                Utils.requireNonNull(remappingFunction, "remappingFunction"));
+        }
+
+        @Override
+        protected boolean checkPrecondition(boolean releaseOnFail) {
+            return true;
         }
     }
 

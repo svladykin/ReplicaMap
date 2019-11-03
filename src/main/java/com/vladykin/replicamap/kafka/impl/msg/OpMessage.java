@@ -1,6 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
 import java.util.Objects;
+import java.util.function.BiFunction;
 
 public class OpMessage {
     protected final long clientId;
@@ -8,17 +9,19 @@ public class OpMessage {
     protected final long opId;
     protected final Object expValue;
     protected final Object updValue;
+    protected final BiFunction<?,?,?> function;
 
     protected final long flushOffsetData;
     protected final long flushOffsetOps;
     protected final long cleanOffsetOps;
 
-    public OpMessage(byte opType, long clientId, long opId, Object expValue, Object updValue) {
+    public OpMessage(byte opType, long clientId, long opId, Object expValue, Object updValue, BiFunction<?,?,?> function) {
         this.opType = opType;
         this.clientId = clientId;
         this.opId = opId;
         this.expValue = expValue;
         this.updValue = updValue;
+        this.function = function;
 
         flushOffsetData = 0L;
         flushOffsetOps = 0L;
@@ -35,6 +38,7 @@ public class OpMessage {
         opId = 0L;
         expValue = null;
         updValue = null;
+        function = null;
     }
 
     /**
@@ -74,6 +78,10 @@ public class OpMessage {
         return updValue;
     }
 
+    public BiFunction<?,?,?> getFunction() {
+        return function;
+    }
+
     public long getClientId() {
         return clientId;
     }
@@ -92,6 +100,7 @@ public class OpMessage {
         if (flushOffsetOps != opMessage.flushOffsetOps) return false;
         if (cleanOffsetOps != opMessage.cleanOffsetOps) return false;
         if (!Objects.equals(expValue, opMessage.expValue)) return false;
+        if (!Objects.equals(function, opMessage.function)) return false;
         return Objects.equals(updValue, opMessage.updValue);
     }
 
@@ -105,6 +114,7 @@ public class OpMessage {
         result = 31 * result + (int)(flushOffsetData ^ (flushOffsetData >>> 32));
         result = 31 * result + (int)(flushOffsetOps ^ (flushOffsetOps >>> 32));
         result = 31 * result + (int)(cleanOffsetOps ^ (cleanOffsetOps >>> 32));
+        result = 31 * result + (function != null ? function.hashCode() : 0);
         return result;
     }
 
@@ -116,6 +126,7 @@ public class OpMessage {
             ", opId=" + opId +
             ", expValue=" + expValue +
             ", updValue=" + updValue +
+            ", function=" + function +
             ", flushOffsetData=" + flushOffsetData +
             ", flushOffsetOps=" + flushOffsetOps +
             ", cleanOffsetOps=" + cleanOffsetOps +

@@ -54,9 +54,6 @@ import static java.util.stream.Collectors.toList;
 public class FlushWorker extends Worker {
     private static final Logger log = LoggerFactory.getLogger(FlushWorker.class);
 
-    protected static final Comparator<ConsumerRecord<?,?>> RECORD_OFFSET_CMP =
-        comparingLong(ConsumerRecord::offset);
-
     protected final long clientId;
 
     protected final String dataTopic;
@@ -64,8 +61,6 @@ public class FlushWorker extends Worker {
     protected final String flushTopic;
 
     protected final String flushConsumerGroupId;
-
-    protected final int flushMinOps;
     protected final int historyFlushRecords;
 
     protected final LazyList<Consumer<Object,OpMessage>> flushConsumers;
@@ -96,7 +91,6 @@ public class FlushWorker extends Worker {
         String flushTopic,
         int workerId,
         String flushConsumerGroupId,
-        int flushMinOps,
         int historyFlushRecords,
         LazyList<Producer<Object,Object>> dataProducers,
         Producer<Object,OpMessage> opsProducer,
@@ -119,7 +113,6 @@ public class FlushWorker extends Worker {
         this.opsTopic = opsTopic;
         this.flushTopic = flushTopic;
         this.flushConsumerGroupId = flushConsumerGroupId;
-        this.flushMinOps = flushMinOps;
         this.historyFlushRecords = historyFlushRecords;
         this.dataProducers = dataProducers;
         this.opsProducer = opsProducer;
@@ -290,11 +283,6 @@ public class FlushWorker extends Worker {
             throw new IllegalStateException("Flush requests already initialized for partition: " + flushPart);
 
         return flushRequests;
-    }
-
-    protected boolean isTooSmallBatch(int batchSize, int collectedAll) {
-        assert 0 <= batchSize && batchSize <= collectedAll;
-        return batchSize == 0 || collectedAll < flushMinOps;
     }
 
     protected OpMessage loadFlushHistoryMax(

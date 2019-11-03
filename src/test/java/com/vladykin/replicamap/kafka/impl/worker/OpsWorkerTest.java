@@ -13,6 +13,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -97,7 +98,8 @@ class OpsWorkerTest {
         );
     }
 
-    protected <K, V> boolean applyReceivedUpdate(long clientId, long opId, byte updateType, K key, V exp, V upd) {
+    protected <K, V> boolean applyReceivedUpdate(long clientId, long opId, byte updateType, K key, V exp, V upd,
+        BiFunction<?,?,?> function) {
         appliedUpdates.incrementAndGet();
         return true;
     }
@@ -105,7 +107,7 @@ class OpsWorkerTest {
     static ConsumerRecord<Object,OpMessage> newPutRecord(long clientId, long offset) {
         Random rnd = ThreadLocalRandom.current();
         return new ConsumerRecord<>(TOPIC_OPS, 0,
-            offset, rnd.nextInt(10), new OpMessage(OP_PUT, clientId, 0, null, rnd.nextInt(10)));
+            offset, rnd.nextInt(10), new OpMessage(OP_PUT, clientId, 0, null, rnd.nextInt(10), null));
     }
 
     protected ConsumerRecord<Object,OpMessage> addPutRecord(long clientId, long offset) {
@@ -129,9 +131,9 @@ class OpsWorkerTest {
     void testForwardCompatibility() {
         TopicPartition p = new TopicPartition(TOPIC_OPS, 0);
         opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 1L, null,
-            new OpMessage((byte)'Z', CLIENT1_ID, 100500, null, null))));
+            new OpMessage((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
         opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 2L, "key",
-            new OpMessage((byte)'Z', CLIENT1_ID, 100500, null, null))));
+            new OpMessage((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
     }
 
     @Test

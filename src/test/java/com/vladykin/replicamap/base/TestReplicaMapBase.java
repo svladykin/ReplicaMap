@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 
 @SuppressWarnings("WeakerAccess")
 public abstract class TestReplicaMapBase<K, V> extends ReplicaMapBase<K, V> {
@@ -28,13 +29,18 @@ public abstract class TestReplicaMapBase<K, V> extends ReplicaMapBase<K, V> {
     }
 
     @Override
-    protected void sendUpdate(long opId, byte updateType, K key, V exp, V upd, FailureCallback callback) {
-        doSendUpdate(new TestReplicaMapUpdate<>(opId, updateType, key, exp, upd, id), callback);
+    protected void sendUpdate(long opId, byte updateType, K key, V exp, V upd, BiFunction<?,?,?> function, FailureCallback callback) {
+        doSendUpdate(new TestReplicaMapUpdate<>(opId, updateType, key, exp, upd, function, id), callback);
     }
 
     protected abstract void doSendUpdate(TestReplicaMapUpdate<K, V> update, FailureCallback callback);
 
     public void update(boolean myUpdate, TestReplicaMapUpdate<K, V> u) {
-        onReceiveUpdate(myUpdate, u.opId, u.updateType, u.key, u.exp, u.upd);
+        onReceiveUpdate(myUpdate, u.opId, u.updateType, u.key, u.exp, u.upd, u.function);
+    }
+
+    @Override
+    protected boolean canSendFunction(BiFunction<?,?,?> function) {
+        return false; // FIXME
     }
 }

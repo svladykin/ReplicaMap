@@ -195,7 +195,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         Object val = dataRec.value();
         byte opType = val == null ? OP_REMOVE_ANY : OP_PUT;
 
-        updateHandler.applyReceivedUpdate(0L, 0L, opType, key, null, val);
+        updateHandler.applyReceivedUpdate(0L, 0L, opType, key, null, val, null);
     }
 
     protected void applyOpsTopicRecords(TopicPartition opsPart, List<ConsumerRecord<Object,OpMessage>> partRecs) {
@@ -239,7 +239,8 @@ public class OpsWorker extends Worker implements AutoCloseable {
                     opType,
                     key,
                     op.getExpectedValue(),
-                    op.getUpdatedValue());
+                    op.getUpdatedValue(),
+                    op.getFunction());
             }
 
             flushQueue.add(rec, updated, needClean || needFlush || i == lastIndex);

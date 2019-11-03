@@ -1,6 +1,7 @@
 package com.vladykin.replicamap.base;
 
 import java.util.Objects;
+import java.util.function.BiFunction;
 
 @SuppressWarnings("WeakerAccess")
 public class TestReplicaMapUpdate<K,V> {
@@ -9,15 +10,17 @@ public class TestReplicaMapUpdate<K,V> {
     public final K key;
     public final V exp;
     public final V upd;
+    public final BiFunction<?,?,?> function;
 
     public final Object srcId;
 
-    public TestReplicaMapUpdate(long opId, byte updateType, K key, V exp, V upd, Object srcId) {
+    public TestReplicaMapUpdate(long opId, byte updateType, K key, V exp, V upd, BiFunction<?,?,?> function, Object srcId) {
         this.opId = opId;
         this.updateType = updateType;
         this.key = key;
         this.exp = exp;
         this.upd = upd;
+        this.function = function;
         this.srcId = srcId;
     }
 

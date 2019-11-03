@@ -30,6 +30,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.function.BiFunction;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -56,7 +57,6 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MIN_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_READ_BACK_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC;
@@ -102,7 +102,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final int maxClients;
     protected final Semaphore opsSemaphore;
     protected final long opsSendTimeout;
-    protected final int flushMinOps;
     protected final int flushPeriodOps;
     protected final long flushMaxPollTimeout;
     protected final long flushReadBackTimeout;
@@ -166,11 +165,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
         flushPeriodOps = cfg.getInt(FLUSH_PERIOD_OPS);
         checkPositive(flushPeriodOps, FLUSH_PERIOD_OPS);
-
-        flushMinOps = ifNull(cfg.getInt(FLUSH_MIN_OPS), flushPeriodOps / 2);
-        checkPositive(flushMinOps, FLUSH_MIN_OPS);
-        check(flushPeriodOps > flushMinOps,
-            () -> FLUSH_PERIOD_OPS + " must be greater than " + FLUSH_MIN_OPS);
 
         // This is the number of historical flush records we need to load to
         // make sure that we have no races (avoid flush reordering) with slow
@@ -301,7 +295,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
             flushTopic,
             workerId,
             flushConsumerGroupId,
-            flushMinOps,
             historyFlushRecords,
             dataProducersLazyList,
             opsProducer,
@@ -688,10 +681,11 @@ public class KReplicaMapManager implements ReplicaMapManager {
         byte updateType,
         K key,
         V exp,
-        V upd
+        V upd,
+        BiFunction<?,?,?> function
     ) {
         return new ProducerRecord<>(opsTopic, key,
-            new OpMessage(updateType, clientId, opId, exp, upd));
+            new OpMessage(updateType, clientId, opId, exp, upd, function));
     }
 
     protected <K,V> void sendUpdate(
@@ -701,6 +695,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         K key,
         V exp,
         V upd,
+        BiFunction<?,?,?> function,
         FailureCallback onSendFailed
     ) {
         checkRunning();
@@ -710,10 +705,12 @@ public class KReplicaMapManager implements ReplicaMapManager {
                 (char)updateType, maps.getMapId(key), opsTopic, key, exp, upd);
         }
 
-        opsProducer.send(newOpRecord(map, opId, updateType, key, exp, upd), onSendFailed);
+        opsProducer.send(newOpRecord(map, opId, updateType, key, exp, upd, function), onSendFailed);
     }
 
-    protected <K,V> boolean applyReceivedUpdate(long clientId, long opId, byte updateType, K key, V exp, V upd) {
+    protected <K,V> boolean applyReceivedUpdate(long clientId, long opId, byte updateType, K key, V exp, V upd,
+        BiFunction<?,?,?> function
+    ) {
         Object mapId = maps.getMapId(key);
 
         if (log.isTraceEnabled()) {
@@ -723,7 +720,11 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
         KReplicaMap<K,V> map = getMapById(mapId);
 
-        return map.onReceiveUpdate(clientId == this.clientId, opId, updateType, key, exp, upd);
+        return map.onReceiveUpdate(clientId == this.clientId, opId, updateType, key, exp, upd, function);
+    }
+
+    protected boolean canSendFunction(BiFunction<?,?,?> function) {
+        return false; // TODO
     }
 
     public enum State {

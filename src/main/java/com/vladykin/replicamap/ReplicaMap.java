@@ -11,6 +11,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 /**
  * Replicated {@link ConcurrentMap} with async operations.
@@ -91,6 +93,54 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
      * @return Future.
      */
     CompletableFuture<Boolean> asyncRemove(K key, V value);
+
+    /**
+     * Asynchronous version of {@link Map#compute(Object, BiFunction)}.
+     *
+     * @param key Key.
+     * @param remappingFunction Function to compute a value.
+     * @return Future.
+     */
+    CompletableFuture<V> asyncCompute(K key, BiFunction<? super K, ? super V, ? extends V> remappingFunction);
+
+    /**
+     * Asynchronous version of {@link Map#computeIfAbsent(Object, Function)}.
+     *
+     * @param key Key.
+     * @param mappingFunction Function to compute a value.
+     * @return Future.
+     */
+    default CompletableFuture<V> asyncComputeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
+        Utils.requireNonNull(mappingFunction, "mappingFunction");
+
+        V oldValue = get(key);
+        if (oldValue != null)
+            return CompletableFuture.completedFuture(oldValue);
+
+        V newValue = mappingFunction.apply(key);
+        return asyncPutIfAbsent(key, newValue).thenApply(v -> v == null ? newValue : v);
+    }
+
+    /**
+     * Asynchronous version of {@link Map#computeIfPresent(Object, BiFunction)}.
+     *
+     * @param key Key.
+     * @param remappingFunction Function to compute a value.
+     * @return Future.
+     */
+    CompletableFuture<V> asyncComputeIfPresent(K key, BiFunction<? super K, ? super V, ? extends V> remappingFunction);
+
+    /**
+     * Asynchronous version of {@link Map#merge(Object, Object, BiFunction)}.
+     *
+     * @param key Key.
+     * @param value Non-null value to be merged with the existing value
+     *              associated with the key or, if no existing value or a null value
+     *              is associated with the key, to be associated with the key
+     * @param remappingFunction function to recompute a value if present.
+     * @return Future.
+     */
+    CompletableFuture<V> asyncMerge(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction);
 
     /**
      * Sets the listener for the map updates.
@@ -186,6 +236,7 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
     @SuppressWarnings("unchecked")
     @Override
     default V remove(Object key) {
+        Utils.requireNonNull(key, "key");
         try {
             return asyncRemove((K)key).get();
         }
@@ -221,16 +272,19 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
 
     @Override
     default boolean containsKey(Object key) {
+        Utils.requireNonNull(key, "key");
         return unwrap().containsKey(key);
     }
 
     @Override
     default boolean containsValue(Object value) {
+        Utils.requireNonNull(value, "value");
         return unwrap().containsValue(value);
     }
 
     @Override
     default V get(Object key) {
+        Utils.requireNonNull(key, "key");
         return unwrap().get(key);
     }
 

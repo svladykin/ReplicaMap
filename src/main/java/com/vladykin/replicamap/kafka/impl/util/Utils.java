@@ -202,7 +202,7 @@ public final class Utils {
 
     public static <T> T requireNonNull(T obj, String varName) {
         if (obj == null)
-            throw new ReplicaMapException(varName + " is null", new NullPointerException());
+            throw new NullPointerException(varName + " is null");
 
         return obj;
     }

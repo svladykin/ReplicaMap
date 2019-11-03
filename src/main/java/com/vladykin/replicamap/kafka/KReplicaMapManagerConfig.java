@@ -41,7 +41,6 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String OPS_WORKERS = "ops.workers";
     public static final String FLUSH_TOPIC = "flush.topic";
     public static final String FLUSH_PERIOD_OPS = "flush.period.ops";
-    public static final String FLUSH_MIN_OPS = "flush.min.ops";
     public static final String FLUSH_MAX_POLL_TIMEOUT_MS = "flush.max.poll.timeout.ms";
     public static final String FLUSH_READ_BACK_TIMEOUT_MS = "flush.read.back.timeout.ms";
     public static final String FLUSH_WORKERS = "flush.workers";
@@ -78,8 +77,6 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
             "Kafka topic for flush requests.")
         .define(FLUSH_PERIOD_OPS, INT, 3000, HIGH,
             "A number of operations after which a client should issue a flush request.")
-        .define(FLUSH_MIN_OPS, INT, null, HIGH,
-            "Min number of operations below which flusher will skip the flush request.")
         .define(FLUSH_MAX_POLL_TIMEOUT_MS, LONG, 50L, HIGH,
             "Max poll timeout for a flusher in milliseconds.")
         .define(FLUSH_READ_BACK_TIMEOUT_MS, LONG, 0L, HIGH,
