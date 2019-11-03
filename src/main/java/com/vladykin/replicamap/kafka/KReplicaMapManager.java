@@ -115,7 +115,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final Producer<Object,OpMessage> opsProducer;
     protected final Producer<Object,OpMessage> flushProducer;
     protected final LazyList<Consumer<Object,OpMessage>> flushConsumers;
-    protected final LazyList<Producer<Object,Object>> dataProducers;
+    protected final List<LazyList<Producer<Object,Object>>> dataProducers;
     protected final LazyList<Consumer<Object,Object>> dataConsumers;
 
     protected final Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
@@ -208,7 +208,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
             dataConsumers = flushReadBackTimeout > 0 ? newLazyList(flushWorkers) : null;
             flushProducer = newKafkaProducerFlush();
-            dataProducers = newLazyList(parts);
+            dataProducers = new ArrayList<>(flushWorkers);
             flushQueues = new ArrayList<>(parts);
             flushConsumers = newLazyList(flushWorkers);
             cleanQueue = newCleanQueue();
@@ -234,8 +234,14 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
             this.flushWorkers = new ArrayList<>(flushWorkers);
 
-            for (int workerId = 0; workerId < flushWorkers; workerId++)
-                this.flushWorkers.add(newFlushWorker(workerId));
+            for (int workerId = 0; workerId < flushWorkers; workerId++) {
+                assert dataProducers.size() == workerId;
+
+                LazyList<Producer<Object,Object>> dataProducersLazyList = newLazyList(parts);
+                dataProducers.add(dataProducersLazyList);
+
+                this.flushWorkers.add(newFlushWorker(workerId, dataProducersLazyList));
+            }
 
             if (log.isDebugEnabled()) {
                 log.debug("ReplicaMap manager for topics [{}, {}, {}] is created, client id: {}",
@@ -284,7 +290,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new FlushQueue();
     }
 
-    protected FlushWorker newFlushWorker(int workerId) {
+    protected FlushWorker newFlushWorker(int workerId, LazyList<Producer<Object,Object>> dataProducersLazyList) {
         if (log.isDebugEnabled())
             log.debug("Creating new flush worker {}", workerId);
 
@@ -297,7 +303,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             flushConsumerGroupId,
             flushMinOps,
             historyFlushRecords,
-            dataProducers,
+            dataProducersLazyList,
             opsProducer,
             flushQueues,
             cleanQueue,

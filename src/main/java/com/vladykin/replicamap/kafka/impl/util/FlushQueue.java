@@ -171,5 +171,14 @@ public class FlushQueue {
         public long getMaxOffset() {
             return maxOffset;
         }
+
+        @Override
+        public String toString() {
+            return "Batch{" +
+                "maxOffset=" + maxOffset +
+                ", collectedAll=" + collectedAll +
+                ", map=" + super.toString() +
+                '}';
+        }
     }
 }

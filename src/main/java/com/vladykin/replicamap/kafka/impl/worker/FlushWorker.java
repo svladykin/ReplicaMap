@@ -261,7 +261,7 @@ public class FlushWorker extends Worker {
             if (!Utils.isInterrupted(e))
                 log.error("Failed to poll flush consumer for topic " + flushTopic, e);
 
-            resetFlushConsumer(flushConsumer);
+            resetOnError(flushConsumer);
             return false;
         }
 
@@ -274,9 +274,13 @@ public class FlushWorker extends Worker {
         return flushed;
     }
 
-    protected void resetFlushConsumer(Consumer<Object,OpMessage> flushConsumer) {
-        if (flushConsumer != null && flushConsumers.reset(workerId, flushConsumer))
-            unprocessedFlushRequests.clear();
+    protected void resetOnError(Consumer<Object,OpMessage> flushConsumer) {
+        unprocessedFlushRequests.clear();
+
+        for (int i = 0; i < dataProducers.size(); i++)
+            resetDataProducer(i);
+
+        flushConsumers.reset(workerId, flushConsumer);
     }
 
     protected TreeSet<OpMessage> initUnprocessedFlushRequests(TopicPartition flushPart) {
@@ -379,7 +383,7 @@ public class FlushWorker extends Worker {
             if (!Utils.isInterrupted(e) && !(e instanceof ReplicaMapException))
                 log.error("Failed to get data producer for partition " + dataPart, e);
 
-            resetFlushConsumer(flushConsumer); // Initiate partition rebalance.
+            resetOnError(flushConsumer);
             return false; // The next flush will be our retry.
         }
 
@@ -450,8 +454,10 @@ public class FlushWorker extends Worker {
 
             flushOffsetData = lastDataRecMetaFut.get().offset();
 
-            if (log.isTraceEnabled())
-                log.trace("Committed flush offset for partition {} is {}", dataPart, flushOffsetData);
+            if (log.isDebugEnabled()) {
+                log.debug("Committed flush offset for data partition {} is {}, dataProducer: {}, dataBatch: {}",
+                    dataPart, flushOffsetData, dataProducer, dataBatch);
+            }
 
             if (dataConsumer != null)
                 readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, flushOffsetData);
@@ -465,8 +471,7 @@ public class FlushWorker extends Worker {
             else
                 log.error("Failed to flush data for partition " + dataPart + ", exception:", e);
 
-            dataProducers.reset(part, dataProducer); // Producer may be broken, needs to be recreated.
-            resetFlushConsumer(flushConsumer); // Initiate partition rebalance: maybe other flusher will be luckier.
+            resetOnError(flushConsumer);
 
             if (dataConsumer != null)
                 dataConsumers.reset(workerId, dataConsumer);
@@ -476,8 +481,10 @@ public class FlushWorker extends Worker {
 
         long flushOffsetOps = dataBatch.getMaxOffset();
         clearUnprocessedFlushRequestsUntil(flushPart, flushOffsetOps);
+
         if (flushQueue.clean(flushOffsetOps) > 0) {
             sendFlushNotification(part, flushOffsetData, flushOffsetOps);
+
             if (log.isDebugEnabled()) {
                 log.debug("Successfully flushed {} data records for partition {}, flushOffsetOps: {}" +
                         ", flushOffsetData: {}, flushQueueSize: {}",
@@ -613,12 +620,15 @@ public class FlushWorker extends Worker {
 
         for (TopicPartition partition : flushPartitions) {
             int part = partition.partition();
-
-            Producer<Object,Object> dataProducer = dataProducers.get(part, null);
-
-            if (dataProducer != null)
-                dataProducers.reset(part, dataProducer);
+            resetDataProducer(part);
         }
+    }
+
+    protected void resetDataProducer(int part) {
+        Producer<Object,Object> dataProducer = dataProducers.get(part, null);
+
+        if (dataProducer != null)
+            dataProducers.reset(part, dataProducer);
     }
 
     /**

@@ -259,7 +259,7 @@ class FlushWorkerTest {
 
         dataProducer.fenceProducer();
         initFlushConsumer(102, 101);
-        flushWorker.initUnprocessedFlushRequests(flushPart);
+        assertTrue(flushWorker.unprocessedFlushRequests.get(flushPart).isEmpty());
 
         assertEquals(1, flushQueue.size());
         assertFalse(flushWorker.processFlushRequests(0));
