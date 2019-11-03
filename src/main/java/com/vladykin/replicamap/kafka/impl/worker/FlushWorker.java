@@ -374,40 +374,13 @@ public class FlushWorker extends Worker {
                 dataPart, dataBatchSize, collectedAll);
         }
 
-        Producer<Object,Object> dataProducer;
-        try {
-            dataProducer = dataProducers.get(part, null);
-            Utils.requireNonNull(dataProducer, "dataProducer");
-        }
-        catch (Exception e) {
-            if (!Utils.isInterrupted(e) && !(e instanceof ReplicaMapException))
-                log.error("Failed to get data producer for partition " + dataPart, e);
-
-            resetOnError(flushConsumer);
-            return false; // The next flush will be our retry.
-        }
-
         Consumer<Object,Object> dataConsumer = null;
         long flushOffsetData = -1;
         OffsetAndMetadata flushConsumerOffset = null;
 
         try {
-            if (isTooSmallBatch(dataBatchSize, collectedAll)) {
-                if (log.isDebugEnabled()) {
-                    log.debug("Too small batch for partition {}, dataBatchSize: {}, collectedAll: {}",
-                        dataPart, dataBatchSize, collectedAll);
-                }
-
-                // Looks like we are far behind, let someone else to handle flushes.
-                if (dataBatchSize == 0 && flushRequests.size() > 1) {
-                    throw new ReplicaMapException("The collected batch is empty, we are too far behind" +
-                        ", flushQueueSize: " + flushQueue.size() +
-                        ", flushRequests: " + flushRequests
-                    );
-                }
-
-                return false;
-            }
+            Producer<Object,Object> dataProducer = dataProducers.get(part, null);
+            log.trace("Data producer for flushing partition {}: {}", dataPart, dataProducer);
 
             if (dataConsumers != null) {
                 dataConsumer = dataConsumers.get(workerId, this::newDataConsumer);
