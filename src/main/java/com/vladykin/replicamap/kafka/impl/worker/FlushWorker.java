@@ -150,7 +150,7 @@ public class FlushWorker extends Worker {
     @Override
     protected void interruptThread() {
         Utils.wakeup(() -> flushConsumers.get(workerId, null));
-        Utils.wakeup(() -> dataConsumers.get(workerId, null));
+        Utils.wakeup(() -> dataConsumers == null ? null : dataConsumers.get(workerId, null));
 
         super.interruptThread();
     }

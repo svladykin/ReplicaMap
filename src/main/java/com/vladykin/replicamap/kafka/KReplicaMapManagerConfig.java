@@ -82,7 +82,7 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
             "Min number of operations below which flusher will skip the flush request.")
         .define(FLUSH_MAX_POLL_TIMEOUT_MS, LONG, 50L, HIGH,
             "Max poll timeout for a flusher in milliseconds.")
-        .define(FLUSH_READ_BACK_TIMEOUT_MS, LONG, 15000L, HIGH,
+        .define(FLUSH_READ_BACK_TIMEOUT_MS, LONG, 0L, HIGH,
             "If flusher can not read back the committed data records for this long, " +
                 "flush will be considered to be failed. If set to 0 or negative, then flusher " +
                 "will not try to read the records back.")
