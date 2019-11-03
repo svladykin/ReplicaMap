@@ -103,7 +103,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         }
 
         for (long k = 0; k < threadsCnt; k++) {
-            mgr.getMap().put(k, -k);
+            mgr.getMap().put(k, 1L);
             lastAddedKey[(int)k] = new AtomicLong(k);
         }
         assertEquals(threadsCnt, mgr.getMap().size());
@@ -119,12 +119,11 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                 CompletableFuture<?> fut = Utils.allOf(executeThreads(threadsCnt, exec, () -> {
                     Random rnd = ThreadLocalRandom.current();
                     int threadId = threadIds.getAndIncrement();
+                    int mgrId = rnd.nextInt(managersCnt);
 
                     start.await();
 
                     for (int j = 0; j < 500; j++) {
-                        int mgrId = rnd.nextInt(managersCnt);
-
                         KReplicaMapManager m = managers.get(mgrId, managersFactory);
                         try {
                             if (rnd.nextInt(1000) == 0) {
@@ -138,18 +137,18 @@ public class KReplicaMapManagerMultithreadedWindowTest {
 
                             Long delVal = map.remove(delKey);
                             if (delVal != null)
-                                assertEquals(-delKey, delVal);
+                                assertEquals(1L, delVal);
 
-                            map.putIfAbsent(addKey, -addKey);
+                            map.putIfAbsent(addKey, 1L);
 
                             assertTrue(lastAddedKey[threadId].compareAndSet(delKey, addKey));
+
+//                            if (j % 10 == 0)
+//                                System.out.println(map.unwrap());
                         }
                         catch (ReplicaMapException e) {
                             // may happen if another thread concurrently closed our manager
                         }
-
-//                        if (j % 10 == 0)
-//                            System.out.println(j);
                     }
 
                     return null;

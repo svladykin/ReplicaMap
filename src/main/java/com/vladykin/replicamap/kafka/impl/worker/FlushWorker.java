@@ -200,8 +200,8 @@ public class FlushWorker extends Worker {
             iter.remove();
         }
 
-        if (flushRequests.isEmpty())
-            unprocessedFlushRequests.remove(flushPart, flushRequests);
+        // Do not remove empty flushRequests from unprocessedFlushRequests,
+        // otherwise we will reload flush history each time.
     }
 
     protected boolean awaitOpsWorkersSteady(long pollTimeoutMs) throws ExecutionException, InterruptedException {
@@ -331,6 +331,8 @@ public class FlushWorker extends Worker {
                 max = nextMax;
         }
 
+        log.debug("Found max history flush request {} for partition {}", max, flushPart);
+
         flushConsumer.seek(flushPart, currentPosition);
         return max == null ? null : max.value();
     }
@@ -341,7 +343,7 @@ public class FlushWorker extends Worker {
         TreeSet<OpMessage> flushRequests
     ) {
         if (flushRequests.isEmpty())
-            throw new IllegalStateException("No flush requests to process for partition " + flushPart);
+            return false;
 
         // Here we must not modify any local state until transaction is successfully committed.
         int part = flushPart.partition();
