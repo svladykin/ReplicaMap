@@ -21,7 +21,7 @@ Think of it as a Java `ConcurrentMap<K,V>` that replicates all the updates over 
 + Asynchronous operations `asyncPut`, `asyncPutIfAbsent`, `asyncReplace`, `asyncRemove` are supported and return `CompletableFuture`.
 
 + Optimized Compute: instead of heavy retry loops just send one-shot serializable closures using `compute` or `merge` methods.
-  This is also useful when you need to apply a small update to a huge value, no need to send the whole value over the network. 
+  This is also useful when you apply a small update to a huge value, no need to send the whole value over the network. 
 
 + Kafka `Log Compaction` provides persistent backup of the replicated map contents.
 

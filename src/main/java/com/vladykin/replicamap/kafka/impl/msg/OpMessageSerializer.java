@@ -1,8 +1,10 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
+import com.vladykin.replicamap.kafka.compute.BiFunctionSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
 import java.util.Map;
+import java.util.function.BiFunction;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.utils.ByteUtils;
@@ -10,19 +12,28 @@ import org.apache.kafka.common.utils.ByteUtils;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_REQUEST;
 
-
+/**
+ *  Operation message serializer.
+ *
+ * @author Sergi Vladykin http://vladykin.com
+ */
 public class OpMessageSerializer<V> implements Serializer<OpMessage> {
     public static final int NULL_ARRAY_LENGTH = -1;
 
     protected final Serializer<V> valSer;
+    protected final BiFunctionSerializer funSer;
 
-    public OpMessageSerializer(Serializer<V> valSer) {
+    public OpMessageSerializer(Serializer<V> valSer, BiFunctionSerializer funSer) {
         this.valSer = Utils.requireNonNull(valSer, "valSer");
+        this.funSer = funSer;
     }
 
     @Override
     public void configure(Map<String,?> configs, boolean isKey) {
         valSer.configure(configs, isKey);
+
+        if (funSer != null)
+            funSer.configure(configs, isKey);
     }
 
     @Override
@@ -44,20 +55,27 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
         V updVal = (V)opMsg.getUpdatedValue();
         byte[] upd = updVal == null ? null : valSer.serialize(topic, headers, updVal);
 
+        BiFunction<?,?,?> funVal = opMsg.getFunction();
+        byte[] fun = funVal == null ? null : funSer.serialize(topic, headers, funVal);
+
         int opTypeSize = 1;
         int clientIdSize = ByteUtils.sizeOfVarlong(opMsg.getClientId());
         int opIdSize = ByteUtils.sizeOfVarlong(opMsg.getOpId());
         int expLen = arrayLength(exp);
         int updLen = arrayLength(upd);
+        int funLen = arrayLength(fun);
         int expLenSize = ByteUtils.sizeOfVarint(expLen);
         int updLenSize = ByteUtils.sizeOfVarint(updLen);
+        int funLenSize = ByteUtils.sizeOfVarint(funLen);
 
-        int resultLen = opTypeSize + clientIdSize + opIdSize + expLenSize + updLenSize;
+        int resultLen = opTypeSize + clientIdSize + opIdSize + expLenSize + updLenSize + funLenSize;
 
         if (expLen > 0)
             resultLen += expLen;
         if (updLen > 0)
             resultLen += updLen;
+        if (funLen > 0)
+            resultLen += funLen;
 
         byte[] result = new byte[resultLen];
         ByteBuffer buf = ByteBuffer.wrap(result);
@@ -67,6 +85,7 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
         ByteUtils.writeVarlong(opMsg.getOpId(), buf);
         writeByteArray(buf, exp);
         writeByteArray(buf, upd);
+        writeByteArray(buf, fun);
 
         assert buf.remaining() == 0;
 
@@ -111,5 +130,6 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
     @Override
     public void close() {
         Utils.close(valSer);
+        Utils.close(funSer);
     }
 }

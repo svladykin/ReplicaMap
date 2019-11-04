@@ -1,12 +1,10 @@
 package com.vladykin.replicamap.kafka.impl.util;
 
-import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.OptionalLong;
 import java.util.concurrent.Semaphore;
 import java.util.stream.LongStream;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 
 import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
 
@@ -17,12 +15,12 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
  */
 public class FlushQueue {
     protected final Semaphore lock = new Semaphore(1);
-    protected final ArrayDeque<ConsumerRecord<Object,OpMessage>> queue = new ArrayDeque<>();
+    protected final ArrayDeque<MiniRecord> queue = new ArrayDeque<>();
 
     protected long maxAddOffset = -1;
     protected long maxCleanOffset = -1;
 
-    protected final ThreadLocal<ArrayDeque<ConsumerRecord<Object,OpMessage>>> threadLocalQueue =
+    protected final ThreadLocal<ArrayDeque<MiniRecord>> threadLocalQueue =
         ThreadLocal.withInitial(ArrayDeque::new);
 
     /**
@@ -46,15 +44,15 @@ public class FlushQueue {
      *                 if {@code false} and lock acquisition failed, then operation is allowed
      *                 to store the record into thread local buffer.
      */
-    public void add(ConsumerRecord<Object,OpMessage> rec, boolean update, boolean waitLock) {
+    public void add(MiniRecord rec, boolean update, boolean waitLock) {
         assert rec != null;
 
-        ArrayDeque<ConsumerRecord<Object,OpMessage>> tlq = threadLocalQueue.get();
+        ArrayDeque<MiniRecord> tlq = threadLocalQueue.get();
 
         if (lock(waitLock)) {
             try {
                 for (;;) {
-                    ConsumerRecord<Object,OpMessage> r = tlq.poll();
+                    MiniRecord r = tlq.poll();
 
                     if (r == null)
                         break;
@@ -106,11 +104,11 @@ public class FlushQueue {
             long maxOffset = maxOffsetOptional.getAsLong();
             Batch dataBatch = new Batch(maxOffset, maxCleanOffset);
 
-            for (ConsumerRecord<Object,OpMessage> rec : queue) {
+            for (MiniRecord rec : queue) {
                 if (isOverMaxOffset(rec, maxOffset))
                     break;
 
-                dataBatch.put(rec.key(), rec.value().getUpdatedValue());
+                dataBatch.put(rec.key(), rec.value());
             }
 
             return dataBatch;
@@ -132,7 +130,7 @@ public class FlushQueue {
                 return 0;
 
             for (;;) {
-                ConsumerRecord<Object,OpMessage> rec = queue.peek();
+                MiniRecord rec = queue.peek();
 
                 if (rec == null || isOverMaxOffset(rec, maxOffset))
                     break;

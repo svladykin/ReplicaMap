@@ -16,6 +16,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -215,6 +216,9 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
      * Each call is not necessary will result in the actual map update because
      * state may asynchronously change and precondition may fail.
      *
+     * This method can be called from multiple threads simultaneously, but
+     * for the same key there must be no parallel invocations.
+     *
      * @param myUpdate {@code true} If this update was issued by this map instance,
      *                 or {@code false} if it is a remote update.
      * @param opId Local operation id.
@@ -223,6 +227,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
      * @param exp Expected value or {@code null} if none.
      * @param upd New value or {@code null} if none.
      * @param function Function to apply.
+     * @param updatedValueConsumer Consume the updated value.
      * @return {@code true} If the map was actually updated, {@code false} if not.
      */
     @SuppressWarnings({"unchecked", "UnusedReturnValue"})
@@ -233,7 +238,8 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         K key,
         V exp,
         V upd,
-        BiFunction<?,?,?> function
+        BiFunction<?,?,?> function,
+        Consumer<V> updatedValueConsumer
     ) {
         Object result = null;
         Throwable ex = null;
@@ -283,19 +289,22 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
                 case OP_COMPUTE:
                     old = m.get(key);
                     result = m.compute(key, (BiFunction<? super K,? super V,? extends V>)function);
-                    updated = wasUpdated(old, result, function);
+                    upd = (V)result;
+                    updated = wasUpdated(old, upd, function);
                     break;
 
                 case OP_COMPUTE_IF_PRESENT:
                     old = m.get(key);
                     result = m.computeIfPresent(key, (BiFunction<? super K,? super V,? extends V>)function);
-                    updated = wasUpdated(old, result, function);
+                    upd = (V)result;
+                    updated = wasUpdated(old, upd, function);
                     break;
 
                 case OP_MERGE:
                     old = m.get(key);
                     result = m.merge(key, upd, (BiFunction<? super V,? super V,? extends V>)function);
-                    updated = wasUpdated(old, result, function);
+                    upd = (V)result;
+                    updated = wasUpdated(old, upd, function);
                     break;
 
                 default:
@@ -321,16 +330,18 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
             }
         }
 
-        if (updated)
+        if (updated) {
             onMapUpdate(myUpdate, key, old, upd);
+
+            if (updatedValueConsumer != null)
+                updatedValueConsumer.accept(upd);
+        }
 
         return updated;
     }
 
+    @SuppressWarnings("unused")
     protected boolean wasUpdated(Object oldValue, Object newValue, BiFunction<?,?,?> function) {
-        if (function instanceof WasUpdated)
-            return ((WasUpdated)function).wasUpdated();
-
         return !Objects.equals(oldValue, newValue);
     }
 
@@ -406,7 +417,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
     /**
      * @param function Function to send.
-     * @return {@code true} If this map supports sending functions.
+     * @return {@code true} If this map is able to send the given function to other replicas.
      */
     protected abstract boolean canSendFunction(BiFunction<?,?,?> function);
 

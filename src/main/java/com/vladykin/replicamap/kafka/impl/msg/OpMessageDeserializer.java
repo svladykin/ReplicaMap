@@ -1,8 +1,10 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
+import com.vladykin.replicamap.kafka.compute.BiFunctionDeserializer;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
 import java.util.Map;
+import java.util.function.BiFunction;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.utils.ByteUtils;
@@ -11,16 +13,26 @@ import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_REQUEST;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer.NULL_ARRAY_LENGTH;
 
+/**
+ * Operation message deserializer.
+ *
+ * @author Sergi Vladykin http://vladykin.com
+ */
 public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
     protected final Deserializer<V> valDes;
+    protected final BiFunctionDeserializer funDes;
 
-    public OpMessageDeserializer(Deserializer<V> valDes) {
+    public OpMessageDeserializer(Deserializer<V> valDes, BiFunctionDeserializer funDes) {
         this.valDes = Utils.requireNonNull(valDes, "valDes");
+        this.funDes = funDes;
     }
 
     @Override
     public void configure(Map<String,?> configs, boolean isKey) {
         valDes.configure(configs, isKey);
+
+        if (funDes != null)
+            funDes.configure(configs, isKey);
     }
 
     protected byte[] readByteArray(ByteBuffer buf) {
@@ -41,6 +53,15 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
         byte[] arr = readByteArray(buf);
         return arr == null ? null :
             valDes.deserialize(topic, headers, arr);
+    }
+
+    protected BiFunction<?,?,?> readFunction(String topic, Headers headers, ByteBuffer buf) {
+        if (!buf.hasRemaining())
+            return null; // compatibility
+
+        byte[] arr = readByteArray(buf);
+        return arr == null ? null :
+            funDes.deserialize(topic, headers, arr);
     }
 
     @Override
@@ -67,12 +88,13 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
             ByteUtils.readVarlong(buf),
             readValue(topic, headers, buf),
             readValue(topic, headers, buf),
-            null // FIXME
+            readFunction(topic, headers, buf)
         );
     }
 
     @Override
     public void close() {
         Utils.close(valDes);
+        Utils.close(funDes);
     }
 }

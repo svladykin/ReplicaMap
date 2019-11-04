@@ -5,9 +5,12 @@ import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.base.FailureCallback;
 import com.vladykin.replicamap.holder.MapsHolder;
+import com.vladykin.replicamap.kafka.compute.BiFunctionDeserializer;
+import com.vladykin.replicamap.kafka.compute.BiFunctionSerializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageDeserializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
+import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.util.KeyBytesPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
@@ -53,6 +56,8 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STOPPING;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.CLIENTS_MAX_NUM;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.CLIENT_ID;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_DESERIALIZER_CLASS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_SERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
@@ -111,6 +116,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected final MapsHolder maps;
 
+    protected BiFunctionSerializer computeSerializer;
     protected final Producer<Object,OpMessage> opsProducer;
     protected final Producer<Object,OpMessage> flushProducer;
     protected final LazyList<Consumer<Object,OpMessage>> flushConsumers;
@@ -470,7 +476,9 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new KafkaProducer<>(proCfg,
             newKeySerializer(proCfg),
             newOpMessageSerializer(
-                newValueSerializer(proCfg)));
+                newValueSerializer(proCfg),
+                updateComputeSerializer(
+                    newBiFunctionSerializer(proCfg))));
     }
 
     protected Producer<Object,OpMessage> newKafkaProducerFlush() {
@@ -483,7 +491,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new KafkaProducer<>(proCfg,
             newKeySerializer(proCfg),
             newOpMessageSerializer(
-                newValueSerializer(proCfg)));
+                newValueSerializer(proCfg), null));
     }
 
     protected Consumer<Object,Object> newKafkaConsumerData() {
@@ -506,7 +514,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new KafkaConsumer<>(conCfg,
             newKeyDeserializer(conCfg),
             newOpMessageDeserializer(
-                newValueDeserializer(conCfg)));
+                newValueDeserializer(conCfg),
+                newBiFunctionDeserializer(conCfg)));
     }
 
     protected Consumer<Object,OpMessage> newKafkaConsumerFlush() {
@@ -519,7 +528,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new KafkaConsumer<>(conCfg,
             newKeyDeserializer(conCfg),
             newOpMessageDeserializer(
-                newValueDeserializer(conCfg)));
+                newValueDeserializer(conCfg), null));
     }
 
     @SuppressWarnings("unchecked")
@@ -536,6 +545,20 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return s;
     }
 
+    protected BiFunctionSerializer newBiFunctionSerializer(Map<String, Object> proCfg) {
+        BiFunctionSerializer s = cfg.getConfiguredInstance(COMPUTE_SERIALIZER_CLASS, BiFunctionSerializer.class);
+        if (s != null)
+            s.configure(proCfg, false);
+        return s;
+    }
+
+    protected BiFunctionSerializer updateComputeSerializer(BiFunctionSerializer s) {
+        if (computeSerializer != null)
+            throw new IllegalStateException();
+
+        return computeSerializer = s;
+    }
+
     @SuppressWarnings("unchecked")
     protected <K> Deserializer<K> newKeyDeserializer(Map<String, Object> conCfg) {
         Deserializer<K> d = cfg.getConfiguredInstance(KEY_DESERIALIZER_CLASS, Deserializer.class);
@@ -550,12 +573,19 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return d;
     }
 
-    protected <V> Deserializer<OpMessage> newOpMessageDeserializer(Deserializer<V> d) {
-        return new OpMessageDeserializer<>(d);
+    protected BiFunctionDeserializer newBiFunctionDeserializer(Map<String, Object> conCfg) {
+        BiFunctionDeserializer d = cfg.getConfiguredInstance(COMPUTE_DESERIALIZER_CLASS, BiFunctionDeserializer.class);
+        if (d != null)
+            d.configure(conCfg, false);
+        return d;
     }
 
-    protected <V> Serializer<OpMessage> newOpMessageSerializer(Serializer<V> s) {
-        return new OpMessageSerializer<>(s);
+    protected <V> Deserializer<OpMessage> newOpMessageDeserializer(Deserializer<V> v, BiFunctionDeserializer f) {
+        return new OpMessageDeserializer<>(v, f);
+    }
+
+    protected <V> Serializer<OpMessage> newOpMessageSerializer(Serializer<V> v, BiFunctionSerializer f) {
+        return new OpMessageSerializer<>(v, f);
     }
 
     @Override
@@ -709,7 +739,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     }
 
     protected <K,V> boolean applyReceivedUpdate(long clientId, long opId, byte updateType, K key, V exp, V upd,
-        BiFunction<?,?,?> function
+        BiFunction<?,?,?> function, Box<V> updatedValueBox
     ) {
         Object mapId = maps.getMapId(key);
 
@@ -720,11 +750,20 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
         KReplicaMap<K,V> map = getMapById(mapId);
 
-        return map.onReceiveUpdate(clientId == this.clientId, opId, updateType, key, exp, upd, function);
+        return map.onReceiveUpdate(
+            clientId == this.clientId,
+            opId,
+            updateType,
+            key,
+            exp,
+            upd,
+            function,
+            updatedValueBox);
     }
 
     protected boolean canSendFunction(BiFunction<?,?,?> function) {
-        return false; // TODO
+        BiFunctionSerializer s = computeSerializer;
+        return s != null && s.canSerialize(function);
     }
 
     public enum State {

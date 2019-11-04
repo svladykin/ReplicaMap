@@ -32,6 +32,9 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String KEY_DESERIALIZER_CLASS = ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
     public static final String VALUE_DESERIALIZER_CLASS = ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
 
+    public static final String COMPUTE_SERIALIZER_CLASS = "compute.serializer";
+    public static final String COMPUTE_DESERIALIZER_CLASS = "compute.deserializer";
+
     public static final String CLIENT_ID = "client.id";
     public static final String CLIENTS_MAX_NUM = "clients.max.number";
     public static final String DATA_TOPIC = "data.topic";
@@ -99,6 +102,10 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
             "Key deserializer class.")
         .define(VALUE_DESERIALIZER_CLASS, CLASS, StringDeserializer.class, HIGH,
             "Value deserializer class.")
+        .define(COMPUTE_SERIALIZER_CLASS, CLASS, null, HIGH,
+            "Serializer class for the functions passed to compute methods.")
+        .define(COMPUTE_DESERIALIZER_CLASS, CLASS, null, HIGH,
+            "Deserializer class for the functions passed to compute methods.")
         .define(BOOTSTRAP_SERVERS, LIST, emptyList(), HIGH,
             "Bootstrap Kafka servers.")
         ;

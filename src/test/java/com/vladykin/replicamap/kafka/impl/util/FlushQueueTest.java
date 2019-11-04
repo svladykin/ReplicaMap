@@ -1,6 +1,5 @@
 package com.vladykin.replicamap.kafka.impl.util;
 
-import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Random;
@@ -12,10 +11,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.LongStream;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.jupiter.api.Test;
 
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_PUT;
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -219,8 +216,7 @@ class FlushQueueTest {
         }
     }
 
-    public static ConsumerRecord<Object,OpMessage> newRecord(long offset) {
-        return new ConsumerRecord<>("", 0, offset, offset,
-            new OpMessage(OP_PUT, 777, 100500, null, offset, null));
+    public static MiniRecord newRecord(long offset) {
+        return new MiniRecord(offset, offset, offset);
     }
 }

@@ -293,8 +293,8 @@ class ReplicaMapBaseTest {
             }
         };
 
-        rmap.onReceiveUpdate(false, 100500, (byte)'Z', null, null, null, null);
-        rmap.onReceiveUpdate(false, 100500, (byte)'Z', 1, null, null, null);
+        rmap.onReceiveUpdate(false, 100500, (byte)'Z', null, null, null, null, null);
+        rmap.onReceiveUpdate(false, 100500, (byte)'Z', 1, null, null, null, null);
     }
 
     @Test
@@ -303,7 +303,7 @@ class ReplicaMapBaseTest {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> up, FailureCallback callback) {
                 assertEquals('x', up.srcId);
-                onReceiveUpdate(true, up.opId, up.updateType, up.key, up.exp, up.upd, null);
+                onReceiveUpdate(true, up.opId, up.updateType, up.key, up.exp, up.upd, up.function, null);
             }
         };
 
@@ -359,7 +359,7 @@ class ReplicaMapBaseTest {
             assertEquals("5", newVal);
             cnt.incrementAndGet();
         });
-        rmap.onReceiveUpdate(false, 7, ReplicaMapBase.OP_PUT, 5, null, "5", null);
+        rmap.onReceiveUpdate(false, 7, ReplicaMapBase.OP_PUT, 5, null, "5", null, null);
         assertEquals(4, cnt.get());
 
         rmap.setListener((map, myUp, key, oldVal, newVal) -> {

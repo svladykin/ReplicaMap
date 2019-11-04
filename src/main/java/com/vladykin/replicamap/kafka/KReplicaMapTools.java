@@ -105,7 +105,7 @@ public class KReplicaMapTools {
         cfg.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
 
         try (Producer<byte[],OpMessage> producer = new KafkaProducer<>(cfg, new ByteArraySerializer(),
-            new OpMessageSerializer<>(new ByteArraySerializer()))
+            new OpMessageSerializer<>(new ByteArraySerializer(), null))
         ) {
             for (Map.Entry<TopicPartition,Long> entry : dataOffsets.entrySet()) {
                 producer.send(new ProducerRecord<>(opsTopic, entry.getKey().partition(), null,

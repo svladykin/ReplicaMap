@@ -2,6 +2,7 @@ package com.vladykin.replicamap.kafka.impl.worker;
 
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
+import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.time.Duration;
@@ -79,7 +80,7 @@ class OpsWorkerTest {
 
         Serializer<?> longSer = new LongSerializer();
         flushProducer = new MockProducer<>(true, (Serializer<Object>)longSer,
-            new OpMessageSerializer<>(longSer));
+            new OpMessageSerializer<>(longSer, null));
 
         opsConsumer.assign(singleton(opsPart));
         dataConsumer.assign(singleton(dataPart));
@@ -99,7 +100,7 @@ class OpsWorkerTest {
     }
 
     protected <K, V> boolean applyReceivedUpdate(long clientId, long opId, byte updateType, K key, V exp, V upd,
-        BiFunction<?,?,?> function) {
+        BiFunction<?,?,?> function, Box<V> updatedValueBox) {
         appliedUpdates.incrementAndGet();
         return true;
     }

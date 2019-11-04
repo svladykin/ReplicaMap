@@ -2,7 +2,9 @@ package com.vladykin.replicamap.kafka.impl.worker;
 
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
+import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
+import com.vladykin.replicamap.kafka.impl.util.MiniRecord;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.time.Duration;
 import java.util.HashMap;
@@ -195,15 +197,17 @@ public class OpsWorker extends Worker implements AutoCloseable {
         Object val = dataRec.value();
         byte opType = val == null ? OP_REMOVE_ANY : OP_PUT;
 
-        updateHandler.applyReceivedUpdate(0L, 0L, opType, key, null, val, null);
+        updateHandler.applyReceivedUpdate(0L, 0L, opType, key, null, val, null, null);
     }
 
     protected void applyOpsTopicRecords(TopicPartition opsPart, List<ConsumerRecord<Object,OpMessage>> partRecs) {
         FlushQueue flushQueue = flushQueues.get(opsPart.partition());
 
         int lastIndex = partRecs.size() - 1;
+        Box<Object> updatedValueBox = new Box<>();
 
         for (int i = 0; i <= lastIndex; i++) {
+            updatedValueBox.clear();
             ConsumerRecord<Object,OpMessage> rec = partRecs.get(i);
 
             if (log.isTraceEnabled())
@@ -240,10 +244,12 @@ public class OpsWorker extends Worker implements AutoCloseable {
                     key,
                     op.getExpectedValue(),
                     op.getUpdatedValue(),
-                    op.getFunction());
+                    op.getFunction(),
+                    updatedValueBox);
             }
 
-            flushQueue.add(rec, updated, needClean || needFlush || i == lastIndex);
+            MiniRecord miniRec = new MiniRecord(key, updatedValueBox.get(), rec.offset());
+            flushQueue.add(miniRec, updated, needClean || needFlush || i == lastIndex);
 
             if (needFlush) {
                 OpMessage lastFlush = lastFlushNotifications.get(opsPart);

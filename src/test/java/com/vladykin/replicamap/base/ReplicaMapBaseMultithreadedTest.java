@@ -382,7 +382,7 @@ public class ReplicaMapBaseMultithreadedTest {
                 while (!Thread.interrupted()) {
                     TestReplicaMapUpdate<K,V> upd = s.get();
                     if (upd != null) {
-                        onReceiveUpdate(upd.srcId.equals(this.id), upd.opId, upd.updateType, upd.key, upd.exp, upd.upd, null);
+                        onReceiveUpdate(upd.srcId.equals(this.id), upd.opId, upd.updateType, upd.key, upd.exp, upd.upd, null, null);
                         numAppliedOps.incrementAndGet();
                     }
                 }

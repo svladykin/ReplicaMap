@@ -5,6 +5,7 @@ import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
+import com.vladykin.replicamap.kafka.impl.util.MiniRecord;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -26,14 +27,12 @@ import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_REQUEST;
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_PUT;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.CLIENT1_ID;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.CLIENT2_ID;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.TOPIC_DATA;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.TOPIC_FLUSH;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.TOPIC_OPS;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.newFlushNotification;
-import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.newPutRecord;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -115,17 +114,21 @@ class FlushWorkerTest {
         return flushConsumer;
     }
 
+    MiniRecord newMiniRecord(long offset) {
+        return new MiniRecord(null, null, offset);
+    }
+
     @Test
     void testProcessCleanRequests() {
         FlushQueue flushQueue = flushQueues.get(0);
 
-        flushQueue.add(newPutRecord(CLIENT2_ID, 100), true, false);
-        flushQueue.add(newPutRecord(CLIENT2_ID, 101), true, false);
-        flushQueue.add(newPutRecord(CLIENT2_ID, 102), true, false);
-        flushQueue.add(newPutRecord(CLIENT2_ID, 103), true, false);
-        flushQueue.add(newPutRecord(CLIENT2_ID, 104), true, false);
-        flushQueue.add(newPutRecord(CLIENT2_ID, 105), true, false);
-        flushQueue.add(newPutRecord(CLIENT2_ID, 106), true, false);
+        flushQueue.add(newMiniRecord(100), true, false);
+        flushQueue.add(newMiniRecord(101), true, false);
+        flushQueue.add(newMiniRecord(102), true, false);
+        flushQueue.add(newMiniRecord(103), true, false);
+        flushQueue.add(newMiniRecord(104), true, false);
+        flushQueue.add(newMiniRecord(105), true, false);
+        flushQueue.add(newMiniRecord(106), true, false);
 
         assertEquals(7, flushQueue.size());
 
@@ -180,27 +183,18 @@ class FlushWorkerTest {
 
         initFlushConsumer(101, 97);
         flushWorker.initDataProducers(singleton(flushPart));
+        assertTrue(flushWorker.unprocessedFlushRequests.isEmpty());
         flushWorker.initUnprocessedFlushRequests(flushPart);
-        assertFalse(flushWorker.processFlushRequests(0)); // No data in flush queue.
         assertFalse(flushWorker.unprocessedFlushRequests.isEmpty());
+        assertFalse(flushWorker.processFlushRequests(0)); // No data in flush queue.
 
         FlushQueue flushQueue = flushQueues.get(0);
 
-        flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 98, "a",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "a", null)),
-            true, true);
-        flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 99, "b",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "b", null)),
-            true, true);
-        flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 100, "a",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "x", null)),
-            true, true);
-        flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 101, "b",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "y", null)),
-            true, true);
-        flushQueue.add(new ConsumerRecord<>(TOPIC_OPS, 0, 102, "a",
-                new OpMessage(OP_PUT, CLIENT2_ID, 0, null, "z", null)),
-            true, true);
+        flushQueue.add(new MiniRecord("a", "a", 98), true, true);
+        flushQueue.add(new MiniRecord("b", "b", 99), true, true);
+        flushQueue.add(new MiniRecord("a", "x", 100), true, true);
+        flushQueue.add(new MiniRecord("b", "y", 101), true, true);
+        flushQueue.add(new MiniRecord("a", "z", 102), true, true);
 
         assertEquals(5, flushQueue.size());
 
@@ -220,8 +214,9 @@ class FlushWorkerTest {
 
         assertFalse(flushWorker.processFlushRequests(0));
         assertFalse(dataProducer.transactionCommitted());
-        assertTrue(flushWorker.unprocessedFlushRequests.isEmpty());
+        assertTrue(flushWorker.unprocessedFlushRequests.isEmpty()); // must be cleaned on fence
 
+        flushWorker.flushConsumers.reset(0, flushWorker.flushConsumers.get(0, null));
         flushWorker.initUnprocessedFlushRequests(flushPart);
         dataProducer = new MockProducer<>();
         flushWorker.initDataProducers(singleton(flushPart));
@@ -278,7 +273,7 @@ class FlushWorkerTest {
         flushWorker.initDataProducers(singleton(flushPart));
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(102, 101);
-
+        flushWorker.flushConsumers.reset(0, flushWorker.flushConsumers.get(0, null));
         flushWorker.initUnprocessedFlushRequests(flushPart);
         assertTrue(flushWorker.processFlushRequests(0));
         assertEquals(0, flushQueue.size());

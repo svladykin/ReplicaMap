@@ -36,7 +36,7 @@ public abstract class TestReplicaMapBase<K, V> extends ReplicaMapBase<K, V> {
     protected abstract void doSendUpdate(TestReplicaMapUpdate<K, V> update, FailureCallback callback);
 
     public void update(boolean myUpdate, TestReplicaMapUpdate<K, V> u) {
-        onReceiveUpdate(myUpdate, u.opId, u.updateType, u.key, u.exp, u.upd, u.function);
+        onReceiveUpdate(myUpdate, u.opId, u.updateType, u.key, u.exp, u.upd, u.function, null);
     }
 
     @Override

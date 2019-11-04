@@ -1,5 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
+import com.vladykin.replicamap.kafka.compute.BiFunctionDeserializer;
+import com.vladykin.replicamap.kafka.compute.BiFunctionSerializer;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -20,8 +22,11 @@ class OpMessageTest {
         TestStringSerializer tvSer = new TestStringSerializer();
         TestStringDeserializer tvDes = new TestStringDeserializer();
 
-        OpMessageSerializer<String> ser = new OpMessageSerializer<>(tvSer);
-        OpMessageDeserializer<String> des = new OpMessageDeserializer<>(tvDes);
+        TestFuncSerializer funSer = new TestFuncSerializer();
+        TestFuncDeserializer funDes = new TestFuncDeserializer();
+
+        OpMessageSerializer<String> ser = new OpMessageSerializer<>(tvSer, funSer);
+        OpMessageDeserializer<String> des = new OpMessageDeserializer<>(tvDes, funDes);
 
         ser.configure(null, false);
         des.configure(null, false);
@@ -30,21 +35,21 @@ class OpMessageTest {
 
         String v1 = "abcxyz";
         String v2 = "qwerty";
-        BiFunction<?,?,?> function = null;
+        BiFunction<?,?,?> function = new TestFunc(7);
 
         OpMessage msg = new OpMessage((byte)1, clientId, 1, v1, v2, function);
         byte[] msgBytes = ser.serialize(null, msg);
-        assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 6, msgBytes.length);
+        assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 6 + 1 + 1, msgBytes.length);
         assertEquals(msg, des.deserialize(null, msgBytes));
 
         msg = new OpMessage((byte)1, clientId, 1, null, v2, function);
         msgBytes = ser.serialize(null, msg);
-        assertEquals(1 + 1 + 1 + 1 + 0 + 1 + 6, msgBytes.length);
+        assertEquals(1 + 1 + 1 + 1 + 0 + 1 + 6 + 1 + 1, msgBytes.length);
         assertEquals(msg, des.deserialize(null, msgBytes));
 
-        msg = new OpMessage((byte)1, clientId, 1, v1, null, function);
+        msg = new OpMessage((byte)1, clientId, 1, v1, null, null);
         msgBytes = ser.serialize(null, msg);
-        assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 0, msgBytes.length);
+        assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 0 + 1 + 0, msgBytes.length);
         assertEquals(msg, des.deserialize(null, msgBytes));
 
         ser.close();
@@ -52,12 +57,14 @@ class OpMessageTest {
 
         assertTrue(tvSer.closed);
         assertTrue(tvDes.closed);
+        assertTrue(funSer.closed);
+        assertTrue(funDes.closed);
     }
 
     @Test
     void testFlushRequest() {
-        OpMessageSerializer<Void> ser = new OpMessageSerializer<>((topic, msg) -> null);
-        OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((topic, msgBytes) -> null);
+        OpMessageSerializer<Void> ser = new OpMessageSerializer<>((topic, msg) -> null, null);
+        OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((topic, msgBytes) -> null, null);
 
         long clientId = 5;
         long flushOffsetOps = 7;
@@ -81,8 +88,8 @@ class OpMessageTest {
 
     @Test
     void testFlushNotification() {
-        OpMessageSerializer<Void> ser = new OpMessageSerializer<>((topic, msg) -> null);
-        OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((topic, msgBytes) -> null);
+        OpMessageSerializer<Void> ser = new OpMessageSerializer<>((topic, msg) -> null, null);
+        OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((topic, msgBytes) -> null, null);
 
         long clientId = 5;
         long flushOffsetOps = 7;
@@ -132,6 +139,56 @@ class OpMessageTest {
             assertTrue(configured);
             assertFalse(closed);
             return new String(data, StandardCharsets.UTF_8);
+        }
+    }
+
+    static class TestFuncSerializer extends ConfigurableCloseable implements BiFunctionSerializer {
+        @Override
+        public byte[] serialize(String topic, BiFunction<?,?,?> data) {
+            assertTrue(configured);
+            assertFalse(closed);
+            return new byte[]{(byte)((TestFunc)data).x};
+        }
+
+        @Override
+        public boolean canSerialize(BiFunction<?,?,?> function) {
+            return function instanceof TestFunc;
+        }
+    }
+
+    static class TestFuncDeserializer extends ConfigurableCloseable implements BiFunctionDeserializer {
+        public BiFunction<?,?,?> deserialize(String topic, byte[] data) {
+            assertTrue(configured);
+            assertFalse(closed);
+            return new TestFunc(data[0]);
+        }
+    }
+
+    static class TestFunc implements BiFunction<Integer,Integer,Integer> {
+        int x;
+
+        TestFunc(int x) {
+            this.x = x;
+        }
+
+        @Override
+        public Integer apply(Integer k, Integer v) {
+            return v + x;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            TestFunc testFunc = (TestFunc)o;
+
+            return x == testFunc.x;
+        }
+
+        @Override
+        public int hashCode() {
+            return x;
         }
     }
 }

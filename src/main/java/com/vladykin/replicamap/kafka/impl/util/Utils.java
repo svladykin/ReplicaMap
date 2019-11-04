@@ -230,6 +230,10 @@ public final class Utils {
         return rec.offset() > maxOffset;
     }
 
+    public static boolean isOverMaxOffset(MiniRecord rec, long maxOffset) {
+        return rec.offset() > maxOffset;
+    }
+
     public static <X> X findMax(List<X> list, Comparator<X> cmp) {
         if (list == null || list.isEmpty())
             return null;

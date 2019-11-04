@@ -3,6 +3,11 @@ package com.vladykin.replicamap.kafka.impl.msg;
 import java.util.Objects;
 import java.util.function.BiFunction;
 
+/**
+ * Operation message.
+ *
+ * @author Sergi Vladykin http://vladykin.com
+ */
 public class OpMessage {
     protected final long clientId;
     protected final byte opType;

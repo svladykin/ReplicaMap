@@ -254,7 +254,7 @@ public class FlushWorker extends Worker {
             if (!Utils.isInterrupted(e))
                 log.error("Failed to poll flush consumer for topic " + flushTopic, e);
 
-            resetOnError(flushConsumer);
+            resetOnError(flushConsumer, null);
             return false;
         }
 
@@ -267,8 +267,11 @@ public class FlushWorker extends Worker {
         return flushed;
     }
 
-    protected void resetOnError(Consumer<Object,OpMessage> flushConsumer) {
+    protected void resetOnError(Consumer<Object,OpMessage> flushConsumer, Consumer<Object,Object> dataConsumer) {
         unprocessedFlushRequests.clear();
+
+        if (dataConsumer != null)
+            dataConsumers.reset(workerId, dataConsumer);
 
         for (int i = 0; i < dataProducers.size(); i++)
             resetDataProducer(i);
@@ -362,12 +365,13 @@ public class FlushWorker extends Worker {
                 dataPart, dataBatchSize, collectedAll);
         }
 
+        Producer<Object,Object> dataProducer = null;
         Consumer<Object,Object> dataConsumer = null;
         long flushOffsetData = -1;
         OffsetAndMetadata flushConsumerOffset = null;
 
         try {
-            Producer<Object,Object> dataProducer = dataProducers.get(part, null);
+            dataProducer = dataProducers.get(part, null);
             log.trace("Data producer for flushing partition {}: {}", dataPart, dataProducer);
 
             if (dataConsumers != null) {
@@ -423,8 +427,14 @@ public class FlushWorker extends Worker {
             if (dataConsumer != null)
                 readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, flushOffsetData);
         }
+        catch (ProducerFencedException e) {
+            log.warn("Fenced while flushing data for partition {}, flushQueueSize: {}", dataPart, flushQueue.size());
+            unprocessedFlushRequests.remove(flushPart, flushRequests);
+            dataProducers.reset(part, dataProducer);
+            return false;
+        }
         catch (Exception e) {
-            if (isKnownFlushFailure(e)) {
+            if (Utils.isInterrupted(e) || e instanceof ReplicaMapException) {
                 log.warn("Failed to flush data for partition {}, flushOffsetData: {}, flushConsumerOffset: {}, " +
                         "flushQueueSize: {}, reason: {}", dataPart, flushOffsetData, flushConsumerOffset,
                         flushQueue.size(), Utils.getMessage(e));
@@ -432,11 +442,7 @@ public class FlushWorker extends Worker {
             else
                 log.error("Failed to flush data for partition " + dataPart + ", exception:", e);
 
-            resetOnError(flushConsumer);
-
-            if (dataConsumer != null)
-                dataConsumers.reset(workerId, dataConsumer);
-
+            resetOnError(flushConsumer, dataConsumer);
             return false; // No other handling, the next flush will be our retry.
         }
 
@@ -454,12 +460,6 @@ public class FlushWorker extends Worker {
         }
 
         return true;
-    }
-
-    protected boolean isKnownFlushFailure(Exception e) {
-        return Utils.isInterrupted(e)
-            || e instanceof ProducerFencedException
-            || e instanceof ReplicaMapException;
     }
 
     protected void readBackAndCheckCommittedRecords(
