@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,6 +41,8 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 @SuppressWarnings("SpellCheckingInspection")
 public class ReplicaMapBaseMultithreadedTest {
+    static final ThreadLocal<Boolean> canSendFunction = new ThreadLocal<>();
+
     public static <T> List<CompletableFuture<T>> executeThreads(int threads, Executor exec, Callable<T> call) {
         List<CompletableFuture<T>> futures = new ArrayList<>();
 
@@ -66,6 +69,12 @@ public class ReplicaMapBaseMultithreadedTest {
         return futures;
     }
 
+    @BeforeEach
+    void beforeEachTest() {
+        canSendFunction.set(true);
+    }
+
+    @SuppressWarnings("ConstantConditions")
     @Test
     void testReplication() throws InterruptedException {
         ExecutorService exec = Executors.newFixedThreadPool(10);
@@ -79,6 +88,8 @@ public class ReplicaMapBaseMultithreadedTest {
         ReplicaMapMt<Integer, Integer> a = new ReplicaMapMt<>('A', mq, exec, sa, sentOpsNum);
         ReplicaMapMt<Integer, Integer> b = new ReplicaMapMt<>('B', mq, exec, sb, sentOpsNum);
         ReplicaMapMt<Integer, Integer> c = new ReplicaMapMt<>('C', mq, exec, sc, sentOpsNum);
+
+        Random rnd = ThreadLocalRandom.current();
 
         for (int i = 0; i < 5000; i++) {
             assertNull(a.put(1, 100));
@@ -123,6 +134,67 @@ public class ReplicaMapBaseMultithreadedTest {
             b.awaitForOps();
             assertNull(b.get(1));
 
+            canSendFunction.set(rnd.nextBoolean());
+            assertEquals(107, b.computeIfAbsent(7, (k) -> k + 100));
+            assertEquals(107, b.get(7));
+            a.awaitForOps();
+            assertEquals(107, a.get(7));
+            c.awaitForOps();
+            assertEquals(107, c.get(7));
+
+            canSendFunction.set(rnd.nextBoolean());
+            assertEquals(300, a.computeIfPresent(7, (k, v) -> v + 200 - k));
+            assertEquals(300, a.get(7));
+            b.awaitForOps();
+            assertEquals(300, b.get(7));
+            c.awaitForOps();
+            assertEquals(300, c.get(7));
+
+            canSendFunction.set(rnd.nextBoolean());
+            assertEquals(207, c.compute(7, (k, v) -> v - 100 + k));
+            assertEquals(207, c.get(7));
+            a.awaitForOps();
+            assertEquals(207, a.get(7));
+            b.awaitForOps();
+            assertEquals(207, b.get(7));
+
+            canSendFunction.set(rnd.nextBoolean());
+            assertEquals(999, a.merge(8, 999, Integer::sum));
+            assertEquals(999, a.get(8));
+            assertEquals(2, a.size());
+            b.awaitForOps();
+            assertEquals(999, b.get(8));
+            assertEquals(2, b.size());
+            c.awaitForOps();
+            assertEquals(999, c.get(8));
+            assertEquals(2, c.size());
+
+            canSendFunction.set(rnd.nextBoolean());
+            assertEquals(1207, c.merge(7, 1000, Integer::sum));
+            assertEquals(1207, c.get(7));
+            a.awaitForOps();
+            assertEquals(1207, a.get(7));
+            b.awaitForOps();
+            assertEquals(1207, b.get(7));
+
+            canSendFunction.set(rnd.nextBoolean());
+            b.replaceAll((k,v) -> v - 200);
+            assertEquals(2, b.size());
+            assertEquals(799, b.get(8));
+            assertEquals(1007, b.get(7));
+            a.awaitForOps();
+            assertEquals(2, a.size());
+            assertEquals(799, a.get(8));
+            assertEquals(1007, a.get(7));
+            c.awaitForOps();
+            assertEquals(2, c.size());
+            assertEquals(799, c.get(8));
+            assertEquals(1007, c.get(7));
+
+            a.clear();
+            b.awaitForOps();
+            c.awaitForOps();
+
             assertTrue(a.isEmpty());
             assertTrue(b.isEmpty());
             assertTrue(c.isEmpty());
@@ -141,7 +213,7 @@ public class ReplicaMapBaseMultithreadedTest {
     void testMultithreadedOps() throws InterruptedException, TimeoutException, ExecutionException {
         // One of the scenarios here is when the callback was notified about the exception,
         // but the update was actually sent. Because of this we see lots warnings about
-        // "Possible client id collision, AsyncOp was not found for key..."
+        // "AsyncOp was not found for key..."
 
         ExecutorService exec = Executors.newCachedThreadPool();
 
@@ -187,13 +259,14 @@ public class ReplicaMapBaseMultithreadedTest {
                     start.await();
 
                     while (!stop.get()) {
+                        canSendFunction.set(rnd.nextBoolean());
                         final boolean failSend0 = rnd.nextInt(10) == 0;
 
                         ReplicaMapMt<Integer,Integer> map = abc[rnd.nextInt(abc.length)];
 
                         map.setFailNextOp(failSend0);
 
-                        int op = rnd.nextInt(6);
+                        int op = rnd.nextInt(13);
                         int k = rnd.nextInt(19);
                         int v = rnd.nextInt(10);
                         Integer old;
@@ -228,6 +301,38 @@ public class ReplicaMapBaseMultithreadedTest {
                                         map.remove(k, old);
                                     break;
 
+                                case 6:
+                                    map.computeIfAbsent(k, (key) -> key + v + 1);
+                                    break;
+
+                                case 7:
+                                    map.computeIfPresent(k, (key, val) -> key - val + v + 1);
+                                    break;
+
+                                case 8:
+                                    map.compute(k, (key, val) -> val == null ? v : val - v);
+                                    break;
+
+                                case 9:
+                                    map.merge(k, v, Integer::sum);
+                                    break;
+
+                                case 10:
+                                    HashMap<Integer,Integer> xm = new HashMap<>();
+                                    xm.put(k, v);
+                                    xm.put(k - 1, v - 1);
+                                    map.putAll(xm);
+                                    break;
+
+                                case 11:
+                                    map.replaceAll((key, val) -> key - val);
+                                    break;
+
+                                case 12:
+                                    if (rnd.nextInt(50) == 0)
+                                        map.clear();
+                                    break;
+
                                 default:
                                     fail("Op: " + op);
                             }
@@ -236,24 +341,31 @@ public class ReplicaMapBaseMultithreadedTest {
 //                            assertFalse(failSend0);
                         }
                         catch (ReplicaMapException e) {
-                            Throwable cause = e.getCause();
-                            assertSame(ExecutionException.class, cause.getClass());
+                            try {
+                                Throwable cause = e.getCause();
+                                assertSame(ExecutionException.class, cause.getClass());
 
-                            cause = cause.getCause();
-                            assertSame(ReplicaMapException.class, cause.getClass());
+                                cause = cause.getCause();
+                                assertSame(ReplicaMapException.class, cause.getClass());
 
-                            cause = cause.getCause();
+                                cause = cause.getCause();
 
-                            assertSame(TestException.class, cause.getClass());
+                                assertSame(TestException.class, cause.getClass());
 
-                            assertTrue(failSend0);
+                                assertTrue(failSend0);
+                            }
+                            catch (Throwable ae) {
+                                e.printStackTrace(System.out);
+
+                                throw ae;
+                            }
                         }
                     }
 
                     return null;
                 }));
 
-                Thread.sleep(300);
+                Thread.sleep(500);
 
                 stop.set(true);
                 fut.get(3, TimeUnit.SECONDS);
@@ -382,11 +494,17 @@ public class ReplicaMapBaseMultithreadedTest {
                 while (!Thread.interrupted()) {
                     TestReplicaMapUpdate<K,V> upd = s.get();
                     if (upd != null) {
-                        onReceiveUpdate(upd.srcId.equals(this.id), upd.opId, upd.updateType, upd.key, upd.exp, upd.upd, null, null);
+                        onReceiveUpdate(upd.srcId.equals(this.id), upd.opId, upd.updateType,
+                            upd.key, upd.exp, upd.upd, upd.function, null);
                         numAppliedOps.incrementAndGet();
                     }
                 }
             });
+        }
+
+        @Override
+        protected boolean canSendFunction(BiFunction<?,?,?> function) {
+            return canSendFunction.get();
         }
 
         void setFailNextOp(boolean failNextOp) {

@@ -317,16 +317,6 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
     }
 
     @Override
-    default void replaceAll(BiFunction<? super K,? super V,? extends V> remappingFunction) {
-        try {
-            asyncReplaceAll(remappingFunction).get();
-        }
-        catch (InterruptedException | ExecutionException e) {
-            throw new ReplicaMapException(e);
-        }
-    }
-
-    @Override
     default V computeIfAbsent(K key, Function<? super K,? extends V> mappingFunction) {
         try {
             return asyncComputeIfAbsent(key, mappingFunction).get();

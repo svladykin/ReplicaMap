@@ -13,6 +13,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.interruptRunningOps;
@@ -37,7 +38,14 @@ class ReplicaMapBaseTest {
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
                 queue.add(update);
             }
+
+            @Override
+            protected boolean canSendFunction(BiFunction<?,?,?> function) {
+                return true;
+            }
         };
+
+        System.out.println(rmap.toString());
 
         assertEquals('x', rmap.id());
         assertSame(map, rmap.unwrap());
@@ -129,6 +137,71 @@ class ReplicaMapBaseTest {
         assertEquals(0, rmap.size());
         assertTrue(futRmv.isDone());
 
+        CompletableFuture<String> futCompute = rmap.asyncComputeIfAbsent(1, String::valueOf);
+        assertEquals(1, queue.size());
+        assertEquals(9, maxActiveOps.availablePermits());
+        assertEquals(0, rmap.size());
+        assertFalse(futCompute.isDone());
+
+        rmap.update(true, queue.poll());
+        assertEquals(0, queue.size());
+        assertEquals(10, maxActiveOps.availablePermits());
+        assertEquals(1, rmap.size());
+        assertTrue(futCompute.isDone());
+        assertEquals("1", rmap.get(1));
+
+        futCompute = rmap.asyncCompute(1, (k,v) -> k + v);
+        assertEquals(1, queue.size());
+        assertEquals(9, maxActiveOps.availablePermits());
+        assertEquals(1, rmap.size());
+        assertFalse(futCompute.isDone());
+
+        rmap.update(true, queue.poll());
+        assertEquals(0, queue.size());
+        assertEquals(10, maxActiveOps.availablePermits());
+        assertEquals(1, rmap.size());
+        assertTrue(futCompute.isDone());
+        assertEquals("11", rmap.get(1));
+
+        futCompute = rmap.asyncComputeIfPresent(1, (k,v) -> k + v + 3);
+        assertEquals(1, queue.size());
+        assertEquals(9, maxActiveOps.availablePermits());
+        assertEquals(1, rmap.size());
+        assertFalse(futCompute.isDone());
+
+        rmap.update(true, queue.poll());
+        assertEquals(0, queue.size());
+        assertEquals(10, maxActiveOps.availablePermits());
+        assertEquals(1, rmap.size());
+        assertTrue(futCompute.isDone());
+        assertEquals("1113", rmap.get(1));
+
+        futCompute = rmap.asyncMerge(1, "7", (v1, v2) -> v1 + v2);
+        assertEquals(1, queue.size());
+        assertEquals(9, maxActiveOps.availablePermits());
+        assertEquals(1, rmap.size());
+        assertFalse(futCompute.isDone());
+
+        rmap.update(true, queue.poll());
+        assertEquals(0, queue.size());
+        assertEquals(10, maxActiveOps.availablePermits());
+        assertEquals(1, rmap.size());
+        assertTrue(futCompute.isDone());
+        assertEquals("11137", rmap.get(1));
+
+        futCompute = rmap.asyncMerge(0, "7", (v1, v2) -> v1 + v2);
+        assertEquals(1, queue.size());
+        assertEquals(9, maxActiveOps.availablePermits());
+        assertEquals(1, rmap.size());
+        assertFalse(futCompute.isDone());
+
+        rmap.update(true, queue.poll());
+        assertEquals(0, queue.size());
+        assertEquals(10, maxActiveOps.availablePermits());
+        assertEquals(2, rmap.size());
+        assertTrue(futCompute.isDone());
+        assertEquals("7", rmap.get(0));
+
         CompletableFuture<String> fut = rmap.asyncPut(10, "10");
         interruptRunningOps(rmap);
         try {
@@ -152,6 +225,11 @@ class ReplicaMapBaseTest {
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
                 queue.add(update);
             }
+
+            @Override
+            protected boolean canSendFunction(BiFunction<?,?,?> function) {
+                return true;
+            }
         };
 
         String one = "one";
@@ -174,6 +252,9 @@ class ReplicaMapBaseTest {
 
         assertNull(assertDone(rmap.asyncReplace(2, "two")).get());
         assertFalse(assertDone(rmap.asyncReplace(1, "two", "five")).get());
+
+        assertEquals("one", assertDone(rmap.asyncComputeIfAbsent(1, (k) -> String.valueOf(k + 1))).get());
+        assertNull(assertDone(rmap.asyncComputeIfPresent(100, (k, v) -> k + v)).get());
 
         assertEquals(10, maxActiveOps.availablePermits());
     }

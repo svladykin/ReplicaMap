@@ -17,7 +17,6 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -168,18 +167,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
                 throw new ReplicaMapException(e);
             }
         }
-
         return ReplicaMap.super.compute(key, remappingFunction);
-    }
-
-    @Override
-    public V computeIfAbsent(K key, Function<? super K,? extends V> mappingFunction) {
-        try {
-            return asyncComputeIfAbsent(key, mappingFunction).get();
-        }
-        catch (InterruptedException | ExecutionException e) {
-            throw new ReplicaMapException(e);
-        }
     }
 
     @Override
@@ -192,7 +180,6 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
                 throw new ReplicaMapException(e);
             }
         }
-
         return ReplicaMap.super.computeIfPresent(key, remappingFunction);
     }
 
@@ -206,8 +193,21 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
                 throw new ReplicaMapException(e);
             }
         }
-
         return ReplicaMap.super.merge(key, value, remappingFunction);
+    }
+
+    @Override
+    public void replaceAll(BiFunction<? super K,? super V,? extends V> remappingFunction) {
+        if (canSendNonNullFunction(remappingFunction)) {
+            try {
+                asyncReplaceAll(remappingFunction).get();
+            }
+            catch (InterruptedException | ExecutionException e) {
+                throw new ReplicaMapException(e);
+            }
+        }
+        else
+            ReplicaMap.super.replaceAll(remappingFunction);
     }
 
     /**
