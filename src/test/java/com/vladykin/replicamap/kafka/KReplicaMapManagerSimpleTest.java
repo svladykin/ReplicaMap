@@ -110,6 +110,8 @@ class KReplicaMapManagerSimpleTest {
 
         KReplicaMap<String,String> map = m.getMap();
 
+        assertSame(m, map.getManager());
+
         Object mapId = map.id();
 
         assertSame(map, m.getMap());

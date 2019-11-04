@@ -30,6 +30,11 @@ public class KReplicaMap<K,V> extends ReplicaMapBase<K,V> {
     }
 
     @Override
+    public KReplicaMapManager getManager() {
+        return manager;
+    }
+
+    @Override
     public Map<K,V> unwrap() {
         manager.checkRunning();
         return super.unwrap();

@@ -24,10 +24,19 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
      * Gets the identifier of this map.
      *
      * @return Map id.
-     * @see ReplicaMapManager#getMap
+     * @see ReplicaMapManager#getMap(Object)
      * @see MapsHolder#getMapId(Object)
      */
     Object id();
+
+    /**
+     * Gets the manager for this map.
+     *
+     * @return Map manager.
+     * @see ReplicaMapManager#getMap(Object)
+     * @see ReplicaMapManager#getMap()
+     */
+    ReplicaMapManager getManager();
 
     /**
      * Gets the underlying map that actually stores the data.

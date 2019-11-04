@@ -25,6 +25,11 @@ public class TestMap<K,V> implements ReplicaMap<K,V> {
     }
 
     @Override
+    public ReplicaMapManager getManager() {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public Map<K,V> unwrap() {
         return m;
     }

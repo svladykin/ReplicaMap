@@ -1,15 +1,13 @@
 package com.vladykin.replicamap.base;
 
+import com.vladykin.replicamap.ReplicaMapManager;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 
 @SuppressWarnings("WeakerAccess")
 public abstract class TestReplicaMapBase<K, V> extends ReplicaMapBase<K, V> {
-    private BiConsumer<TestReplicaMapUpdate<K, V>, FailureCallback> queue;
-
     TestReplicaMapBase(
         char id,
         Map<K,V> map,
@@ -41,6 +39,11 @@ public abstract class TestReplicaMapBase<K, V> extends ReplicaMapBase<K, V> {
 
     @Override
     protected boolean canSendFunction(BiFunction<?,?,?> function) {
-        return false; // FIXME
+        return false;
+    }
+
+    @Override
+    public ReplicaMapManager getManager() {
+        throw new UnsupportedOperationException();
     }
 }
