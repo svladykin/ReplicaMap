@@ -37,16 +37,16 @@ public class FlushQueue {
     }
 
     /**
-     * @param rec Operation record.
+     * @param key Key.
+     * @param value Value.
+     * @param offset Offset.
      * @param update If {@code true} then it was a successful map update,
      *               if {@code false} the it was a failed attempt or a flush record.
      * @param waitLock If {@code true} then current thread will wait for the lock acquisition,
      *                 if {@code false} and lock acquisition failed, then operation is allowed
      *                 to store the record into thread local buffer.
      */
-    public void add(MiniRecord rec, boolean update, boolean waitLock) {
-        assert rec != null;
-
+    public void add(Object key, Object value, long offset, boolean update, boolean waitLock) {
         ArrayDeque<MiniRecord> tlq = threadLocalQueue.get();
 
         if (lock(waitLock)) {
@@ -61,11 +61,11 @@ public class FlushQueue {
                         queue.add(r);
                 }
 
-                if (isOverMaxOffset(rec, maxAddOffset)) {
-                    maxAddOffset = rec.offset();
+                if (offset > maxAddOffset) {
+                    maxAddOffset = offset;
 
                     if (update)
-                        queue.add(rec);
+                        queue.add(new MiniRecord(key, value, offset));
                 }
             }
             finally {
@@ -73,7 +73,7 @@ public class FlushQueue {
             }
         }
         else if (update)
-            tlq.add(rec);
+            tlq.add(new MiniRecord(key, value, offset));
     }
 
     protected boolean lock(boolean waitLock) {

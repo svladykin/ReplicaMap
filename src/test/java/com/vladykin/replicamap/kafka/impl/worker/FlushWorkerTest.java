@@ -5,7 +5,6 @@ import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
-import com.vladykin.replicamap.kafka.impl.util.MiniRecord;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -114,21 +113,17 @@ class FlushWorkerTest {
         return flushConsumer;
     }
 
-    MiniRecord newMiniRecord(long offset) {
-        return new MiniRecord(null, null, offset);
-    }
-
     @Test
     void testProcessCleanRequests() {
         FlushQueue flushQueue = flushQueues.get(0);
 
-        flushQueue.add(newMiniRecord(100), true, false);
-        flushQueue.add(newMiniRecord(101), true, false);
-        flushQueue.add(newMiniRecord(102), true, false);
-        flushQueue.add(newMiniRecord(103), true, false);
-        flushQueue.add(newMiniRecord(104), true, false);
-        flushQueue.add(newMiniRecord(105), true, false);
-        flushQueue.add(newMiniRecord(106), true, false);
+        flushQueue.add(null, null, 100, true, false);
+        flushQueue.add(null, null, 101, true, false);
+        flushQueue.add(null, null, 102, true, false);
+        flushQueue.add(null, null, 103, true, false);
+        flushQueue.add(null, null, 104, true, false);
+        flushQueue.add(null, null, 105, true, false);
+        flushQueue.add(null, null, 106, true, false);
 
         assertEquals(7, flushQueue.size());
 
@@ -190,11 +185,11 @@ class FlushWorkerTest {
 
         FlushQueue flushQueue = flushQueues.get(0);
 
-        flushQueue.add(new MiniRecord("a", "a", 98), true, true);
-        flushQueue.add(new MiniRecord("b", "b", 99), true, true);
-        flushQueue.add(new MiniRecord("a", "x", 100), true, true);
-        flushQueue.add(new MiniRecord("b", "y", 101), true, true);
-        flushQueue.add(new MiniRecord("a", "z", 102), true, true);
+        flushQueue.add("a", "a", 98, true, true);
+        flushQueue.add("b", "b", 99, true, true);
+        flushQueue.add("a", "x", 100, true, true);
+        flushQueue.add("b", "y", 101, true, true);
+        flushQueue.add("a", "z", 102, true, true);
 
         assertEquals(5, flushQueue.size());
 

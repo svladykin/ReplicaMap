@@ -27,7 +27,7 @@ class FlushQueueTest {
         assertEquals(-1, q.maxAddOffset);
         assertEquals(0, q.queue.size());
 
-        q.add(newRecord(0), true, false);
+        q.add(null,null, 0, true, false);
 
         assertEquals(-1, q.maxCleanOffset);
         assertEquals(0, q.maxAddOffset);
@@ -49,28 +49,28 @@ class FlushQueueTest {
         assertEquals(0, q.maxAddOffset);
         assertEquals(0, q.queue.size());
 
-        q.add(newRecord(1), true, false);
-        q.add(newRecord(2), true, false);
-        q.add(newRecord(3), true, false);
-        q.add(newRecord(4), true, false);
+        q.add(1,null, 1, true, false);
+        q.add(2,null, 2, true, false);
+        q.add(3,null, 3, true, false);
+        q.add(4,null, 4, true, false);
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(4, q.maxAddOffset);
         assertEquals(4, q.queue.size());
 
-        q.add(newRecord(5), false, false);
+        q.add(5,null, 5, false, false);
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(5, q.maxAddOffset);
         assertEquals(4, q.queue.size());
 
-        q.add(newRecord(6), false, false);
+        q.add(6,null, 6, false, false);
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(6, q.maxAddOffset);
         assertEquals(4, q.queue.size());
 
-        q.add(newRecord(7), true, false);
+        q.add(7,null, 7, true, false);
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(7, q.maxAddOffset);
@@ -81,7 +81,7 @@ class FlushQueueTest {
 
         assertEquals(7, collectedAll);
         assertEquals(5, batch.size());
-        assertEquals(new HashSet<>(Arrays.asList(1L,2L,3L,4L,7L)), batch.keySet());
+        assertEquals(new HashSet<>(Arrays.asList(1,2,3,4,7)), batch.keySet());
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(7, q.maxAddOffset);
@@ -93,13 +93,13 @@ class FlushQueueTest {
         assertEquals(7, q.maxAddOffset);
         assertEquals(0, q.queue.size());
 
-        q.add(newRecord(7), true, true);
+        q.add(8,null, 7, true, true);
 
         assertEquals(7, q.maxCleanOffset);
         assertEquals(7, q.maxAddOffset);
         assertEquals(0, q.queue.size());
 
-        q.add(newRecord(9), true, true);
+        q.add(9,null, 9, true, true);
 
         assertEquals(7, q.maxCleanOffset);
         assertEquals(9, q.maxAddOffset);
@@ -130,9 +130,9 @@ class FlushQueueTest {
 
         q.lock.acquireUninterruptibly();
 
-        q.add(newRecord(1), true, false);
-        q.add(newRecord(2), true, false);
-        q.add(newRecord(3), true, false);
+        q.add(null,null, 1, true, false);
+        q.add(null,null, 2, true, false);
+        q.add(null,null, 3, true, false);
 
         assertEquals(-1, q.maxCleanOffset);
         assertEquals(-1, q.maxAddOffset);
@@ -140,7 +140,7 @@ class FlushQueueTest {
 
         q.lock.release();
 
-        q.add(newRecord(4), true, true);
+        q.add(null,null, 4, true, true);
 
         assertEquals(-1, q.maxCleanOffset);
         assertEquals(4, q.maxAddOffset);
@@ -172,7 +172,7 @@ class FlushQueueTest {
                         boolean update = i == cnt || rnd.nextInt(10) == 0;
                         boolean waitLock = i == cnt || rnd.nextInt(20) == 0;
 
-                        q.add(newRecord(lastAddedOffset.incrementAndGet()), update, waitLock);
+                        q.add(null,null, lastAddedOffset.incrementAndGet(), update, waitLock);
 
                         allAddedCnt.incrementAndGet();
                     }
@@ -214,9 +214,5 @@ class FlushQueueTest {
             exec.shutdownNow();
             assertTrue(exec.awaitTermination(3, TimeUnit.SECONDS));
         }
-    }
-
-    public static MiniRecord newRecord(long offset) {
-        return new MiniRecord(offset, offset, offset);
     }
 }

@@ -4,7 +4,6 @@ import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
-import com.vladykin.replicamap.kafka.impl.util.MiniRecord;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.time.Duration;
 import java.util.HashMap;
@@ -248,8 +247,12 @@ public class OpsWorker extends Worker implements AutoCloseable {
                     updatedValueBox);
             }
 
-            MiniRecord miniRec = new MiniRecord(key, updatedValueBox.get(), rec.offset());
-            flushQueue.add(miniRec, updated, needClean || needFlush || i == lastIndex);
+            flushQueue.add(
+                key,
+                updatedValueBox.get(),
+                rec.offset(),
+                updated,
+                needClean || needFlush || i == lastIndex);
 
             if (needFlush) {
                 OpMessage lastFlush = lastFlushNotifications.get(opsPart);
