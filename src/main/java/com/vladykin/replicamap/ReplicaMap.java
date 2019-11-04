@@ -2,10 +2,8 @@ package com.vladykin.replicamap;
 
 import com.vladykin.replicamap.holder.MapsHolder;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -152,6 +150,67 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
     CompletableFuture<V> asyncMerge(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction);
 
     /**
+     * Asynchronous version of {@link Map#putAll(Map)}.
+     *
+     * @param m Map to put.
+     * @return Future.
+     */
+    default CompletableFuture<ReplicaMap<K,V>> asyncPutAll(
+        Map<? extends K,? extends V> m
+    ) {
+        Utils.requireNonNull(m, "m");
+        CompletableFuture<ReplicaMap<K,V>> fut = CompletableFuture.completedFuture(this);
+        for (Map.Entry<? extends K, ? extends V> e : m.entrySet()) {
+            fut = fut.thenCombine(
+                asyncPut(e.getKey(), e.getValue()),
+                (map, v) -> map);
+
+            if (fut.isCompletedExceptionally())
+                break;
+        }
+        return fut;
+    }
+
+    /**
+     * Asynchronous version of {@link Map#replaceAll(BiFunction)}.
+     *
+     * @param remappingFunction Function to compute a value.
+     * @return Future.
+     */
+    default CompletableFuture<ReplicaMap<K,V>> asyncReplaceAll(
+        BiFunction<? super K,? super V,? extends V> remappingFunction
+    ) {
+        CompletableFuture<ReplicaMap<K,V>> fut = CompletableFuture.completedFuture(this);
+        for (K key : keySet()) {
+            fut = fut.thenCombine(
+                asyncComputeIfPresent(key, remappingFunction),
+                (map, v) -> map);
+
+            if (fut.isCompletedExceptionally())
+                break;
+        }
+        return fut;
+    }
+
+    /**
+     * Asynchronous version of {@link Map#clear()}.
+     *
+     * @return Future.
+     */
+    default CompletableFuture<ReplicaMap<K,V>> asyncClear() {
+        CompletableFuture<ReplicaMap<K,V>> fut = CompletableFuture.completedFuture(this);
+        for (K key : keySet()) {
+            fut = fut.thenCombine(
+                asyncRemove(key),
+                (map, v) -> map);
+
+            if (fut.isCompletedExceptionally())
+                break;
+        }
+        return fut;
+    }
+
+    /**
      * Sets the listener for the map updates.
      *
      * @param listener Listener.
@@ -227,15 +286,8 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
 
     @Override
     default void putAll(Map<? extends K,? extends V> m) {
-        Utils.requireNonNull(m, "m");
-
-        List<CompletableFuture<V>> futures = new ArrayList<>();
-
-        for (Map.Entry<? extends K, ? extends V> e : m.entrySet())
-            futures.add(asyncPut(e.getKey(), e.getValue()));
-
         try {
-            Utils.allOf(futures).get();
+            asyncPutAll(m).get();
         }
         catch (InterruptedException | ExecutionException e) {
             throw new ReplicaMapException(e);
@@ -256,13 +308,28 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
 
     @Override
     default void clear() {
-        List<CompletableFuture<V>> futures = new ArrayList<>();
-
-        for (K k : unwrap().keySet())
-            futures.add(asyncRemove(k));
-
         try {
-            Utils.allOf(futures).get();
+            asyncClear().get();
+        }
+        catch (InterruptedException | ExecutionException e) {
+            throw new ReplicaMapException(e);
+        }
+    }
+
+    @Override
+    default void replaceAll(BiFunction<? super K,? super V,? extends V> remappingFunction) {
+        try {
+            asyncReplaceAll(remappingFunction).get();
+        }
+        catch (InterruptedException | ExecutionException e) {
+            throw new ReplicaMapException(e);
+        }
+    }
+
+    @Override
+    default V computeIfAbsent(K key, Function<? super K,? extends V> mappingFunction) {
+        try {
+            return asyncComputeIfAbsent(key, mappingFunction).get();
         }
         catch (InterruptedException | ExecutionException e) {
             throw new ReplicaMapException(e);

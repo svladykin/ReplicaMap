@@ -17,6 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
 import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
@@ -85,6 +86,22 @@ public class ReplicaMapTest {
 
         assertEquals(200L, m.remove(2L));
         assertEquals(2, m.size());
+
+        m.clear();
+        assertTrue(m.isEmpty());
+
+        assertEquals(14L, m.computeIfAbsent(1L, (k) -> k + 13L));
+        assertEquals(14L, m.get(1L));
+        assertEquals(14L, m.computeIfAbsent(1L, (k) -> k + 15L));
+        assertEquals(14L, m.get(1L));
+        assertEquals(17L, m.computeIfAbsent(2L, (k) -> k + 15L));
+        assertEquals(17L, m.get(2L));
+        assertEquals(2, m.size());
+
+        m.replaceAll((k,v) -> v + 1);
+        assertEquals(2, m.size());
+        assertEquals(15L, m.get(1L));
+        assertEquals(18L, m.get(2L));
 
         m.clear();
         assertTrue(m.isEmpty());
@@ -324,6 +341,12 @@ public class ReplicaMapTest {
             public CompletableFuture<Long> asyncReplace(Long key, Long value) {
                 return failed;
             }
+
+            @Override
+            public CompletableFuture<Long> asyncComputeIfPresent(Long key,
+                BiFunction<? super Long,? super Long,? extends Long> remappingFunction) {
+                return failed;
+            }
         };
 
         assertThrows(ReplicaMapException.class, () -> m.put(0L,0L));
@@ -334,5 +357,11 @@ public class ReplicaMapTest {
         assertThrows(ReplicaMapException.class, () -> m.remove(0L));
         assertThrows(ReplicaMapException.class, () -> m.putAll(Collections.singletonMap(1L,1L)));
         assertThrows(ReplicaMapException.class, () -> m.clear());
+        assertThrows(ReplicaMapException.class, () -> m.putAll(Collections.singletonMap(0L,0L)));
+        assertThrows(ReplicaMapException.class, () -> m.computeIfAbsent(0L, (k) -> k + 1));
+        assertThrows(ReplicaMapException.class, () -> m.compute(0L, (k, v) -> k + 1));
+        assertThrows(ReplicaMapException.class, () -> m.computeIfPresent(1L, (k, v) -> k + 1));
+        assertThrows(ReplicaMapException.class, () -> m.merge(0L, 0L, (v1, v2) -> v1 + v2));
+        assertThrows(ReplicaMapException.class, () -> m.replaceAll((k, v) -> k + 1));
     }
 }

@@ -108,19 +108,40 @@ public class TestMap<K,V> implements ReplicaMap<K,V> {
 
     @Override
     public CompletableFuture<V> asyncCompute(K key, BiFunction<? super K,? super V,? extends V> remappingFunction) {
-        throw new UnsupportedOperationException();
+        CompletableFuture<V> fut = new CompletableFuture<>();
+        try {
+            fut.complete(unwrap().compute(key, remappingFunction));
+        }
+        catch (RuntimeException e) {
+            fut.completeExceptionally(e);
+        }
+        return fut;
     }
 
     @Override
     public CompletableFuture<V> asyncComputeIfPresent(K key,
         BiFunction<? super K,? super V,? extends V> remappingFunction) {
-        throw new UnsupportedOperationException();
+        CompletableFuture<V> fut = new CompletableFuture<>();
+        try {
+            fut.complete(unwrap().computeIfPresent(key, remappingFunction));
+        }
+        catch (RuntimeException e) {
+            fut.completeExceptionally(e);
+        }
+        return fut;
     }
 
     @Override
     public CompletableFuture<V> asyncMerge(K key, V value,
         BiFunction<? super V,? super V,? extends V> remappingFunction) {
-        throw new UnsupportedOperationException();
+        CompletableFuture<V> fut = new CompletableFuture<>();
+        try {
+            fut.complete(unwrap().merge(key, value, remappingFunction));
+        }
+        catch (RuntimeException e) {
+            fut.completeExceptionally(e);
+        }
+        return fut;
     }
 
     @Override
