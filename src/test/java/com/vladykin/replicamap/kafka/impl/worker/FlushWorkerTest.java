@@ -198,7 +198,7 @@ class FlushWorkerTest {
         initFlushConsumer(101, 98);
         flushConsumer.close();
         assertFalse(flushWorker.processFlushRequests(0)); // Exception on creating the consumer.
-        assertFalse(flushWorker.unprocessedFlushRequests.isEmpty());
+        assertTrue(flushWorker.unprocessedFlushRequests.isEmpty());
 
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(101, 98);

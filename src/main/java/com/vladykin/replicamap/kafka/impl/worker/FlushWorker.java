@@ -254,7 +254,7 @@ public class FlushWorker extends Worker {
             if (!Utils.isInterrupted(e))
                 log.error("Failed to poll flush consumer for topic " + flushTopic, e);
 
-            resetOnError(flushConsumer, null);
+            resetAll(flushConsumer, null);
             return false;
         }
 
@@ -267,7 +267,7 @@ public class FlushWorker extends Worker {
         return flushed;
     }
 
-    protected void resetOnError(Consumer<Object,OpMessage> flushConsumer, Consumer<Object,Object> dataConsumer) {
+    protected void resetAll(Consumer<Object,OpMessage> flushConsumer, Consumer<Object,Object> dataConsumer) {
         unprocessedFlushRequests.clear();
 
         if (dataConsumer != null)
@@ -354,8 +354,13 @@ public class FlushWorker extends Worker {
         FlushQueue.Batch dataBatch = flushQueue.collect(flushRequests.stream()
             .mapToLong(OpMessage::getFlushOffsetOps));
 
-        if (dataBatch == null)
+        if (dataBatch == null) {
+            // Check if we are too far behind.
+            if (flushRequests.size() > 1) // TODO add to config
+                resetAll(flushConsumer, null);
+
             return false; // No enough data.
+        }
 
         int dataBatchSize = dataBatch.size();
         int collectedAll = dataBatch.getCollectedAll();
@@ -365,7 +370,7 @@ public class FlushWorker extends Worker {
                 dataPart, dataBatchSize, collectedAll);
         }
 
-        Producer<Object,Object> dataProducer = null;
+        Producer<Object,Object> dataProducer;
         Consumer<Object,Object> dataConsumer = null;
         long flushOffsetData = -1;
         OffsetAndMetadata flushConsumerOffset = null;
@@ -441,7 +446,7 @@ public class FlushWorker extends Worker {
             else
                 log.error("Failed to flush data for partition " + dataPart + ", exception:", e);
 
-            resetOnError(flushConsumer, dataConsumer);
+            resetAll(flushConsumer, dataConsumer);
             return false; // No other handling, the next flush will be our retry.
         }
 
