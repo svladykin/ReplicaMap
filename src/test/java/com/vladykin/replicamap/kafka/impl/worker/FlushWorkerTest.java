@@ -211,6 +211,7 @@ class FlushWorkerTest {
         flushWorker.resetDataProducers(singleton(flushPart));
         flushWorker.initDataProducers(singleton(flushPart));
         dataProducer.fenceProducer();
+        flushWorker.initUnprocessedFlushRequests(flushPart);
 
         assertFalse(flushWorker.processFlushRequests(0));
         assertFalse(dataProducer.transactionCommitted());

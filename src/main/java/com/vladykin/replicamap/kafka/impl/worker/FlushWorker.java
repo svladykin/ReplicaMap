@@ -274,7 +274,7 @@ public class FlushWorker extends Worker {
             dataConsumers.reset(workerId, dataConsumer);
 
         for (int i = 0; i < dataProducers.size(); i++)
-            resetDataProducer(i);
+            resetDataProducer(new TopicPartition(flushTopic, i));
 
         flushConsumers.reset(workerId, flushConsumer);
     }
@@ -429,8 +429,7 @@ public class FlushWorker extends Worker {
         }
         catch (ProducerFencedException e) {
             log.warn("Fenced while flushing data for partition {}, flushQueueSize: {}", dataPart, flushQueue.size());
-            unprocessedFlushRequests.remove(flushPart, flushRequests);
-            dataProducers.reset(part, dataProducer);
+            resetDataProducer(flushPart);
             return false;
         }
         catch (Exception e) {
@@ -579,17 +578,18 @@ public class FlushWorker extends Worker {
                 .map(p -> new TopicPartition(dataTopic, p.partition())).collect(toList()));
         }
 
-        for (TopicPartition partition : flushPartitions) {
-            int part = partition.partition();
-            resetDataProducer(part);
-        }
+        for (TopicPartition flushPart : flushPartitions)
+            resetDataProducer(flushPart);
     }
 
-    protected void resetDataProducer(int part) {
+    protected void resetDataProducer(TopicPartition flushPart) {
+        int part = flushPart.partition();
         Producer<Object,Object> dataProducer = dataProducers.get(part, null);
 
         if (dataProducer != null)
             dataProducers.reset(part, dataProducer);
+
+        unprocessedFlushRequests.remove(flushPart);
     }
 
     /**
