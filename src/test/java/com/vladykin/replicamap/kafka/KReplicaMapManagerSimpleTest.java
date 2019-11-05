@@ -3,6 +3,7 @@ package com.vladykin.replicamap.kafka;
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.ReplicaMapException;
+import com.vladykin.replicamap.ReplicaMapListener;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.compute.BiFunctionDeserializer;
 import com.vladykin.replicamap.kafka.compute.BiFunctionSerializer;
@@ -212,15 +213,21 @@ class KReplicaMapManagerSimpleTest {
         assertNotSame(mMap.unwrap(), wMap.unwrap());
         assertEquals(mMap.unwrap(), wMap.unwrap());
 
+        new TestListener(mMap,
+            "a", null, "A",
+            "b", null, "B"
+        );
         mMap.asyncPut("a", "A");
         wMap.asyncPut("b", "B");
-
         awaitEqualMaps(mMap, wMap,
             "a", "A", "b", "B");
 
+        new TestListener(wMap,
+            "a", "A", "Z",
+            "b", "B", null
+        );
         mMap.asyncRemove("b");
         wMap.asyncReplace("a", "Z");
-
         awaitEqualMaps(mMap, wMap,
             "a", "Z");
 
@@ -242,18 +249,27 @@ class KReplicaMapManagerSimpleTest {
         awaitEqualMaps(mMap, wMap,
             "a", "Z", "z", "Z");
 
+        new TestListener(mMap,
+            "a", "Z", "Zq"
+        );
         JoinStringsSerializer.canSerialize = false;
         mMap.compute("a", new JoinStrings("q"));
         awaitEqualMaps(mMap, wMap,
             "a", "Zq", "z", "Z");
         assertEquals(1, JoinStrings.executed.getAndSet(0));
 
+        new TestListener(wMap,
+            "z", "Z", "Zw"
+        );
         JoinStringsSerializer.canSerialize = true;
         mMap.compute("z", new JoinStrings("w"));
         awaitEqualMaps(mMap, wMap,
             "a", "Zq", "z", "Zw");
         assertEquals(2, JoinStrings.executed.getAndSet(0));
 
+        new TestListener(wMap,
+            "n", null, "N"
+        );
         JoinStringsSerializer.canSerialize = true;
         mMap.computeIfAbsent("n", (k) -> {
             JoinStrings.executed.incrementAndGet();
@@ -263,6 +279,7 @@ class KReplicaMapManagerSimpleTest {
             "a", "Zq", "z", "Zw", "n", "N");
         assertEquals(1, JoinStrings.executed.getAndSet(0));
 
+        new TestListener(mMap);
         JoinStringsSerializer.canSerialize = true;
         mMap.computeIfAbsent("n", (k) -> {
             JoinStrings.executed.incrementAndGet();
@@ -272,24 +289,36 @@ class KReplicaMapManagerSimpleTest {
             "a", "Zq", "z", "Zw", "n", "N");
         assertEquals(0, JoinStrings.executed.getAndSet(0));
 
+        new TestListener(wMap,
+            "a", "Zq", "Zqe"
+        );
         JoinStringsSerializer.canSerialize = true;
         mMap.computeIfPresent("a", new JoinStrings("e"));
         awaitEqualMaps(mMap, wMap,
             "a", "Zqe", "z", "Zw", "n", "N");
         assertEquals(2, JoinStrings.executed.getAndSet(0));
 
+        new TestListener(mMap,
+            "n", "N", "Nr"
+        );
         JoinStringsSerializer.canSerialize = false;
         mMap.computeIfPresent("n", new JoinStrings("r"));
         awaitEqualMaps(mMap, wMap,
             "a", "Zqe", "z", "Zw", "n", "Nr");
         assertEquals(1, JoinStrings.executed.getAndSet(0));
 
+        new TestListener(wMap,
+            "b", null, "H"
+        );
         JoinStringsSerializer.canSerialize = true;
         mMap.merge("b", "H", new JoinStrings("p"));
         awaitEqualMaps(mMap, wMap,
             "a", "Zqe", "z", "Zw", "n", "Nr", "b", "H");
         assertEquals(0, JoinStrings.executed.getAndSet(0));
 
+        new TestListener(mMap,
+            "c", null, "U"
+        );
         JoinStringsSerializer.canSerialize = false;
         mMap.merge("c", "U", new JoinStrings("p"));
         awaitEqualMaps(mMap, wMap,
@@ -305,16 +334,22 @@ class KReplicaMapManagerSimpleTest {
         awaitEqualMaps(mMap, wMap,
             "a", "Zqe", "z", "Zw", "n", "Nr", "b", "H", "c", "U");
 
+        new TestListener(wMap,
+            "b", "H", "Xp"
+        );
         JoinStringsSerializer.canSerialize = true;
-        mMap.merge("b", "H", new JoinStrings("p"));
+        mMap.merge("b", "X", new JoinStrings("p"));
         awaitEqualMaps(mMap, wMap,
-            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Hp", "c", "U");
+            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Xp", "c", "U");
         assertEquals(2, JoinStrings.executed.getAndSet(0));
 
+        new TestListener(mMap,
+            "c", "U", "Up"
+        );
         JoinStringsSerializer.canSerialize = false;
         mMap.merge("c", "U", new JoinStrings("p"));
         awaitEqualMaps(mMap, wMap,
-            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Hp", "c", "Up");
+            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Xp", "c", "Up");
         assertEquals(1, JoinStrings.executed.getAndSet(0));
 
         w.close();
@@ -324,26 +359,45 @@ class KReplicaMapManagerSimpleTest {
         JoinStrings.executed.set(0);
 
         awaitEqualMaps(mMap, wMap,
-            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Hp", "c", "Up");
+            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Xp", "c", "Up");
 
+        new TestListener(mMap,
+            "a", "Zqe", "A",
+            "z", "Zw", "X",
+            "c", "Up", "F"
+        );
         Map<String, String> x = new HashMap<>();
         x.put("a", "A");
         x.put("z", "X");
         x.put("c", "F");
         wMap.putAll(x);
         awaitEqualMaps(mMap, wMap,
-            "a", "A", "z", "X", "n", "Nr", "b", "Hp", "c", "F");
+            "a", "A", "z", "X", "n", "Nr", "b", "Xp", "c", "F");
 
+        new TestListener(wMap,
+            "a", "A", "Ao",
+            "z", "X", "Xo",
+            "n", "Nr", "Nro",
+            "b", "Xp", "Xpo",
+            "c", "F", "Fo"
+        );
         JoinStringsSerializer.canSerialize = true;
         mMap.replaceAll(new JoinStrings("o"));
         awaitEqualMaps(mMap, wMap,
-            "a", "Ao", "z", "Xo", "n", "Nro", "b", "Hpo", "c", "Fo");
+            "a", "Ao", "z", "Xo", "n", "Nro", "b", "Xpo", "c", "Fo");
         assertEquals(10, JoinStrings.executed.getAndSet(0));
 
+        new TestListener(mMap,
+            "a", "Ao", "Aok",
+            "z", "Xo", "Xok",
+            "n", "Nro", "Nrok",
+            "b", "Xpo", "Xpok",
+            "c", "Fo", "Fok"
+        );
         JoinStringsSerializer.canSerialize = false;
-        mMap.replaceAll(new JoinStrings("k"));
+        wMap.replaceAll(new JoinStrings("k"));
         awaitEqualMaps(mMap, wMap,
-            "a", "Aok", "z", "Xok", "n", "Nrok", "b", "Hpok", "c", "Fok");
+            "a", "Aok", "z", "Xok", "n", "Nrok", "b", "Xpok", "c", "Fok");
         assertEquals(5, JoinStrings.executed.getAndSet(0));
 
         m.close();
@@ -352,8 +406,15 @@ class KReplicaMapManagerSimpleTest {
         mMap = m.getMap();
 
         awaitEqualMaps(mMap, wMap,
-            "a", "Aok", "z", "Xok", "n", "Nrok", "b", "Hpok", "c", "Fok");
+            "a", "Aok", "z", "Xok", "n", "Nrok", "b", "Xpok", "c", "Fok");
 
+        new TestListener(wMap,
+            "a", "Aok", null,
+            "z", "Xok", null,
+            "n", "Nrok", null,
+            "b", "Xpok", null,
+            "c", "Fok", null
+        );
         mMap.clear();
         awaitEqualMaps(mMap, wMap);
 
@@ -381,6 +442,13 @@ class KReplicaMapManagerSimpleTest {
                         continue outer;
                     }
                 }
+
+                ReplicaMapListener<?,?> lsnr = x.getListener();
+                if (lsnr == null)
+                    lsnr = y.getListener();
+
+                if (lsnr != null)
+                    ((TestListener)lsnr).assertOk();
 
                 return;
             }
@@ -423,6 +491,35 @@ class KReplicaMapManagerSimpleTest {
         @Override
         public BiFunction<?,?,?> deserialize(String topic, byte[] data) {
             return new JoinStrings(new String(data, UTF_8));
+        }
+    }
+
+    static class TestListener implements ReplicaMapListener<String,String> {
+        final Map<String,String> expectedMap = new HashMap<>();
+        final ReplicaMap<String,String> map;
+
+        TestListener(ReplicaMap<String,String> map, String... expected) {
+            for (int i = 0; i < expected.length; i += 3)
+                expectedMap.put(expected[i], expected[i + 1] + "->" + expected[i + 2]);
+
+            this.map = map;
+            map.setListener(this);
+        }
+
+        void assertOk() {
+            map.setListener(null);
+            assertTrue(expectedMap.isEmpty(), expectedMap::toString);
+        }
+
+        @Override
+        public void onMapUpdate(
+            ReplicaMap<String,String> map,
+            boolean myUpdate,
+            String key,
+            String oldValue,
+            String newValue
+        ) {
+            assertTrue(expectedMap.remove(key, oldValue + "->" + newValue));
         }
     }
 }
