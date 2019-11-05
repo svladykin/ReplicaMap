@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -495,7 +496,7 @@ class KReplicaMapManagerSimpleTest {
     }
 
     static class TestListener implements ReplicaMapListener<String,String> {
-        final Map<String,String> expectedMap = new HashMap<>();
+        final Map<String,String> expectedMap = new ConcurrentHashMap<>();
         final ReplicaMap<String,String> map;
 
         TestListener(ReplicaMap<String,String> map, String... expected) {
@@ -506,9 +507,15 @@ class KReplicaMapManagerSimpleTest {
             map.setListener(this);
         }
 
-        void assertOk() {
+        void assertOk() throws InterruptedException {
+            long start = System.nanoTime();
+            while (!expectedMap.isEmpty()) {
+                Thread.sleep(1);
+
+                if (System.nanoTime() - start > SECONDS.toNanos(10))
+                    fail("Timeout");
+            }
             map.setListener(null);
-            assertTrue(expectedMap.isEmpty(), expectedMap::toString);
         }
 
         @Override
@@ -519,6 +526,7 @@ class KReplicaMapManagerSimpleTest {
             String oldValue,
             String newValue
         ) {
+            System.out.println(key + " = " + oldValue + " -> " + newValue);
             assertTrue(expectedMap.remove(key, oldValue + "->" + newValue));
         }
     }
