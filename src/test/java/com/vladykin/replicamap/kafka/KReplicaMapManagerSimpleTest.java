@@ -110,6 +110,9 @@ class KReplicaMapManagerSimpleTest {
     @SuppressWarnings({"Convert2MethodRef", "ResultOfMethodCallIgnored"})
     @Test
     void testSimple() throws Exception {
+        JoinStringsSerializer.canSerialize = false;
+        JoinStrings.executed.set(0);
+
         createTopics(sharedKafkaTestResource.getKafkaTestUtils().getAdminClient(),
             DATA_TOPIC, OPS_TOPIC, FLUSH_TOPIC, 5);
 
@@ -496,20 +499,21 @@ class KReplicaMapManagerSimpleTest {
     }
 
     static class TestListener implements ReplicaMapListener<String,String> {
-        final Map<String,String> expectedMap = new ConcurrentHashMap<>();
+        final Map<String,String> expectedUpdates = new ConcurrentHashMap<>();
         final ReplicaMap<String,String> map;
 
         TestListener(ReplicaMap<String,String> map, String... expected) {
             for (int i = 0; i < expected.length; i += 3)
-                expectedMap.put(expected[i], expected[i + 1] + "->" + expected[i + 2]);
+                expectedUpdates.put(expected[i], expected[i + 1] + "->" + expected[i + 2]);
 
             this.map = map;
             map.setListener(this);
+            System.out.println();
         }
 
         void assertOk() throws InterruptedException {
             long start = System.nanoTime();
-            while (!expectedMap.isEmpty()) {
+            while (!expectedUpdates.isEmpty()) {
                 Thread.sleep(1);
 
                 if (System.nanoTime() - start > SECONDS.toNanos(10))
@@ -526,8 +530,8 @@ class KReplicaMapManagerSimpleTest {
             String oldValue,
             String newValue
         ) {
-            System.out.println(key + " = " + oldValue + " -> " + newValue);
-            assertTrue(expectedMap.remove(key, oldValue + "->" + newValue));
+            System.out.println(key + " = " + oldValue + " -> " + newValue + "   :   " + expectedUpdates + "   :   " + map.unwrap());
+            assertTrue(expectedUpdates.remove(key, oldValue + "->" + newValue));
         }
     }
 }
