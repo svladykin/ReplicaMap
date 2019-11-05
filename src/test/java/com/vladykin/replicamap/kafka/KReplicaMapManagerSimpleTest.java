@@ -4,22 +4,29 @@ import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
+import com.vladykin.replicamap.kafka.compute.BiFunctionDeserializer;
+import com.vladykin.replicamap.kafka.compute.BiFunctionSerializer;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_DESERIALIZER_CLASS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_SERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
@@ -67,6 +74,10 @@ class KReplicaMapManagerSimpleTest {
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
         cfg.put(FLUSH_PERIOD_OPS, 4);
         cfg.put(FLUSH_MAX_POLL_TIMEOUT_MS, 1L);
+
+        cfg.put(COMPUTE_SERIALIZER_CLASS, JoinStringsSerializer.class);
+        cfg.put(COMPUTE_DESERIALIZER_CLASS, JoinStringsDeserializer.class);
+
         return cfg;
     }
 
@@ -231,6 +242,121 @@ class KReplicaMapManagerSimpleTest {
         awaitEqualMaps(mMap, wMap,
             "a", "Z", "z", "Z");
 
+        JoinStringsSerializer.canSerialize = false;
+        mMap.compute("a", new JoinStrings("q"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zq", "z", "Z");
+        assertEquals(1, JoinStrings.executed.getAndSet(0));
+
+        JoinStringsSerializer.canSerialize = true;
+        mMap.compute("z", new JoinStrings("w"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zq", "z", "Zw");
+        assertEquals(2, JoinStrings.executed.getAndSet(0));
+
+        JoinStringsSerializer.canSerialize = true;
+        mMap.computeIfAbsent("n", (k) -> {
+            JoinStrings.executed.incrementAndGet();
+            return "N";
+        });
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zq", "z", "Zw", "n", "N");
+        assertEquals(1, JoinStrings.executed.getAndSet(0));
+
+        JoinStringsSerializer.canSerialize = true;
+        mMap.computeIfAbsent("n", (k) -> {
+            JoinStrings.executed.incrementAndGet();
+            return "www";
+        });
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zq", "z", "Zw", "n", "N");
+        assertEquals(0, JoinStrings.executed.getAndSet(0));
+
+        JoinStringsSerializer.canSerialize = true;
+        mMap.computeIfPresent("a", new JoinStrings("e"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zqe", "z", "Zw", "n", "N");
+        assertEquals(2, JoinStrings.executed.getAndSet(0));
+
+        JoinStringsSerializer.canSerialize = false;
+        mMap.computeIfPresent("n", new JoinStrings("r"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zqe", "z", "Zw", "n", "Nr");
+        assertEquals(1, JoinStrings.executed.getAndSet(0));
+
+        JoinStringsSerializer.canSerialize = true;
+        mMap.merge("b", "H", new JoinStrings("p"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "H");
+        assertEquals(0, JoinStrings.executed.getAndSet(0));
+
+        JoinStringsSerializer.canSerialize = false;
+        mMap.merge("c", "U", new JoinStrings("p"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "H", "c", "U");
+        assertEquals(0, JoinStrings.executed.getAndSet(0));
+
+        m.close();
+        m = new KReplicaMapManager(getDefaultConfig());
+        assertSame(m, m.start().get(START_TIMEOUT, SECONDS));
+        mMap = m.getMap();
+        JoinStrings.executed.set(0);
+
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "H", "c", "U");
+
+        JoinStringsSerializer.canSerialize = true;
+        mMap.merge("b", "H", new JoinStrings("p"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Hp", "c", "U");
+        assertEquals(2, JoinStrings.executed.getAndSet(0));
+
+        JoinStringsSerializer.canSerialize = false;
+        mMap.merge("c", "U", new JoinStrings("p"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Hp", "c", "Up");
+        assertEquals(1, JoinStrings.executed.getAndSet(0));
+
+        w.close();
+        w = new KReplicaMapManager(getDefaultConfig());
+        assertSame(w, w.start().get(START_TIMEOUT, SECONDS));
+        wMap = w.getMap();
+        JoinStrings.executed.set(0);
+
+        awaitEqualMaps(mMap, wMap,
+            "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Hp", "c", "Up");
+
+        Map<String, String> x = new HashMap<>();
+        x.put("a", "A");
+        x.put("z", "X");
+        x.put("c", "F");
+        wMap.putAll(x);
+        awaitEqualMaps(mMap, wMap,
+            "a", "A", "z", "X", "n", "Nr", "b", "Hp", "c", "F");
+
+        JoinStringsSerializer.canSerialize = true;
+        mMap.replaceAll(new JoinStrings("o"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Ao", "z", "Xo", "n", "Nro", "b", "Hpo", "c", "Fo");
+        assertEquals(10, JoinStrings.executed.getAndSet(0));
+
+        JoinStringsSerializer.canSerialize = false;
+        mMap.replaceAll(new JoinStrings("k"));
+        awaitEqualMaps(mMap, wMap,
+            "a", "Aok", "z", "Xok", "n", "Nrok", "b", "Hpok", "c", "Fok");
+        assertEquals(5, JoinStrings.executed.getAndSet(0));
+
+        m.close();
+        m = new KReplicaMapManager(getDefaultConfig());
+        assertSame(m, m.start().get(START_TIMEOUT, SECONDS));
+        mMap = m.getMap();
+
+        awaitEqualMaps(mMap, wMap,
+            "a", "Aok", "z", "Xok", "n", "Nrok", "b", "Hpok", "c", "Fok");
+
+        mMap.clear();
+        awaitEqualMaps(mMap, wMap);
+
         m.close();
         w.close();
     }
@@ -260,6 +386,43 @@ class KReplicaMapManagerSimpleTest {
             }
 
             fail("Maps are not equal: " + x.unwrap() + " vs " + y.unwrap());
+        }
+    }
+
+    static class JoinStrings implements BiFunction<String,String,String> {
+        static final AtomicInteger executed = new AtomicInteger();
+
+        final String x;
+
+        public JoinStrings(String x) {
+            this.x = x;
+        }
+
+        @Override
+        public String apply(String k, String v) {
+            executed.incrementAndGet();
+            return v + x;
+        }
+    }
+
+    public static class JoinStringsSerializer implements BiFunctionSerializer {
+        static volatile boolean canSerialize = true;
+
+        @Override
+        public boolean canSerialize(BiFunction<?,?,?> function) {
+            return canSerialize && function instanceof JoinStrings;
+        }
+
+        @Override
+        public byte[] serialize(String topic, BiFunction<?,?,?> function) {
+            return ((JoinStrings)function).x.getBytes(UTF_8);
+        }
+    }
+
+    public static class JoinStringsDeserializer implements BiFunctionDeserializer {
+        @Override
+        public BiFunction<?,?,?> deserialize(String topic, byte[] data) {
+            return new JoinStrings(new String(data, UTF_8));
         }
     }
 }
