@@ -3,6 +3,7 @@ package com.vladykin.replicamap.kafka.impl.msg;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Map;
 import java.util.function.BiFunction;
 import org.apache.kafka.common.serialization.Deserializer;
@@ -50,6 +51,10 @@ class OpMessageTest {
         msg = new OpMessage((byte)1, clientId, 1, v1, null, null);
         msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 0 + 1 + 0, msgBytes.length);
+        assertEquals(msg, des.deserialize(null, msgBytes));
+
+        // compatibility
+        msgBytes = Arrays.copyOf(msgBytes, msgBytes.length - 1);
         assertEquals(msg, des.deserialize(null, msgBytes));
 
         ser.close();

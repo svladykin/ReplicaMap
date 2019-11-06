@@ -50,18 +50,26 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
     }
 
     protected V readValue(String topic, Headers headers, ByteBuffer buf) {
-        byte[] arr = readByteArray(buf);
-        return arr == null ? null :
-            valDes.deserialize(topic, headers, arr);
+        return read(topic, headers, buf, valDes);
     }
 
     protected BiFunction<?,?,?> readFunction(String topic, Headers headers, ByteBuffer buf) {
         if (!buf.hasRemaining())
             return null; // compatibility
 
+        return read(topic, headers, buf, funDes);
+    }
+
+    protected <Z> Z read(String topic, Headers headers, ByteBuffer buf, Deserializer<Z> des) {
         byte[] arr = readByteArray(buf);
-        return arr == null ? null :
-            funDes.deserialize(topic, headers, arr);
+
+        if (arr == null)
+            return null;
+
+        if (des == null)
+            throw new NullPointerException("Deserializer is not provided.");
+
+        return des.deserialize(topic, headers, arr);
     }
 
     @Override
