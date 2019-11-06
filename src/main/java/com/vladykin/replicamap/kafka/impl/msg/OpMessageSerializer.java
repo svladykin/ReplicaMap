@@ -1,6 +1,6 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
-import com.vladykin.replicamap.kafka.compute.BiFunctionSerializer;
+import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -21,9 +21,9 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
     public static final int NULL_ARRAY_LENGTH = -1;
 
     protected final Serializer<V> valSer;
-    protected final BiFunctionSerializer funSer;
+    protected final ComputeSerializer funSer;
 
-    public OpMessageSerializer(Serializer<V> valSer, BiFunctionSerializer funSer) {
+    public OpMessageSerializer(Serializer<V> valSer, ComputeSerializer funSer) {
         this.valSer = Utils.requireNonNull(valSer, "valSer");
         this.funSer = funSer;
     }

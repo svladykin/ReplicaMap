@@ -5,8 +5,8 @@ import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.base.FailureCallback;
 import com.vladykin.replicamap.holder.MapsHolder;
-import com.vladykin.replicamap.kafka.compute.BiFunctionDeserializer;
-import com.vladykin.replicamap.kafka.compute.BiFunctionSerializer;
+import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
+import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageDeserializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
@@ -116,7 +116,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected final MapsHolder maps;
 
-    protected BiFunctionSerializer computeSerializer;
+    protected ComputeSerializer computeSerializer;
     protected final Producer<Object,OpMessage> opsProducer;
     protected final Producer<Object,OpMessage> flushProducer;
     protected final LazyList<Consumer<Object,OpMessage>> flushConsumers;
@@ -545,14 +545,14 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return s;
     }
 
-    protected BiFunctionSerializer newBiFunctionSerializer(Map<String, Object> proCfg) {
-        BiFunctionSerializer s = cfg.getConfiguredInstance(COMPUTE_SERIALIZER_CLASS, BiFunctionSerializer.class);
+    protected ComputeSerializer newBiFunctionSerializer(Map<String, Object> proCfg) {
+        ComputeSerializer s = cfg.getConfiguredInstance(COMPUTE_SERIALIZER_CLASS, ComputeSerializer.class);
         if (s != null)
             s.configure(proCfg, false);
         return s;
     }
 
-    protected BiFunctionSerializer updateComputeSerializer(BiFunctionSerializer s) {
+    protected ComputeSerializer updateComputeSerializer(ComputeSerializer s) {
         if (computeSerializer != null)
             throw new IllegalStateException();
 
@@ -573,18 +573,18 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return d;
     }
 
-    protected BiFunctionDeserializer newBiFunctionDeserializer(Map<String, Object> conCfg) {
-        BiFunctionDeserializer d = cfg.getConfiguredInstance(COMPUTE_DESERIALIZER_CLASS, BiFunctionDeserializer.class);
+    protected ComputeDeserializer newBiFunctionDeserializer(Map<String, Object> conCfg) {
+        ComputeDeserializer d = cfg.getConfiguredInstance(COMPUTE_DESERIALIZER_CLASS, ComputeDeserializer.class);
         if (d != null)
             d.configure(conCfg, false);
         return d;
     }
 
-    protected <V> Deserializer<OpMessage> newOpMessageDeserializer(Deserializer<V> v, BiFunctionDeserializer f) {
+    protected <V> Deserializer<OpMessage> newOpMessageDeserializer(Deserializer<V> v, ComputeDeserializer f) {
         return new OpMessageDeserializer<>(v, f);
     }
 
-    protected <V> Serializer<OpMessage> newOpMessageSerializer(Serializer<V> v, BiFunctionSerializer f) {
+    protected <V> Serializer<OpMessage> newOpMessageSerializer(Serializer<V> v, ComputeSerializer f) {
         return new OpMessageSerializer<>(v, f);
     }
 
@@ -762,7 +762,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     }
 
     protected boolean canSendFunction(BiFunction<?,?,?> function) {
-        BiFunctionSerializer s = computeSerializer;
+        ComputeSerializer s = computeSerializer;
         return s != null && s.canSerialize(function);
     }
 

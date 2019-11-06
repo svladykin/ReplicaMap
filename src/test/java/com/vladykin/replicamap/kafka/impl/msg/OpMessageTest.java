@@ -1,7 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
-import com.vladykin.replicamap.kafka.compute.BiFunctionDeserializer;
-import com.vladykin.replicamap.kafka.compute.BiFunctionSerializer;
+import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
+import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.function.BiFunction;
@@ -142,7 +142,7 @@ class OpMessageTest {
         }
     }
 
-    static class TestFuncSerializer extends ConfigurableCloseable implements BiFunctionSerializer {
+    static class TestFuncSerializer extends ConfigurableCloseable implements ComputeSerializer {
         @Override
         public byte[] serialize(String topic, BiFunction<?,?,?> data) {
             assertTrue(configured);
@@ -156,7 +156,7 @@ class OpMessageTest {
         }
     }
 
-    static class TestFuncDeserializer extends ConfigurableCloseable implements BiFunctionDeserializer {
+    static class TestFuncDeserializer extends ConfigurableCloseable implements ComputeDeserializer {
         public BiFunction<?,?,?> deserialize(String topic, byte[] data) {
             assertTrue(configured);
             assertFalse(closed);

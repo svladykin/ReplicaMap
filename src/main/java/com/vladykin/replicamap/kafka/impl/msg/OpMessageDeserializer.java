@@ -1,6 +1,6 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
-import com.vladykin.replicamap.kafka.compute.BiFunctionDeserializer;
+import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -20,9 +20,9 @@ import static com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer.NULL_AR
  */
 public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
     protected final Deserializer<V> valDes;
-    protected final BiFunctionDeserializer funDes;
+    protected final ComputeDeserializer funDes;
 
-    public OpMessageDeserializer(Deserializer<V> valDes, BiFunctionDeserializer funDes) {
+    public OpMessageDeserializer(Deserializer<V> valDes, ComputeDeserializer funDes) {
         this.valDes = Utils.requireNonNull(valDes, "valDes");
         this.funDes = funDes;
     }

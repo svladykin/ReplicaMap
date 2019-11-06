@@ -5,8 +5,8 @@ import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapListener;
 import com.vladykin.replicamap.ReplicaMapManager;
-import com.vladykin.replicamap.kafka.compute.BiFunctionDeserializer;
-import com.vladykin.replicamap.kafka.compute.BiFunctionSerializer;
+import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
+import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -479,7 +479,7 @@ class KReplicaMapManagerSimpleTest {
         }
     }
 
-    public static class JoinStringsSerializer implements BiFunctionSerializer {
+    public static class JoinStringsSerializer implements ComputeSerializer {
         static volatile boolean canSerialize = true;
 
         @Override
@@ -493,7 +493,7 @@ class KReplicaMapManagerSimpleTest {
         }
     }
 
-    public static class JoinStringsDeserializer implements BiFunctionDeserializer {
+    public static class JoinStringsDeserializer implements ComputeDeserializer {
         @Override
         public BiFunction<?,?,?> deserialize(String topic, byte[] data) {
             return new JoinStrings(new String(data, UTF_8));
