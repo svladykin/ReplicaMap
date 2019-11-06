@@ -25,11 +25,15 @@ Think of it as a Java `ConcurrentMap<K,V>` that replicates all the updates over 
 
 + Kafka `Log Compaction` provides persistent backup of the replicated map contents.
 
-+ It is possible to wrap any thread-safe implementations of `Map<K,V>` with ReplicaMap. The most obvious choice is `ConcurrentHashMap<K,V>` or `ConcurrentSkipListMap<K,V>`, but any off-heap or on-disk or other implementations can be used as well.
++ It is possible to wrap any thread-safe implementations of `Map<K,V>` with ReplicaMap. The most obvious choice is `ConcurrentHashMap<K,V>` 
+  or `ConcurrentSkipListMap<K,V>`, but any custom off-heap or on-disk or other implementations can be used as well.
 
 + When `NavigableMap<K,V>` is needed, there is `ReplicaNavigableMap<K,V>`.
 
-+ If you already have a Kafka cluster, there is no need to deploy any new infrastructure, just add the ReplicaMap library to the application and you have a distributed database. 
++ Multiple maps per single data topic are supported.
+
++ If you already have a Kafka cluster, there is no need to deploy any new infrastructure, just add the ReplicaMap 
+  library to the application and you have a distributed database. 
   
 + If you already have a compacted Kafka topic, you can start using it with ReplicaMap.
   
@@ -83,9 +87,9 @@ replicaMapManager.start(DELETE_DELAY_MS - 180_000, TimeUnit.MILLISECONDS);
 // but all the updates will be visible to all the other clients even after restarts.
 ReplicaMap<Long, String> flowers = replicaMapManager.getMap();
 
-flowers.putIfAbsent(1L, "{name: 'rose', price: 100}");
-flowers.putIfAbsent(2L, "{name: 'magnolia', price: 120}");
-flowers.putIfAbsent(3L, "{name: 'cactus', price: 150}");
+flowers.putIfAbsent(1L, "Rose");
+flowers.putIfAbsent(2L, "Magnolia");
+flowers.putIfAbsent(3L, "Cactus");
 
 System.out.println(new TreeMap<>(flowers));
 ```
@@ -111,6 +115,9 @@ This is counter-intuitive behavior and it is inconsistent with the program order
 preserved then make sure you either have only 1 partition per topic or have collocated the keys that need this property
 to the same partition.
 
+When using Optimized Compute you must never update values inplace, always create a modified copy of the value.
+Otherwise incorrect state may flushed and the invariants will be broken.
+
 ## Protocol
 
 There are 3 Kafka topics participate in the protocol (see below about their configuration): 
@@ -125,6 +132,15 @@ it back. Thus, the latency of any modification attempt is the latency of this ro
 Background `OpsWorker` threads poll incoming operations from the `ops` topic and apply them
 to the underlying map. Since all the updates arrive in the same order for the same key (for
 the same partition to be exact) we have eventually consistent state across all the replicas.
+
+Optimized Compute feature relies on this per-partition update linearizability. Instead of 
+a loop that retries calling `ConcurrentMap.reaplce(K,V,V)` and sending `ops` messages over 
+and over again for each attempt, we can serialize the function passed to the `compute` method 
+and send it to all the replicas and it will be executed on each replica just once.
+This may be much more efficient for operations like incrementing heavily contended counters 
+or applying small updates to huge values. 
+It is needed to implement `ComputeSerializer` and `ComputeDeserializer` interfaces and 
+set them to a config. All the methods accepting `BiFunction` support Optimized Compute.
 
 Once in a while a lucky client that has issued the update with the offset of multiple of 
 `flush.period.ops` will send a flush request to the `flush` topic to initiate a data flush.

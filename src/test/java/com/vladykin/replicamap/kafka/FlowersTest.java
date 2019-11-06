@@ -49,9 +49,9 @@ public class FlowersTest {
         // but all the updates will be visible to all the other clients even after restarts.
         ReplicaMap<Long, String> flowers = replicaMapManager.getMap();
 
-        flowers.putIfAbsent(1L, "{name: 'rose', price: 100}");
-        flowers.putIfAbsent(2L, "{name: 'magnolia', price: 120}");
-        flowers.putIfAbsent(3L, "{name: 'cactus', price: 150}");
+        flowers.putIfAbsent(1L, "Rose");
+        flowers.putIfAbsent(2L, "Magnolia");
+        flowers.putIfAbsent(3L, "Cactus");
 
         System.out.println(new TreeMap<>(flowers));
     }
