@@ -165,7 +165,7 @@ class KReplicaMapManagerLeaksTest {
             CollectingMockConsumer<Object,OpMessage> c = new CollectingMockConsumer<>();
 
             if (failOnLoadData)
-                c.setException(new KafkaException("ops"));
+                c.setPollException(new KafkaException("ops"));
 
             return c;
         }
