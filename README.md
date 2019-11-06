@@ -115,8 +115,9 @@ This is counter-intuitive behavior and it is inconsistent with the program order
 preserved then make sure you either have only 1 partition per topic or have collocated the keys that need this property
 to the same partition.
 
-When using Optimized Compute you must never update values inplace, always create a modified copy of the value.
-Otherwise incorrect state may flushed and the invariants will be broken.
+When using Optimized Compute you must never update values inplace, always create a modified copy of the value instead.
+Otherwise incorrect state may flushed and data will be broken. For the same reason you must never modify
+keys and values in a listener.
 
 ## Protocol
 
@@ -135,11 +136,11 @@ the same partition to be exact) we have eventually consistent state across all t
 
 Optimized Compute feature relies on this per-partition update linearizability. Instead of 
 a loop that retries calling `ConcurrentMap.reaplce(K,V,V)` and sending `ops` messages over 
-and over again for each attempt, we can serialize the function passed to the `compute` method 
-and send it to all the replicas and it will be executed on each replica just once.
+and over again for each attempt, we can serialize the function passed to the `compute` method, 
+the function will be sent to all the replicas and it will be executed on each replica only once.
 This may be much more efficient for operations like incrementing heavily contended counters 
 or applying small updates to huge values. 
-It is needed to implement `ComputeSerializer` and `ComputeDeserializer` interfaces and 
+It is only needed to implement `ComputeSerializer` and `ComputeDeserializer` interfaces and 
 set them to a config. All the methods accepting `BiFunction` support Optimized Compute.
 
 Once in a while a lucky client that has issued the update with the offset of multiple of 
@@ -246,7 +247,7 @@ bin/kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVER | grep $DATA_TOP
 
 4. Run the following command to initialize `ops` topic with the last `data` topic offsets:  
     ```shell script
-    java -cp slf4j-api-1.7.26.jar:kafka-clients-2.3.0.jar:replicamap-0.1.jar com.vladykin.replicamap.kafka.KReplicaMapTools \
+    java -cp slf4j-api-1.7.26.jar:kafka-clients-2.3.1.jar:replicamap-0.2.jar com.vladykin.replicamap.kafka.KReplicaMapTools \
           initExisting $BOOTSTRAP_SERVER $DATA_TOPIC $OPS_TOPIC
     ```
     it must print `OK: ...`
