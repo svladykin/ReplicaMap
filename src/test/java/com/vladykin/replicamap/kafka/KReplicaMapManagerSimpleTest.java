@@ -217,7 +217,9 @@ class KReplicaMapManagerSimpleTest {
         assertNotSame(mMap.unwrap(), wMap.unwrap());
         assertEquals(mMap.unwrap(), wMap.unwrap());
 
-        new TestListener(mMap,
+        // Always use the same wMap with TestListener, otherwise race is possible
+        // between installing next listener to another map and the old update fired.
+        new TestListener(wMap,
             "a", null, "A",
             "b", null, "B"
         );
@@ -253,7 +255,7 @@ class KReplicaMapManagerSimpleTest {
         awaitEqualMaps(mMap, wMap,
             "a", "Z", "z", "Z");
 
-        new TestListener(mMap,
+        new TestListener(wMap,
             "a", "Z", "Zq"
         );
         JoinStringsSerializer.canSerialize = false;
@@ -283,7 +285,7 @@ class KReplicaMapManagerSimpleTest {
             "a", "Zq", "z", "Zw", "n", "N");
         assertEquals(1, JoinStrings.executed.getAndSet(0));
 
-        new TestListener(mMap);
+        new TestListener(wMap);
         JoinStringsSerializer.canSerialize = true;
         mMap.computeIfAbsent("n", (k) -> {
             JoinStrings.executed.incrementAndGet();
@@ -302,7 +304,7 @@ class KReplicaMapManagerSimpleTest {
             "a", "Zqe", "z", "Zw", "n", "N");
         assertEquals(2, JoinStrings.executed.getAndSet(0));
 
-        new TestListener(mMap,
+        new TestListener(wMap,
             "n", "N", "Nr"
         );
         JoinStringsSerializer.canSerialize = false;
@@ -320,7 +322,7 @@ class KReplicaMapManagerSimpleTest {
             "a", "Zqe", "z", "Zw", "n", "Nr", "b", "H");
         assertEquals(0, JoinStrings.executed.getAndSet(0));
 
-        new TestListener(mMap,
+        new TestListener(wMap,
             "c", null, "U"
         );
         JoinStringsSerializer.canSerialize = false;
@@ -347,7 +349,7 @@ class KReplicaMapManagerSimpleTest {
             "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Xp", "c", "U");
         assertEquals(2, JoinStrings.executed.getAndSet(0));
 
-        new TestListener(mMap,
+        new TestListener(wMap,
             "c", "U", "Up"
         );
         JoinStringsSerializer.canSerialize = false;
@@ -365,7 +367,7 @@ class KReplicaMapManagerSimpleTest {
         awaitEqualMaps(mMap, wMap,
             "a", "Zqe", "z", "Zw", "n", "Nr", "b", "Xp", "c", "Up");
 
-        new TestListener(mMap,
+        new TestListener(wMap,
             "a", "Zqe", "A",
             "z", "Zw", "X",
             "c", "Up", "F"
@@ -391,7 +393,7 @@ class KReplicaMapManagerSimpleTest {
             "a", "Ao", "z", "Xo", "n", "Nro", "b", "Xpo", "c", "Fo");
         assertEquals(10, JoinStrings.executed.getAndSet(0));
 
-        new TestListener(mMap,
+        new TestListener(wMap,
             "a", "Ao", "Aok",
             "z", "Xo", "Xok",
             "n", "Nro", "Nrok",
@@ -508,11 +510,13 @@ class KReplicaMapManagerSimpleTest {
 
             this.map = map;
             map.setListener(this);
-            System.out.println();
+//            System.out.println();
         }
 
         void assertOk() throws InterruptedException {
             long start = System.nanoTime();
+            // Need to wait here because this method is called when the maps are equal,
+            // but listener is invoked after map update.
             while (!expectedUpdates.isEmpty()) {
                 Thread.sleep(1);
 
@@ -530,7 +534,7 @@ class KReplicaMapManagerSimpleTest {
             String oldValue,
             String newValue
         ) {
-            System.out.println(key + " = " + oldValue + " -> " + newValue + "   :   " + expectedUpdates + "   :   " + map.unwrap());
+//            System.out.println(key + " = " + oldValue + " -> " + newValue + "   :   " + expectedUpdates + "   :   " + map.unwrap());
             assertTrue(expectedUpdates.remove(key, oldValue + "->" + newValue));
         }
     }
