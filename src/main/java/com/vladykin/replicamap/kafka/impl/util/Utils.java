@@ -20,10 +20,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.AuthorizationException;
 import org.apache.kafka.common.errors.InterruptException;
-import org.apache.kafka.common.errors.OutOfOrderSequenceException;
-import org.apache.kafka.common.errors.ProducerFencedException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -179,12 +176,6 @@ public final class Utils {
                e instanceof WakeupException;
     }
 
-    public static boolean isUnrecoverable(Exception e) {
-        return e instanceof ProducerFencedException ||
-               e instanceof OutOfOrderSequenceException ||
-               e instanceof AuthorizationException;
-    }
-
     public static String getMessage(Exception e) {
         String name = e.getClass().getSimpleName();
         String msg = e.getMessage();
@@ -205,11 +196,6 @@ public final class Utils {
             throw new NullPointerException(varName + " is null");
 
         return obj;
-    }
-
-    public static void clear(Collection<?> c) {
-        if (c != null)
-            c.clear();
     }
 
     public static void check(boolean check, Supplier<String> msg) {

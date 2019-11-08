@@ -685,11 +685,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
         Utils.close(dataConsumers);
 
         Utils.close(maps);
-
-        Utils.clear(flushQueues);
-        Utils.clear(cleanQueue);
-        Utils.clear(flushWorkers);
-        Utils.clear(opsWorkers);
     }
 
     protected <K,V> KReplicaMap<K,V> getMapById(Object mapId) {
