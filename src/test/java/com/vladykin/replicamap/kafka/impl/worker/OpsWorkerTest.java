@@ -189,7 +189,7 @@ class OpsWorkerTest {
     void testFindLastFlushRecordEmpty() {
         opsConsumer.updateEndOffsets(singletonMap(opsPart, 0L));
         assertSame(null,
-            opsWorker.findLastFlushRecord(dataPart, opsPart, Utils.millis(1), null));
+            opsWorker.findLastFlushRecord(dataPart, opsPart, Utils.millis(1)));
     }
 
     @Test
@@ -213,10 +213,12 @@ class OpsWorkerTest {
             dataConsumer.updateEndOffsets(singletonMap(dataPart, 300700L));
         };
 
-        callback.run(); // Mock opsConsumer clears itself on each call, thus we have this callback.
+        callback.run();
+        for (int i = 0; i < 4; i++)
+            opsConsumer.schedulePollTask(callback);
 
-        assertEquals(200600L, opsWorker.findLastFlushRecord(dataPart, opsPart, Utils.millis(1),
-            callback).value().getFlushOffsetData());
+        assertEquals(200600L, opsWorker.findLastFlushRecord(dataPart, opsPart, Utils.millis(1))
+            .value().getFlushOffsetData());
     }
 
     @Test

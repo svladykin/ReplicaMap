@@ -108,7 +108,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
                 log.debug("Loading data for partition {}", dataPart);
 
                 TopicPartition opsPart = new TopicPartition(opsTopic, part);
-                ConsumerRecord<Object,OpMessage> lastFlushRec = findLastFlushRecord(dataPart, opsPart, pollTimeout, null);
+                ConsumerRecord<Object,OpMessage> lastFlushRec = findLastFlushRecord(dataPart, opsPart, pollTimeout);
 
                 long flushOffsetOps = 0L;
 
@@ -283,8 +283,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
     protected ConsumerRecord<Object,OpMessage> findLastFlushRecord(
         TopicPartition dataPart,
         TopicPartition opsPart,
-        Duration pollTimeout,
-        Runnable testCallback
+        Duration pollTimeout
     ) {
         opsConsumer.assign(singleton(opsPart));
         long maxOffset = Utils.endOffset(opsConsumer, opsPart);
@@ -300,9 +299,6 @@ public class OpsWorker extends Worker implements AutoCloseable {
                 return lastFlushRec;
 
             maxOffset -= flushPeriodOps;
-
-            if (testCallback != null)
-                testCallback.run();
         }
     }
 
