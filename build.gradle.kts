@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
 import org.gradle.api.tasks.testing.logging.TestLogEvent.*
 
 plugins {
@@ -59,5 +60,6 @@ tasks.named<Test>("test") {
     maxHeapSize = "1G"
     testLogging {
         events(STARTED, PASSED, FAILED, SKIPPED, STANDARD_OUT, STANDARD_ERROR)
+        exceptionFormat = FULL
     }
 }
