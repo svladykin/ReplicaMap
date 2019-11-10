@@ -37,6 +37,8 @@ import static java.util.Collections.singleton;
  * @author Sergi Vladykin http://vladykin.com
  */
 public class OpsWorker extends Worker implements AutoCloseable {
+    static final String LOAD_FLUSH_LOG = OpsWorker.class.getPackage().getName() + ".loadflush";
+    private static final Logger loadFlushLog = LoggerFactory.getLogger(LOAD_FLUSH_LOG);
     private static final Logger log = LoggerFactory.getLogger(OpsWorker.class);
 
     protected static final ConsumerRecord<Object,OpMessage> NOT_FOUND = new ConsumerRecord<>("NOT_FOUND", 0, 0, null, null);
@@ -110,6 +112,9 @@ public class OpsWorker extends Worker implements AutoCloseable {
                 TopicPartition opsPart = new TopicPartition(opsTopic, part);
                 ConsumerRecord<Object,OpMessage> lastFlushRec = findLastFlushRecord(dataPart, opsPart, pollTimeout);
 
+                if (loadFlushLog.isTraceEnabled())
+                    loadFlushLog.trace("Found last flush record {} for partition {}", lastFlushRec, opsPart);
+
                 long flushOffsetOps = 0L;
 
                 if (lastFlushRec != null) {
@@ -142,8 +147,10 @@ public class OpsWorker extends Worker implements AutoCloseable {
         dataConsumer.assign(singleton(dataPart));
         dataConsumer.seekToBeginning(singleton(dataPart));
 
-        int loadedRecs = 0;
+        int loadedRecsCnt = 0;
         long lastRecOffset = -1;
+
+        Map<Object,Object> loadedData = loadFlushLog.isTraceEnabled() ? new HashMap<>() : null;
 
         outer: for (;;) {
             ConsumerRecords<Object,Object> recs = dataConsumer.poll(pollTimeout);
@@ -154,7 +161,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
                 if (log.isDebugEnabled()) {
                     log.debug( "Empty records while loading data for partition {}, endOffsetData: {}, " +
                             "flushOffsetData: {}, loadedRecs: {}, lastRecOffset: {}",
-                        dataPart, endOffsetData, flushOffsetData, loadedRecs, lastRecOffset);
+                        dataPart, endOffsetData, flushOffsetData, loadedRecsCnt, lastRecOffset);
                 }
 
                 if (endOffsetData <= flushOffsetData) { // flushOffsetData is inclusive, endOffsetData is exclusive
@@ -172,12 +179,13 @@ public class OpsWorker extends Worker implements AutoCloseable {
                     if (isOverMaxOffset(rec, flushOffsetData))
                         break outer;
 
-                    loadedRecs++;
+                    loadedRecsCnt++;
                     lastRecOffset = rec.offset();
 
                     log.trace("Loading data partition {}, record: {}", dataPart, rec);
 
                     applyDataTopicRecord(rec);
+                    collectDataRecord(loadedData, rec);
 
                     if (rec.offset() == flushOffsetData)
                         break outer; // it was the last record we need
@@ -185,10 +193,25 @@ public class OpsWorker extends Worker implements AutoCloseable {
             }
         }
 
-        if (log.isDebugEnabled())
-            log.debug("Loaded {} data records for partition {}", loadedRecs, dataPart);
+        if (loadFlushLog.isTraceEnabled())
+            loadFlushLog.trace("Loaded {} data records for partition {}: {}", loadedRecsCnt, dataPart, loadedData);
 
-        return loadedRecs;
+        if (log.isDebugEnabled())
+            log.debug("Loaded {} data records for partition {}", loadedRecsCnt, dataPart);
+
+        return loadedRecsCnt;
+    }
+
+    protected void collectDataRecord(Map<Object,Object> loadedData, ConsumerRecord<Object,Object> rec) {
+        if (loadedData != null) {
+            Object k = rec.key();
+            Object v = rec.value();
+
+            if (v == null)
+                loadedData.remove(k);
+            else
+                loadedData.put(k, v);
+        }
     }
 
     protected void applyDataTopicRecord(ConsumerRecord<Object,Object> dataRec) {
