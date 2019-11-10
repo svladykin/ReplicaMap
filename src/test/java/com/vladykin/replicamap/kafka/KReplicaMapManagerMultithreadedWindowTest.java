@@ -110,7 +110,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         ExecutorService exec = Executors.newFixedThreadPool(threadsCnt);
 
         try {
-            for (int i = 0; i < 5; i++) {
+            for (int i = 0; i < 10; i++) {
                 AtomicInteger threadIds = new AtomicInteger();
                 CyclicBarrier start = new CyclicBarrier(threadsCnt);
 
