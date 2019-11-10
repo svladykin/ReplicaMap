@@ -161,6 +161,7 @@ class KReplicaMapManagerMultithreadedFibonacciTest {
         finally {
             exec.shutdownNow();
             assertTrue(exec.awaitTermination(10, SECONDS));
+            Utils.close(managers);
         }
     }
 

@@ -105,7 +105,6 @@ public class KReplicaMapManagerMultithreadedWindowTest {
             lastAddedKey[(int)k] = new AtomicLong(k);
         }
         assertEquals(threadsCnt, mgr.getMap().size());
-        assertTrue(managers.reset(0, mgr));
 
         ExecutorService exec = Executors.newFixedThreadPool(threadsCnt);
 
@@ -124,7 +123,8 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                     for (int j = 0; j < 500; j++) {
                         KReplicaMapManager m = managers.get(mgrId, managersFactory);
                         try {
-                            if (rnd.nextInt(1000) == 0) {
+                            // Periodically restart managers, but keep one always running.
+                            if (mgrId != 0 && rnd.nextInt(1000) == 0) {
                                 System.out.println("stopping: " + mgrId + " " +  Long.toHexString(m.clientId));
                                 managers.reset(mgrId, m);
                                 continue;
@@ -202,6 +202,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         finally {
             exec.shutdownNow();
             assertTrue(exec.awaitTermination(10, SECONDS));
+            Utils.close(managers);
         }
     }
 
