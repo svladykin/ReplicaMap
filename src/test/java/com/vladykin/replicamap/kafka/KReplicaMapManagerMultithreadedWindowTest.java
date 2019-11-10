@@ -77,8 +77,8 @@ public class KReplicaMapManagerMultithreadedWindowTest {
 
     @Test
     void testMultithreadedSlidingWindowWithRestart() throws Exception {
-        int threadsCnt = 13;
-        int managersCnt = 5;
+        int threadsCnt = 31;
+        int managersCnt = 9;
         int parts = 4;
 
         createTopics(sharedKafkaTestResource.getKafkaTestUtils().getAdminClient(),
@@ -88,7 +88,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         IntFunction<KReplicaMapManager> managersFactory =  (x) -> {
             KReplicaMapManager manager = new KReplicaMapManager(getDefaultConfig());
             manager.start(120, SECONDS);
-            System.out.println("started: " + x);
+            System.out.println("started: " + x + " " +  Long.toHexString(manager.clientId));
             return manager;
         };
 
@@ -152,7 +152,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                     return null;
                 }));
 
-                fut.get(180, SECONDS);
+                fut.get(300, SECONDS);
 
                 System.out.println("checking " + i);
 

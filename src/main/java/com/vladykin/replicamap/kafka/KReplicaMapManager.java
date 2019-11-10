@@ -768,7 +768,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     @Override
     public String toString() {
         return "KReplicaMapManager{" +
-            "clientId=" + clientId +
+            "clientId=" + Long.toHexString(clientId) +
             ", dataTopic='" + dataTopic + '\'' +
             ", opsTopic='" + opsTopic + '\'' +
             ", flushTopic='" + flushTopic + '\'' +
