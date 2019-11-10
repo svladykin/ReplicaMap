@@ -85,10 +85,10 @@ public class KReplicaMapManagerMultithreadedWindowTest {
             "data", "ops", "flush", parts);
 
         LazyList<KReplicaMapManager> managers = new LazyList<>(managersCnt);
-        IntFunction<KReplicaMapManager> managersFactory =  (x) -> {
+        IntFunction<KReplicaMapManager> managersFactory =  (mgrId) -> {
             KReplicaMapManager manager = new KReplicaMapManager(getDefaultConfig());
             manager.start(120, SECONDS);
-            System.out.println("started: " + x + " " +  Long.toHexString(manager.clientId));
+            System.out.println("started: " + mgrId + " " +  Long.toHexString(manager.clientId));
             return manager;
         };
 
@@ -125,6 +125,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                         KReplicaMapManager m = managers.get(mgrId, managersFactory);
                         try {
                             if (rnd.nextInt(1000) == 0) {
+                                System.out.println("stopping: " + mgrId + " " +  Long.toHexString(m.clientId));
                                 managers.reset(mgrId, m);
                                 continue;
                             }
@@ -188,7 +189,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                     // If we provide a consistent comparator, we may hang on a wrong maximum.
                     // Thus we randomize, so that we always make progress.
                     return ThreadLocalRandom.current().nextBoolean() ? -1 : 1;
-                }, 120, SECONDS, m -> m.unwrap().toString());
+                }, 120, SECONDS, m -> "\n" + Long.toHexString(m.getManager().clientId) + "  " + m.unwrap().toString());
 
                 try (Consumer<Object,Object> dataConsumer =
                          managers.get(0, managersFactory).newKafkaConsumerData()) {
