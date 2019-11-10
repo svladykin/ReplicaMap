@@ -37,7 +37,7 @@ import static java.util.Collections.singleton;
  * @author Sergi Vladykin http://vladykin.com
  */
 public class OpsWorker extends Worker implements AutoCloseable {
-    static final String LOAD_FLUSH_LOG = OpsWorker.class.getPackage().getName() + ".loadflush";
+    public static final String LOAD_FLUSH_LOG = "com.vladykin.replicamap.kafka.impl.loadflush";
     private static final Logger loadFlushLog = LoggerFactory.getLogger(LOAD_FLUSH_LOG);
     private static final Logger log = LoggerFactory.getLogger(OpsWorker.class);
 

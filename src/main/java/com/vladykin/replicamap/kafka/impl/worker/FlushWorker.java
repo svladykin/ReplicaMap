@@ -356,7 +356,7 @@ public class FlushWorker extends Worker {
         FlushQueue.Batch dataBatch = flushQueue.collect(flushRequests.stream()
             .mapToLong(OpMessage::getFlushOffsetOps));
 
-        if (dataBatch == null) {
+        if (dataBatch == null || dataBatch.isEmpty()) {
             // Check if we are too far behind.
             if (flushRequests.size() > 1) // TODO add to config
                 resetAll(flushConsumer, null);

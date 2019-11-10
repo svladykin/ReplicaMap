@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.OptionalLong;
 import java.util.concurrent.Semaphore;
 import java.util.stream.LongStream;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
 
@@ -14,6 +16,8 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
  * @author Sergi Vladykin http://vladykin.com
  */
 public class FlushQueue {
+    private static final Logger log = LoggerFactory.getLogger(FlushQueue.class);
+
     protected final Semaphore lock = new Semaphore(1);
     protected final ArrayDeque<MiniRecord> queue = new ArrayDeque<>();
 
@@ -58,14 +62,17 @@ public class FlushQueue {
                         break;
 
                     if (isOverMaxOffset(r, maxAddOffset))
-                        queue.add(r);
+                        addRecord(r);
                 }
 
                 if (offset > maxAddOffset) {
+                    if (log.isTraceEnabled())
+                        log.trace("add: maxAddOffset: {} -> {}", maxAddOffset, offset);
+
                     maxAddOffset = offset;
 
                     if (update)
-                        queue.add(new MiniRecord(key, value, offset));
+                        addRecord(new MiniRecord(key, value, offset));
                 }
             }
             finally {
@@ -74,6 +81,11 @@ public class FlushQueue {
         }
         else if (update)
             tlq.add(new MiniRecord(key, value, offset));
+    }
+
+    protected void addRecord(MiniRecord rec) {
+        log.trace("Add record: {}", rec);
+        queue.add(rec);
     }
 
     protected boolean lock(boolean waitLock) {
@@ -139,10 +151,18 @@ public class FlushQueue {
             }
 
             long cleanedCnt = maxOffset - maxCleanOffset;
+
+            if (log.isDebugEnabled())
+                log.debug("clean: maxCleanOffset: {} -> {}", maxCleanOffset, maxOffset);
+
             maxCleanOffset = maxOffset;
 
             if (maxCleanOffset > maxAddOffset) {
                 assert queue.isEmpty();
+
+                if (log.isDebugEnabled())
+                    log.debug("clean: maxAddOffset: {} -> {}", maxAddOffset, maxCleanOffset);
+
                 maxAddOffset = maxCleanOffset;
             }
 
