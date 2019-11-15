@@ -72,7 +72,7 @@ class OpsWorkerTest {
         opsPart = new TopicPartition(TOPIC_OPS, 0);
         dataPart = new TopicPartition(TOPIC_DATA, 0);
 
-        flushQueues = singletonList(new FlushQueue());
+        flushQueues = singletonList(new FlushQueue(0));
         cleanQueue = new ConcurrentLinkedQueue<>();
 
         dataConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);

@@ -214,7 +214,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             cleanQueue = newCleanQueue();
 
             for (int part = 0; part < parts; part++)
-                flushQueues.add(newFlushQueue());
+                flushQueues.add(newFlushQueue(part));
 
             this.opsWorkers = new ArrayList<>(opsWorkers);
             CompletableFuture<?>[] opsSteadyFuts = new CompletableFuture[opsWorkers];
@@ -286,8 +286,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new ConcurrentLinkedQueue<>();
     }
 
-    protected FlushQueue newFlushQueue() {
-        return new FlushQueue();
+    protected FlushQueue newFlushQueue(int part) {
+        return new FlushQueue(part);
     }
 
     protected FlushWorker newFlushWorker(int workerId, LazyList<Producer<Object,Object>> dataProducersLazyList) {

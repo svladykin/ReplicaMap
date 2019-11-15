@@ -21,11 +21,25 @@ public class FlushQueue {
     protected final Semaphore lock = new Semaphore(1);
     protected final ArrayDeque<MiniRecord> queue = new ArrayDeque<>();
 
+    protected final int part;
+
     protected long maxAddOffset = -1;
     protected long maxCleanOffset = -1;
 
     protected final ThreadLocal<ArrayDeque<MiniRecord>> threadLocalQueue =
         ThreadLocal.withInitial(ArrayDeque::new);
+
+    public FlushQueue(int part) {
+        this.part = part;
+    }
+
+    @Override
+    public String toString() {
+        return "FlushQueue{" +
+            "part=" + part +
+            ", locked=" + (lock.availablePermits() == 0) +
+            '}';
+    }
 
     /**
      * @return Size of the internal queue.
@@ -67,7 +81,7 @@ public class FlushQueue {
 
                 if (offset > maxAddOffset) {
                     if (log.isTraceEnabled())
-                        log.trace("add: maxAddOffset: {} -> {}", maxAddOffset, offset);
+                        log.trace("Part {} add maxAddOffset: {} -> {}", part, maxAddOffset, offset);
 
                     maxAddOffset = offset;
 
@@ -84,7 +98,9 @@ public class FlushQueue {
     }
 
     protected void addRecord(MiniRecord rec) {
-        log.trace("Add record: {}", rec);
+        if (log.isTraceEnabled())
+            log.trace("Part {} add record: {}", part, rec);
+
         queue.add(rec);
     }
 
@@ -153,7 +169,7 @@ public class FlushQueue {
             long cleanedCnt = maxOffset - maxCleanOffset;
 
             if (log.isDebugEnabled())
-                log.debug("clean: maxCleanOffset: {} -> {}", maxCleanOffset, maxOffset);
+                log.debug("Part {} clean maxCleanOffset: {} -> {}", part, maxCleanOffset, maxOffset);
 
             maxCleanOffset = maxOffset;
 
@@ -161,7 +177,7 @@ public class FlushQueue {
                 assert queue.isEmpty();
 
                 if (log.isDebugEnabled())
-                    log.debug("clean: maxAddOffset: {} -> {}", maxAddOffset, maxCleanOffset);
+                    log.debug("Part {} clean maxAddOffset: {} -> {}", part, maxAddOffset, maxCleanOffset);
 
                 maxAddOffset = maxCleanOffset;
             }

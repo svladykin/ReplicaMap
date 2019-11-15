@@ -76,7 +76,7 @@ class FlushWorkerTest {
         dataProducer = new MockProducer<>();
         opsProducer = new MockProducer<>();
 
-        flushQueues = singletonList(new FlushQueue());
+        flushQueues = singletonList(new FlushQueue(0));
         cleanQueue = new ConcurrentLinkedQueue<>();
 
         opsSteadyFut = new CompletableFuture<>();
