@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
 
 /**
- * The queue that collects all the updated keys, that need to be flushed.
+ * The queue that collects all the updated keys and values to be flushed.
  *
  * @author Sergi Vladykin http://vladykin.com
  */
