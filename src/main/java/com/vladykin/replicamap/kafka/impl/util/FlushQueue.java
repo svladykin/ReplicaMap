@@ -22,7 +22,7 @@ public class FlushQueue {
     protected final Semaphore lock = new Semaphore(1);
     protected final ArrayDeque<MiniRecord> queue = new ArrayDeque<>();
 
-    protected final TopicPartition part;
+    protected final TopicPartition dataPart;
 
     protected long maxAddOffset = -1;
     protected long maxCleanOffset = -1;
@@ -30,14 +30,18 @@ public class FlushQueue {
     protected final ThreadLocal<ArrayDeque<MiniRecord>> threadLocalQueue =
         ThreadLocal.withInitial(ArrayDeque::new);
 
-    public FlushQueue(TopicPartition part) {
-        this.part = part;
+    public FlushQueue(TopicPartition dataPart) {
+        this.dataPart = dataPart;
+    }
+
+    public TopicPartition getDataPartition() {
+        return dataPart;
     }
 
     @Override
     public String toString() {
         return "FlushQueue{" +
-            "part=" + part +
+            "dataPart=" + dataPart +
             ", locked=" + (lock.availablePermits() == 0) +
             '}';
     }
@@ -82,7 +86,7 @@ public class FlushQueue {
 
                 if (offset > maxAddOffset) {
                     if (log.isTraceEnabled())
-                        log.trace("For partition {} add maxAddOffset: {} -> {}", part, maxAddOffset, offset);
+                        log.trace("For partition {} add maxAddOffset: {} -> {}", dataPart, maxAddOffset, offset);
 
                     maxAddOffset = offset;
 
@@ -100,7 +104,7 @@ public class FlushQueue {
 
     protected void addRecord(MiniRecord rec) {
         if (log.isTraceEnabled())
-            log.trace("For partition {} add record: {}", part, rec);
+            log.trace("For partition {} add record: {}", dataPart, rec);
 
         queue.add(rec);
     }
@@ -172,7 +176,7 @@ public class FlushQueue {
 
             if (log.isDebugEnabled()) {
                 log.debug("For partition {} clean maxCleanOffset: {} -> {}, reason: {}",
-                    part, maxCleanOffset, maxOffset, reason);
+                    dataPart, maxCleanOffset, maxOffset, reason);
             }
 
             maxCleanOffset = maxOffset;
@@ -181,7 +185,7 @@ public class FlushQueue {
                 assert queue.isEmpty();
 
                 if (log.isDebugEnabled())
-                    log.debug("For partition {} clean maxAddOffset: {} -> {}", part, maxAddOffset, maxCleanOffset);
+                    log.debug("For partition {} clean maxAddOffset: {} -> {}", dataPart, maxAddOffset, maxCleanOffset);
 
                 maxAddOffset = maxCleanOffset;
             }
