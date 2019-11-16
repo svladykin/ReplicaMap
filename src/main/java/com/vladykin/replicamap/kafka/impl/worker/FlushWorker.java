@@ -238,7 +238,7 @@ public class FlushWorker extends Worker {
 
                 // If it is the first batch of records for this partition we need to initialize the processing for it.
                 if (flushRequests == null) {
-                    // Load flush history and clean the flushQueue until the max historical offset,
+                    // Load flush history and clean the flushQueue until the max committed historical offset,
                     // after that even if the OpsWorker is behind the flushQueue will not accept outdated records.
                     // We do not need to keep the history and can safely assume that no double flushes will happen.
                     OpMessage maxHistoryReq = loadFlushHistoryMax(flushConsumer, flushPart, partRecs.get(0).offset());
@@ -380,7 +380,6 @@ public class FlushWorker extends Worker {
 
         try {
             dataProducer = dataProducers.get(part, null);
-            log.trace("Data producer for flushing partition {}: {}", dataPart, dataProducer);
 
             if (dataConsumers != null) {
                 dataConsumer = dataConsumers.get(workerId, this::newDataConsumer);
@@ -393,30 +392,18 @@ public class FlushWorker extends Worker {
                 // the wrong position.
                 long dataConsumerOffset = dataConsumer.position(dataPart);
 
-                if (log.isTraceEnabled())
-                    log.trace("Data consumer initialized for partition {} at offset: {}", dataPart, dataConsumerOffset);
+                if (log.isDebugEnabled())
+                    log.debug("Data consumer initialized for partition {} at offset: {}", dataPart, dataConsumerOffset);
             }
 
             dataProducer.beginTransaction();
-            log.trace("TX started for partition {}", dataPart);
 
             Future<RecordMetadata> lastDataRecMetaFut = null;
             for (Map.Entry<Object,Object> entry : dataBatch.entrySet()) {
                 lastDataRecMetaFut = dataProducer.send(new ProducerRecord<>(
                     dataTopic, part, entry.getKey(), entry.getValue()));
             }
-
-            if (log.isTraceEnabled())
-                log.trace("Sent {} entries to TX for partition {}", dataBatchSize, dataPart);
-
-            flushConsumerOffset = new OffsetAndMetadata(flushConsumer.position(flushPart));
-            dataProducer.sendOffsetsToTransaction(
-                singletonMap(flushPart, flushConsumerOffset), flushConsumerGroupId);
-
-            log.trace("Sent {} offset to TX for partition {}", flushConsumerOffset, flushPart);
-
-            dataProducer.commitTransaction();
-            log.trace("TX committed for partition {}", dataPart);
+            dataProducer.flush();
 
             // In isTooSmallBatch method we check that the batch is not empty,
             // thus we have to have the last record non-null here.
@@ -424,14 +411,18 @@ public class FlushWorker extends Worker {
             // it is impossible to have a large number of failed update attempts,
             // there must always be a winner, so we will be able to commit periodically.
             assert lastDataRecMetaFut != null;
-
             flushOffsetData = lastDataRecMetaFut.get().offset();
+
+            flushConsumerOffset = new OffsetAndMetadata(flushConsumer.position(flushPart));
+            dataProducer.sendOffsetsToTransaction(
+                singletonMap(flushPart, flushConsumerOffset), flushConsumerGroupId);
+
+            dataProducer.commitTransaction();
 
             if (log.isDebugEnabled()) {
                 log.debug("Committed flush offset for data partition {} is {}, dataProducer: {}, dataBatch: {}",
                     dataPart, flushOffsetData, dataProducer, dataBatch);
             }
-
             if (loadFlushLog.isTraceEnabled()) {
                 loadFlushLog.trace("Committed flush offset for data partition {} is {}, dataProducer: {}, dataBatch: {}",
                     dataPart, flushOffsetData, dataProducer, dataBatch);
@@ -451,8 +442,10 @@ public class FlushWorker extends Worker {
                         "flushQueueSize: {}, reason: {}", dataPart, flushOffsetData, flushConsumerOffset,
                         flushQueue.size(), Utils.getMessage(e));
             }
-            else
-                log.error("Failed to flush data for partition " + dataPart + ", exception:", e);
+            else {
+                log.error("Failed to flush data for partition " + dataPart +
+                    ", flushOffsetData: " + flushOffsetData + ", exception:", e);
+            }
 
             resetAll(flushConsumer, dataConsumer);
             return false; // No other handling, the next flush will be our retry.
