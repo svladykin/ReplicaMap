@@ -252,14 +252,12 @@ public class FlushWorker extends Worker {
                 loadMaxCommittedFlushRequest(flushConsumer, flushPart, partRecs.get(0).offset());
 
             long maxFlushOffsetOps = -1L;
-            long maxFlushReqOffset = -1L;
-
             if (maxCommittedFlushReq != null) {
-                maxFlushReqOffset = maxCommittedFlushReq.offset();
                 maxFlushOffsetOps = maxCommittedFlushReq.value().getFlushOffsetOps();
                 flushQueues.get(flushPart.partition()).clean(maxFlushOffsetOps, "maxHistory");
             }
 
+            long maxFlushReqOffset = partRecs.get(0).offset() - 1L; // Right before the first received record.
             flushReqs = initUnprocessedFlushRequests(flushPart, maxFlushReqOffset, maxFlushOffsetOps);
         }
 
@@ -550,7 +548,7 @@ public class FlushWorker extends Worker {
 
     protected Consumer<Object,OpMessage> newFlushConsumer(int ignore) {
         Consumer<Object,OpMessage> c = flushConsumerFactory.get();
-        c.subscribe(singleton(flushTopic), new MaxFlushRequestsCleaner());
+        c.subscribe(singleton(flushTopic), new PartitionRebalanceListener());
         return c;
     }
 
@@ -604,7 +602,7 @@ public class FlushWorker extends Worker {
      * We initialize transactional data producer in the listener to make sure
      * it happens before the fetch, otherwise races are possible on rebalancing.
      */
-    protected class MaxFlushRequestsCleaner implements ConsumerRebalanceListener {
+    protected class PartitionRebalanceListener implements ConsumerRebalanceListener {
         @Override
         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
             log.debug("Flush partitions assigned: {}", partitions);
