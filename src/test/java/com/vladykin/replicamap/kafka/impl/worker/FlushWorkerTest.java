@@ -313,7 +313,8 @@ class FlushWorkerTest {
         flushConsumer.addRecord(newFlushRequest(109, 1006));
         flushConsumer.addRecord(newFlushRequest(110, 1005));
         flushConsumer.addRecord(newFlushRequest(111, 1004));
-        flushConsumer.addRecord(newFlushRequest(112, 1003));
+        flushConsumer.addRecord(newFlushRequest(112, 1018));
+        flushConsumer.addRecord(newFlushRequest(113, 1019));
 
         flushConsumer.seek(flushPart, 113);
         OpMessage flush = flushWorker.loadFlushHistoryMax(flushConsumer, flushPart, 112);
