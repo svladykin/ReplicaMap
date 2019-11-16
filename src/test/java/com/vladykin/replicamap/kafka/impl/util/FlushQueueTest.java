@@ -43,7 +43,7 @@ class FlushQueueTest {
         assertEquals(1, batch.size());
         assertEquals(1, collectedAll);
 
-        q.clean(0);
+        q.clean(0, "");
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(0, q.maxAddOffset);
@@ -87,7 +87,7 @@ class FlushQueueTest {
         assertEquals(7, q.maxAddOffset);
         assertEquals(5, q.queue.size());
 
-        q.clean(batch.getMaxOffset());
+        q.clean(batch.getMaxOffset(), "");
 
         assertEquals(7, q.maxCleanOffset);
         assertEquals(7, q.maxAddOffset);
@@ -105,7 +105,7 @@ class FlushQueueTest {
         assertEquals(9, q.maxAddOffset);
         assertEquals(1, q.queue.size());
 
-         q.clean(6);
+         q.clean(6, "");
 
         assertEquals(7, q.maxCleanOffset);
         assertEquals(9, q.maxAddOffset);
@@ -113,7 +113,7 @@ class FlushQueueTest {
 
         System.out.println(q);
 
-        q.clean(10);
+        q.clean(10, "");
 
         assertEquals(10, q.maxCleanOffset);
         assertEquals(10, q.maxAddOffset);
@@ -192,7 +192,7 @@ class FlushQueueTest {
                         int collectedAll = batch.getCollectedAll();
                         assertTrue(collectedAll >= batch.size());
 
-                        long cleanedCnt = q.clean(batch.getMaxOffset());
+                        long cleanedCnt = q.clean(batch.getMaxOffset(), "");
 
                         allCleanedCnt.addAndGet(cleanedCnt);
                     }

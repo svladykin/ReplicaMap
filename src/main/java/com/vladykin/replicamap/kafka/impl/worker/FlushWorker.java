@@ -168,7 +168,7 @@ public class FlushWorker extends Worker {
             int part = cleanRequest.partition();
 
             FlushQueue flushQueue = flushQueues.get(part);
-            long cleanedCnt = flushQueue.clean(flushOffsetOps);
+            long cleanedCnt = flushQueue.clean(flushOffsetOps, "processCleanRequests");
 
             if (log.isDebugEnabled()) {
                 log.debug("Processed clean request {} for partition {}, flushQueueSize: {}, cleanedCnt: {}",
@@ -243,7 +243,7 @@ public class FlushWorker extends Worker {
                     // We do not need to keep the history and can safely assume that no double flushes will happen.
                     OpMessage maxHistoryReq = loadFlushHistoryMax(flushConsumer, flushPart, partRecs.get(0).offset());
                     if (maxHistoryReq != null)
-                        flushQueues.get(flushPart.partition()).clean(maxHistoryReq.getFlushOffsetOps());
+                        flushQueues.get(flushPart.partition()).clean(maxHistoryReq.getFlushOffsetOps(), "maxHistory");
 
                     flushRequests = initUnprocessedFlushRequests(flushPart);
                 }
@@ -334,6 +334,7 @@ public class FlushWorker extends Worker {
         return max == null ? null : max.value();
     }
 
+    @SuppressWarnings("OptionalGetWithoutIsPresent")
     protected boolean flushPartition(
         Consumer<Object,OpMessage> flushConsumer,
         TopicPartition flushPart,
@@ -351,7 +352,7 @@ public class FlushWorker extends Worker {
         FlushQueue flushQueue = flushQueues.get(part);
 
         flushQueue.clean(flushRequests.stream()
-            .mapToLong(OpMessage::getCleanOffsetOps).max().getAsLong());
+            .mapToLong(OpMessage::getCleanOffsetOps).max().getAsLong(), "flushPartition begin");
 
         FlushQueue.Batch dataBatch = flushQueue.collect(flushRequests.stream()
             .mapToLong(OpMessage::getFlushOffsetOps));
@@ -460,7 +461,7 @@ public class FlushWorker extends Worker {
         long flushOffsetOps = dataBatch.getMaxOffset();
         clearUnprocessedFlushRequestsUntil(flushPart, flushOffsetOps);
 
-        if (flushQueue.clean(flushOffsetOps) > 0) {
+        if (flushQueue.clean(flushOffsetOps, "flushPartition end") > 0) {
             sendFlushNotification(part, flushOffsetData, flushOffsetOps);
 
             if (log.isDebugEnabled()) {

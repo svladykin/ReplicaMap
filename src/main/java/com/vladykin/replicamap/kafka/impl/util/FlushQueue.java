@@ -150,9 +150,10 @@ public class FlushQueue {
     /**
      * Cleans the flush queue until the given max offset.
      * @param maxOffset Max offset.
+     * @param reason The context of this cleaning.
      * @return Actual number of cleaned events.
      */
-    public long clean(long maxOffset) {
+    public long clean(long maxOffset, String reason) {
         lock.acquireUninterruptibly();
         try {
             if (maxCleanOffset >= maxOffset)
@@ -169,8 +170,10 @@ public class FlushQueue {
 
             long cleanedCnt = maxOffset - maxCleanOffset;
 
-            if (log.isDebugEnabled())
-                log.debug("For partition {} clean maxCleanOffset: {} -> {}", part, maxCleanOffset, maxOffset);
+            if (log.isDebugEnabled()) {
+                log.debug("For partition {} clean maxCleanOffset: {} -> {}, reason: {}",
+                    part, maxCleanOffset, maxOffset, reason);
+            }
 
             maxCleanOffset = maxOffset;
 
