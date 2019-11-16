@@ -43,6 +43,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serializer;
 import org.slf4j.Logger;
@@ -214,7 +215,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             cleanQueue = newCleanQueue();
 
             for (int part = 0; part < parts; part++)
-                flushQueues.add(newFlushQueue(part));
+                flushQueues.add(newFlushQueue(new TopicPartition(dataTopic, part)));
 
             this.opsWorkers = new ArrayList<>(opsWorkers);
             CompletableFuture<?>[] opsSteadyFuts = new CompletableFuture[opsWorkers];
@@ -286,8 +287,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new ConcurrentLinkedQueue<>();
     }
 
-    protected FlushQueue newFlushQueue(int part) {
-        return new FlushQueue(part);
+    protected FlushQueue newFlushQueue(TopicPartition dataPart) {
+        return new FlushQueue(dataPart);
     }
 
     protected FlushWorker newFlushWorker(int workerId, LazyList<Producer<Object,Object>> dataProducersLazyList) {

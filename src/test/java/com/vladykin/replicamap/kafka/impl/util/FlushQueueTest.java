@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class FlushQueueTest {
     @Test
     void testSimple() {
-        FlushQueue q = new FlushQueue(0);
+        FlushQueue q = new FlushQueue(null);
 
         assertEquals(-1, q.maxCleanOffset);
         assertEquals(-1, q.maxAddOffset);
@@ -126,7 +126,7 @@ class FlushQueueTest {
 
     @Test
     public void testThreadLocalBuffer() {
-        FlushQueue q = new FlushQueue(0);
+        FlushQueue q = new FlushQueue(null);
 
         q.lock.acquireUninterruptibly();
 
@@ -157,7 +157,7 @@ class FlushQueueTest {
 
             AtomicLong lastAddedOffset = new AtomicLong(-1);
 
-            FlushQueue q = new FlushQueue(0);
+            FlushQueue q = new FlushQueue(null);
 
             for (int j = 0; j < 50; j++) {
                 CyclicBarrier start = new CyclicBarrier(3);

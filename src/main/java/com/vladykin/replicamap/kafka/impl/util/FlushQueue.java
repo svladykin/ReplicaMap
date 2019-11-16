@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.OptionalLong;
 import java.util.concurrent.Semaphore;
 import java.util.stream.LongStream;
+import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,7 +22,7 @@ public class FlushQueue {
     protected final Semaphore lock = new Semaphore(1);
     protected final ArrayDeque<MiniRecord> queue = new ArrayDeque<>();
 
-    protected final int part;
+    protected final TopicPartition part;
 
     protected long maxAddOffset = -1;
     protected long maxCleanOffset = -1;
@@ -29,7 +30,7 @@ public class FlushQueue {
     protected final ThreadLocal<ArrayDeque<MiniRecord>> threadLocalQueue =
         ThreadLocal.withInitial(ArrayDeque::new);
 
-    public FlushQueue(int part) {
+    public FlushQueue(TopicPartition part) {
         this.part = part;
     }
 
@@ -81,7 +82,7 @@ public class FlushQueue {
 
                 if (offset > maxAddOffset) {
                     if (log.isTraceEnabled())
-                        log.trace("Part {} add maxAddOffset: {} -> {}", part, maxAddOffset, offset);
+                        log.trace("For partition {} add maxAddOffset: {} -> {}", part, maxAddOffset, offset);
 
                     maxAddOffset = offset;
 
@@ -99,7 +100,7 @@ public class FlushQueue {
 
     protected void addRecord(MiniRecord rec) {
         if (log.isTraceEnabled())
-            log.trace("Part {} add record: {}", part, rec);
+            log.trace("For partition {} add record: {}", part, rec);
 
         queue.add(rec);
     }
@@ -169,7 +170,7 @@ public class FlushQueue {
             long cleanedCnt = maxOffset - maxCleanOffset;
 
             if (log.isDebugEnabled())
-                log.debug("Part {} clean maxCleanOffset: {} -> {}", part, maxCleanOffset, maxOffset);
+                log.debug("For partition {} clean maxCleanOffset: {} -> {}", part, maxCleanOffset, maxOffset);
 
             maxCleanOffset = maxOffset;
 
@@ -177,7 +178,7 @@ public class FlushQueue {
                 assert queue.isEmpty();
 
                 if (log.isDebugEnabled())
-                    log.debug("Part {} clean maxAddOffset: {} -> {}", part, maxAddOffset, maxCleanOffset);
+                    log.debug("For partition {} clean maxAddOffset: {} -> {}", part, maxAddOffset, maxCleanOffset);
 
                 maxAddOffset = maxCleanOffset;
             }
