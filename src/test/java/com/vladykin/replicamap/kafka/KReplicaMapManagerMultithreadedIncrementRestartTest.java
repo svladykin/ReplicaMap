@@ -36,7 +36,6 @@ import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.execu
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_READ_BACK_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_DESERIALIZER_CLASS;
@@ -64,7 +63,6 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
 
         cfg.put(FLUSH_PERIOD_OPS, 30);
-        cfg.put(FLUSH_READ_BACK_TIMEOUT_MS, 15000);
 
         cfg.put(DATA_TOPIC, "data");
         cfg.put(OPS_TOPIC, "ops");

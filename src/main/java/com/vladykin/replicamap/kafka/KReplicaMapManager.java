@@ -64,7 +64,6 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLU
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_READ_BACK_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_DESERIALIZER_CLASS;
@@ -110,7 +109,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final long opsSendTimeout;
     protected final int flushPeriodOps;
     protected final long flushMaxPollTimeout;
-    protected final long flushReadBackTimeout;
     protected final int historyFlushRecords;
     protected final String flushConsumerGroupId;
     protected final String dataTransactionalId;
@@ -122,7 +120,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final Producer<Object,OpMessage> flushProducer;
     protected final LazyList<Consumer<Object,OpMessage>> flushConsumers;
     protected final List<LazyList<Producer<Object,Object>>> dataProducers;
-    protected final LazyList<Consumer<Object,Object>> dataConsumers;
 
     protected final Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
     protected final List<FlushQueue> flushQueues;
@@ -168,8 +165,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
         flushMaxPollTimeout = cfg.getLong(FLUSH_MAX_POLL_TIMEOUT_MS);
         checkPositive(flushMaxPollTimeout, FLUSH_MAX_POLL_TIMEOUT_MS);
 
-        flushReadBackTimeout = cfg.getLong(FLUSH_READ_BACK_TIMEOUT_MS);
-
         flushPeriodOps = cfg.getInt(FLUSH_PERIOD_OPS);
         checkPositive(flushPeriodOps, FLUSH_PERIOD_OPS);
 
@@ -207,7 +202,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
             if (opsWorkers > flushWorkers)
                 flushWorkers = opsWorkers;
 
-            dataConsumers = flushReadBackTimeout > 0 ? newLazyList(flushWorkers) : null;
             flushProducer = newKafkaProducerFlush();
             dataProducers = new ArrayList<>(flushWorkers);
             flushQueues = new ArrayList<>(parts);
@@ -309,12 +303,9 @@ public class KReplicaMapManager implements ReplicaMapManager {
             cleanQueue,
             opsSteadyFut,
             flushMaxPollTimeout,
-            flushReadBackTimeout,
             this::newKafkaProducerData,
             flushConsumers,
-            this::newKafkaConsumerFlush,
-            dataConsumers,
-            this::newKafkaConsumerData
+            this::newKafkaConsumerFlush
         );
     }
 
@@ -683,7 +674,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
         Utils.close(dataProducers);
         Utils.close(flushProducer);
         Utils.close(flushConsumers);
-        Utils.close(dataConsumers);
 
         Utils.close(maps);
     }

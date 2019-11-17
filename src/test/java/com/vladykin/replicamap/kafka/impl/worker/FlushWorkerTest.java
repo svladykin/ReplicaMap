@@ -1,14 +1,11 @@
 package com.vladykin.replicamap.kafka.impl.worker;
 
-import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
-import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
@@ -34,18 +31,15 @@ import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.TOPIC_OPS;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.newFlushNotification;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonList;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class FlushWorkerTest {
     static final int HISTORY_RECS = 10;
     static final long MAX_POLL_TIMEOUT = 20;
-    static final long READ_BACK_TIMEOUT = 100;
 
     LazyList<Consumer<Object,Object>> dataConsumers;
     LazyList<Producer<Object,Object>> dataProducers;
@@ -63,7 +57,6 @@ class FlushWorkerTest {
     FlushWorker flushWorker;
 
     TopicPartition flushPart = new TopicPartition(TOPIC_FLUSH, 0);
-    TopicPartition dataPart = new TopicPartition(TOPIC_DATA, 0);
 
     @BeforeEach
     void beforeEachTest() {
@@ -92,17 +85,10 @@ class FlushWorkerTest {
             cleanQueue,
             opsSteadyFut,
             MAX_POLL_TIMEOUT,
-            READ_BACK_TIMEOUT,
             this::createDataProducer,
             flushConsumers,
-            this::createFlushConsumer,
-            null,
-            this::createDataConsumer
+            this::createFlushConsumer
         );
-    }
-
-    Consumer<Object,Object> createDataConsumer() {
-        return dataConsumer;
     }
 
     Producer<Object,Object> createDataProducer(int part) {
@@ -320,77 +306,5 @@ class FlushWorkerTest {
         assertEquals(113, flushConsumer.position(flushPart));
 
         assertEquals(1015, flush.getFlushOffsetOps());
-    }
-
-    @Test
-    void testReadBackAndCheckCommittedRecords() {
-        dataConsumer.assign(singleton(dataPart));
-
-        Map<Object,Object> dataBatch = new TreeMap<>();
-        dataBatch.put(5, 500);
-        dataBatch.put(7, 700);
-        dataBatch.put(3, 300);
-        initDataConsumer(dataBatch);
-        dataConsumer.seek(dataPart, 0);
-        flushWorker.readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, 2);
-        assertTrue(dataBatch.isEmpty());
-
-        dataConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
-        dataConsumer.assign(singleton(dataPart));
-        dataBatch.put(5, 500);
-        dataBatch.put(7, 700);
-        dataBatch.put(3, 300);
-        initDataConsumer(dataBatch);
-        dataConsumer.addRecord(newDataRecord(5, 1, 100));
-        dataConsumer.seek(dataPart, 0);
-        assertThrows(ReplicaMapException.class, () ->
-            flushWorker.readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, 3));
-
-        dataConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
-        dataConsumer.assign(singleton(dataPart));
-        dataBatch.put(5, 500);
-        dataBatch.put(7, 700);
-        dataBatch.put(3, 300);
-        initDataConsumer(dataBatch);
-        dataBatch.remove(3);
-        dataConsumer.seek(dataPart, 0);
-        assertThrows(ReplicaMapException.class, () ->
-            flushWorker.readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, 3));
-
-        dataConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
-        dataConsumer.assign(singleton(dataPart));
-        dataBatch.put(5, 500);
-        dataBatch.put(7, 700);
-        dataBatch.put(3, 300);
-        initDataConsumer(dataBatch);
-        dataBatch.put(1, 100);
-        dataConsumer.seek(dataPart, 0);
-        long start = System.nanoTime();
-        try {
-            flushWorker.readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, 3);
-            fail();
-        }
-        catch (ReplicaMapException e) {
-            assertTrue(System.nanoTime() - start >= MILLISECONDS.toNanos(READ_BACK_TIMEOUT));
-            assertTrue(e.getMessage().startsWith("Failed after "));
-        }
-
-        dataConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
-        dataConsumer.assign(singleton(dataPart));
-        dataBatch.put(5, 500);
-        dataConsumer.addRecord(newDataRecord(1, 5, 500));
-        dataConsumer.seek(dataPart, 0);
-        assertThrows(ReplicaMapException.class, () ->
-            flushWorker.readBackAndCheckCommittedRecords(dataConsumer, dataPart, dataBatch, 0));
-    }
-
-    private ConsumerRecord<Object,Object> newDataRecord(long offset, Object key, Object val) {
-        return new ConsumerRecord<>(TOPIC_DATA, 0, offset, key, val);
-    }
-
-    private void initDataConsumer(Map<Object,Object> dataBatch) {
-        int i = 0;
-        for (Map.Entry<Object,Object> entry : dataBatch.entrySet())
-            dataConsumer.addRecord(newDataRecord(i++, entry.getKey(), entry.getValue()));
     }
 }
