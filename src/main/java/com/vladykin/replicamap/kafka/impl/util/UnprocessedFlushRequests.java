@@ -42,6 +42,8 @@ public class UnprocessedFlushRequests {
     }
 
     public OffsetAndMetadata getFlushConsumerOffsetToCommit(long maxOffset) {
+        assert !isEmpty();
+
         long flushConsumerOffset = -1L;
 
         for (ConsumerRecord<Object,OpMessage> flushReq : flushReqs) {
@@ -50,9 +52,6 @@ public class UnprocessedFlushRequests {
 
             flushConsumerOffset = flushReq.offset();
         }
-
-        if (flushConsumerOffset < 0)
-            throw new IllegalStateException("maxOffset: " + maxOffset);
 
         // We need to commit the offset of the next record, thus + 1.
         return new OffsetAndMetadata(flushConsumerOffset + 1);
