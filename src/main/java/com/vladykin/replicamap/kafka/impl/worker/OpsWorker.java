@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -37,7 +38,7 @@ import static java.util.Collections.singleton;
  * @author Sergi Vladykin http://vladykin.com
  */
 public class OpsWorker extends Worker implements AutoCloseable {
-    public static boolean logLoadedData = false; // for debug
+    public static boolean logLoadedData = true; // for debug
 
     private static final Logger log = LoggerFactory.getLogger(OpsWorker.class);
 
@@ -105,11 +106,10 @@ public class OpsWorker extends Worker implements AutoCloseable {
             Duration pollTimeout = millis(1);
             Map<TopicPartition,Long> opsOffsets = new HashMap<>();
 
-            for (Integer part : assignedParts) {
-                TopicPartition dataPart = new TopicPartition(dataTopic, part);
+            for (TopicPartition dataPart : getAssignedTopicPartitions(dataTopic)) {
                 log.debug("Loading data for partition {}", dataPart);
 
-                TopicPartition opsPart = new TopicPartition(opsTopic, part);
+                TopicPartition opsPart = new TopicPartition(opsTopic, dataPart.partition());
                 ConsumerRecord<Object,OpMessage> lastFlushRec = findLastFlushRecord(dataPart, opsPart, pollTimeout);
 
                 long flushOffsetOps = 0L;
@@ -246,7 +246,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
                         // If someone else has successfully flushed the data, we need to cleanup our flush queue.
                         needClean = opClientId != clientId;
                         lastFlushNotifications.put(opsPart, op);
-                        log.debug("Received flush notification: {}", rec);
+                        log.debug("Received flush notification for partition {}: {}", opsPart, rec);
                     }
                 }
                 else // Forward compatibility: there are may be new message types.
@@ -274,22 +274,22 @@ public class OpsWorker extends Worker implements AutoCloseable {
             if (needFlush) {
                 OpMessage lastFlush = lastFlushNotifications.get(opsPart);
                 long lastCleanOffsetOps = lastFlush == null ? -1L : lastFlush.getFlushOffsetOps();
-                sendFlushRequest(opsPart.partition(), rec.offset(), lastCleanOffsetOps);
+                sendFlushRequest(opsPart, rec.offset(), lastCleanOffsetOps);
             }
             else if (needClean)
-                sendCleanRequest(rec);
+                sendCleanRequest(opsPart, rec);
         }
     }
 
-    protected void sendCleanRequest(ConsumerRecord<Object,OpMessage> rec) {
-        log.debug("Sending clean request: {}", rec);
+    protected void sendCleanRequest(TopicPartition opsPart, ConsumerRecord<Object,OpMessage> rec) {
+        log.debug("Sending clean request for partition {}: {}", opsPart, rec);
         cleanQueue.add(rec);
     }
 
-    protected void sendFlushRequest(int part, long flushOffsetOps, long lastCleanOffsetOps) {
-        ProducerRecord<Object,OpMessage> rec = new ProducerRecord<>(flushTopic, part,
+    protected void sendFlushRequest(TopicPartition opsPart, long flushOffsetOps, long lastCleanOffsetOps) {
+        ProducerRecord<Object,OpMessage> rec = new ProducerRecord<>(flushTopic, opsPart.partition(),
             null, newFlushRequestOpMessage(flushOffsetOps, lastCleanOffsetOps));
-        log.debug("Sending flush request: {}", rec);
+        log.debug("Sending flush request for partition {}: {}", opsPart, rec);
         flushProducer.send(rec);
     }
 
@@ -414,15 +414,25 @@ public class OpsWorker extends Worker implements AutoCloseable {
                 recs = opsConsumer.poll(pollTimeout);
             }
             catch (InterruptException | WakeupException e) {
-                log.debug("Poll interrupted for topic {}", opsTopic);
+                if (log.isDebugEnabled())
+                    log.debug("Poll interrupted for partitions: {}", getAssignedTopicPartitions(opsTopic));
+
                 return;
             }
 
             if (processOpsRecords(recs)) {
-                log.debug("Steady for partitions: {}", assignedParts);
+                if (log.isDebugEnabled())
+                    log.debug("Steady for partitions: {}", getAssignedTopicPartitions(opsTopic));
+
                 pollTimeout = Utils.seconds(3);
             }
         }
+    }
+
+    protected List<TopicPartition> getAssignedTopicPartitions(String topic) {
+        return assignedParts.stream()
+            .map(part -> new TopicPartition(topic, part))
+            .collect(Collectors.toList());
     }
 
     protected boolean processOpsRecords(ConsumerRecords<Object,OpMessage> recs) {
