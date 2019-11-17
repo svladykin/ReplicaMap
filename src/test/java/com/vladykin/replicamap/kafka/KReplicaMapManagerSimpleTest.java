@@ -1,5 +1,6 @@
 package com.vladykin.replicamap.kafka;
 
+import com.salesforce.kafka.test.KafkaTestUtils;
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.ReplicaMapException;
@@ -83,7 +84,16 @@ class KReplicaMapManagerSimpleTest {
         return cfg;
     }
 
-    static void createTopics(AdminClient admin, String dataTopic, String opsTopic, String flushTopic, int parts) throws Exception {
+    static void createTopics(
+        SharedKafkaTestResource sharedKafkaTestResource,
+        String dataTopic,
+        String opsTopic,
+        String flushTopic,
+        int parts
+    ) throws Exception {
+        KafkaTestUtils utils = sharedKafkaTestResource.getKafkaTestUtils();
+        AdminClient admin = utils.getAdminClient();
+
         NewTopic ops = new NewTopic(opsTopic, parts, (short)2);
         NewTopic flush = new NewTopic(flushTopic, parts, (short)2);
         NewTopic data = new NewTopic(dataTopic, parts, (short)2);
@@ -105,6 +115,10 @@ class KReplicaMapManagerSimpleTest {
         data.configs(new HashMap<>(cfg));
 
         admin.createTopics(asList(ops, flush, data)).all().get(5, SECONDS);
+
+        assertTrue(utils.consumeAllRecordsFromTopic(dataTopic).isEmpty());
+        assertTrue(utils.consumeAllRecordsFromTopic(opsTopic).isEmpty());
+        assertTrue(utils.consumeAllRecordsFromTopic(flushTopic).isEmpty());
     }
 
     @SuppressWarnings({"Convert2MethodRef", "ResultOfMethodCallIgnored"})
@@ -113,7 +127,7 @@ class KReplicaMapManagerSimpleTest {
         JoinStringsSerializer.canSerialize = false;
         JoinStrings.executed.set(0);
 
-        createTopics(sharedKafkaTestResource.getKafkaTestUtils().getAdminClient(),
+        createTopics(sharedKafkaTestResource,
             DATA_TOPIC, OPS_TOPIC, FLUSH_TOPIC, 5);
 
         KReplicaMapManager m = new KReplicaMapManager(getDefaultConfig());

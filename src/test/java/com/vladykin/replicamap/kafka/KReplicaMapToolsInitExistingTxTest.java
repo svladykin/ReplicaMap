@@ -44,7 +44,7 @@ class KReplicaMapToolsInitExistingTxTest {
     @Test
     void testInitExistingTx() throws Exception {
         KafkaTestUtils u = sharedKafkaTestResource.getKafkaTestUtils();
-        createTopics(u.getAdminClient(), DATA, OPS, FLUSH, 4);
+        createTopics(sharedKafkaTestResource, DATA, OPS, FLUSH, 4);
 
         Properties prodCfg = new Properties();
         prodCfg.setProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "my_tx_id");

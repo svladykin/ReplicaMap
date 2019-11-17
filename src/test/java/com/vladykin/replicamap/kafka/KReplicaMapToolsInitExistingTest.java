@@ -40,7 +40,7 @@ class KReplicaMapToolsInitExistingTest {
     @Test
     void testInitExisting() throws Exception {
         KafkaTestUtils u = sharedKafkaTestResource.getKafkaTestUtils();
-        createTopics(u.getAdminClient(), DATA, OPS, FLUSH, 4);
+        createTopics(sharedKafkaTestResource, DATA, OPS, FLUSH, 4);
 
         Map<byte[],byte[]> recs = new HashMap<>();
         recs.put("abc".getBytes(UTF_8), "one".getBytes(UTF_8));

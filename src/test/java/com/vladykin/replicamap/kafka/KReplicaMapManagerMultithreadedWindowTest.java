@@ -48,6 +48,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class KReplicaMapManagerMultithreadedWindowTest {
+
+    static final String TOPIC_SUFFIX = "_zzz";
+    static final String DATA = "data" + TOPIC_SUFFIX;
+    static final String OPS = "ops" + TOPIC_SUFFIX;
+    static final String FLUSH = "flush" + TOPIC_SUFFIX;
+
     @RegisterExtension
     public static final SharedKafkaTestResource sharedKafkaTestResource = kafkaClusterWith3Brokers();
 
@@ -57,9 +63,9 @@ public class KReplicaMapManagerMultithreadedWindowTest {
 
         cfg.put(FLUSH_PERIOD_OPS, 20);
 
-        cfg.put(DATA_TOPIC, "data");
-        cfg.put(OPS_TOPIC, "ops");
-        cfg.put(FLUSH_TOPIC, "flush");
+        cfg.put(DATA_TOPIC, DATA);
+        cfg.put(OPS_TOPIC, OPS);
+        cfg.put(FLUSH_TOPIC, FLUSH);
 
         cfg.put(OPS_WORKERS, 3);
         cfg.put(FLUSH_WORKERS, 2);
@@ -81,8 +87,8 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         int managersCnt = 9;
         int parts = 4;
 
-        createTopics(sharedKafkaTestResource.getKafkaTestUtils().getAdminClient(),
-            "data", "ops", "flush", parts);
+        createTopics(sharedKafkaTestResource,
+            DATA, OPS, FLUSH, parts);
 
         LazyList<KReplicaMapManager> managers = new LazyList<>(managersCnt);
         IntFunction<KReplicaMapManager> managersFactory =  (mgrId) -> {
@@ -97,7 +103,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
 
         Map<TopicPartition, Long> offsets = new HashMap<>();
         try (Consumer<Object,Object> dataConsumer = mgr.newKafkaConsumerData()) {
-            checkFlushedData("data", dataConsumer, offsets, true);
+            checkFlushedData(DATA, dataConsumer, offsets, true);
         }
 
         for (long k = 0; k < threadsCnt; k++) {
@@ -193,7 +199,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
 
                 try (Consumer<Object,Object> dataConsumer =
                          managers.get(0, managersFactory).newKafkaConsumerData()) {
-                    checkFlushedData("data", dataConsumer, offsets, false);
+                    checkFlushedData(DATA, dataConsumer, offsets, false);
                 }
 
                 System.out.println("iteration " + i + " OK");

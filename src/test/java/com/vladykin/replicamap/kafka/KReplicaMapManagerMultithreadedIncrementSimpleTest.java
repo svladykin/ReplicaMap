@@ -85,7 +85,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
         int keys = 9;
         int parts = 4;
 
-        createTopics(sharedKafkaTestResource.getKafkaTestUtils().getAdminClient(),
+        createTopics(sharedKafkaTestResource,
             "data", "ops", "flush", parts);
 
         LazyList<KReplicaMapManager> managers = new LazyList<>(managersCnt);

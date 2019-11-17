@@ -78,7 +78,7 @@ class KReplicaMapManagerMultithreadedPutSimpleTest {
         int keys = 100_000;
         int parts = 4;
 
-        createTopics(sharedKafkaTestResource.getKafkaTestUtils().getAdminClient(),
+        createTopics(sharedKafkaTestResource,
             "data", "ops", "flush", parts);
 
         LazyList<KReplicaMapManager> managers = new LazyList<>(managersCnt);

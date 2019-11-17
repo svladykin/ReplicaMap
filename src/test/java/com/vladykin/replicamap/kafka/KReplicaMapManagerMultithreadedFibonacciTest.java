@@ -74,7 +74,7 @@ class KReplicaMapManagerMultithreadedFibonacciTest {
         int managersCnt = 5;
         int mapsCnt = 3;
 
-        createTopics(sharedKafkaTestResource.getKafkaTestUtils().getAdminClient(),
+        createTopics(sharedKafkaTestResource,
             "data", "ops", "flush", mapsCnt);
 
         LazyList<KReplicaMapManager> managers = new LazyList<>(managersCnt);
