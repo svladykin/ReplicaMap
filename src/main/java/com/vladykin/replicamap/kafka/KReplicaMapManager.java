@@ -439,7 +439,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
      * @param conCfg Flush consumer config.
      */
     protected void configureConsumerFlush(Map<String, Object> conCfg) {
-        conCfg.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+        // When there is no committed offset, then we take "earliest", e.g start from the beginning.
+        conCfg.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         conCfg.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, flushConsumerGroupId);
 
         conCfg.putIfAbsent(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG,
