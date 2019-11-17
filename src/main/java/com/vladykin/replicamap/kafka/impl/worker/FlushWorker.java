@@ -37,7 +37,6 @@ import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.findMax;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
-import static com.vladykin.replicamap.kafka.impl.worker.OpsWorker.LOAD_FLUSH_LOG;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
 import static java.util.Comparator.comparingLong;
@@ -50,7 +49,6 @@ import static java.util.stream.Collectors.toList;
  * @author Sergi Vladykin http://vladykin.com
  */
 public class FlushWorker extends Worker {
-    private static final Logger loadFlushLog = LoggerFactory.getLogger(LOAD_FLUSH_LOG);
     private static final Logger log = LoggerFactory.getLogger(FlushWorker.class);
 
     protected final long clientId;
@@ -385,10 +383,6 @@ public class FlushWorker extends Worker {
             log.debug("Committed flush offset for data partition {} is {}, dataProducer: {}, dataBatch: {}",
                 dataPart, flushOffsetData, dataProducer, dataBatch);
         }
-        if (loadFlushLog.isTraceEnabled()) {
-            loadFlushLog.trace("Committed flush offset for data partition {} is {}, dataProducer: {}, dataBatch: {}",
-                dataPart, flushOffsetData, dataProducer, dataBatch);
-        }
 
         clearUnprocessedFlushRequestsUntil(flushPart, flushOffsetOps);
 
@@ -478,7 +472,7 @@ public class FlushWorker extends Worker {
             int part = partition.partition();
 
             if (dataProducers.get(part, null) != null)
-                throw new IllegalStateException("Producer exists for part: " + part);
+                throw new IllegalStateException("Producer exists for partition: " + new TopicPartition(dataTopic, part));
 
             dataProducers.get(part, this::newDataProducer);
         }
