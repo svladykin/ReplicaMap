@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.stream.LongStream;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
+import org.apache.kafka.common.TopicPartition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Queue of unprocessed flush requests and related logic.
@@ -13,6 +16,8 @@ import org.apache.kafka.clients.consumer.OffsetAndMetadata;
  * @author Sergi Vladykin http://vladykin.com
  */
 public class UnprocessedFlushRequests {
+    private static final Logger log = LoggerFactory.getLogger(UnprocessedFlushRequests.class);
+
     protected final ArrayDeque<ConsumerRecord<Object,OpMessage>> flushReqs = new ArrayDeque<>();
     protected long maxFlushOffsetOps;
     protected long maxFlushReqOffset;
@@ -22,7 +27,16 @@ public class UnprocessedFlushRequests {
         this.maxFlushOffsetOps = maxFlushOffsetOps;
     }
 
-    public void addFlushRequests(List<ConsumerRecord<Object,OpMessage>> partRecs) {
+    @Override
+    public String toString() {
+        return "UnprocessedFlushRequests{" +
+            "flushReqsSize=" + flushReqs.size() +
+            ", maxFlushOffsetOps=" + maxFlushOffsetOps +
+            ", maxFlushReqOffset=" + maxFlushReqOffset +
+            '}';
+    }
+
+    public void addFlushRequests(TopicPartition flushPart, List<ConsumerRecord<Object,OpMessage>> partRecs) {
         for (ConsumerRecord<Object,OpMessage> flushReq : partRecs) {
             if (flushReq.offset() <= maxFlushReqOffset) {
                 throw new IllegalStateException("Offset of the record must be higher than " + maxFlushReqOffset +
@@ -38,6 +52,11 @@ public class UnprocessedFlushRequests {
                 maxFlushReqOffset = flushReq.offset();
                 maxFlushOffsetOps = flushOffsetOps;
             }
+        }
+
+        if (log.isDebugEnabled()) {
+            log.debug("For partition {} add flush requests, maxFlushReqOffset: {}, maxFlushOffsetOps: {}, flushReqs: {}",
+                flushPart, maxFlushReqOffset, maxFlushOffsetOps, flushReqs);
         }
     }
 
@@ -57,6 +76,7 @@ public class UnprocessedFlushRequests {
         return new OffsetAndMetadata(flushConsumerOffset + 1);
     }
 
+    @SuppressWarnings("OptionalGetWithoutIsPresent")
     public long getMaxCleanOffsetOps() {
         return flushReqs.stream()
                 .mapToLong(rec -> rec.value().getCleanOffsetOps())
@@ -68,6 +88,8 @@ public class UnprocessedFlushRequests {
     }
 
     public void clearUntil(long maxOffset) {
+        int cleared = 0;
+
         for(;;) {
             ConsumerRecord<Object,OpMessage> flushReq = flushReqs.peek();
 
@@ -75,7 +97,11 @@ public class UnprocessedFlushRequests {
                 break;
 
             flushReqs.poll();
+            cleared++;
         }
+
+        if (cleared > 0 && log.isDebugEnabled())
+            log.debug("Cleared {} flush requests, maxOffset: {}, flushReqs: {}", cleared, maxOffset, flushReqs);
     }
 
     public boolean isEmpty() {

@@ -244,7 +244,7 @@ public class FlushWorker extends Worker {
             flushReqs = initUnprocessedFlushRequests(flushPart, maxFlushReqOffset, maxFlushOffsetOps);
         }
 
-        flushReqs.addFlushRequests(partRecs);
+        flushReqs.addFlushRequests(flushPart, partRecs);
     }
 
     protected void resetAll(Consumer<Object,OpMessage> flushConsumer) {
@@ -261,6 +261,11 @@ public class FlushWorker extends Worker {
         long maxFlushReqOffset,
         long maxFlushOffsetOps
     ) {
+        if (log.isDebugEnabled()) {
+            log.debug("Init unprocessed flush requests for partition {}, maxFlushReqOffset: {}, maxFlushOffsetOps: {}",
+                flushPart, maxFlushReqOffset, maxFlushOffsetOps);
+        }
+
         UnprocessedFlushRequests flushRequests = new UnprocessedFlushRequests(maxFlushReqOffset, maxFlushOffsetOps);
 
         if (unprocessedFlushRequests.put(flushPart, flushRequests) != null)
