@@ -57,6 +57,7 @@ class FlushWorkerTest {
     FlushWorker flushWorker;
 
     TopicPartition flushPart = new TopicPartition(TOPIC_FLUSH, 0);
+    TopicPartition dataPart = new TopicPartition(TOPIC_DATA, 0);
 
     @BeforeEach
     void beforeEachTest() {
@@ -69,7 +70,7 @@ class FlushWorkerTest {
         dataProducer = new MockProducer<>();
         opsProducer = new MockProducer<>();
 
-        flushQueues = singletonList(new FlushQueue(null));
+        flushQueues = singletonList(new FlushQueue(dataPart));
         cleanQueue = new ConcurrentLinkedQueue<>();
 
         opsSteadyFut = new CompletableFuture<>();
