@@ -1,6 +1,5 @@
 package com.vladykin.replicamap.kafka.impl.worker;
 
-import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
@@ -359,29 +358,30 @@ public class FlushWorker extends Worker {
             dataProducer = dataProducers.get(part, null);
             flushOffsetData = flushTx(dataProducer, dataBatch, flushPart, flushConsumerOffset);
         }
-        catch (ProducerFencedException e) {
-            log.warn("Fenced while flushing data for partition {}, flushConsumerOffset: {}, flushQueueSize: {}",
-                dataPart, flushConsumerOffset, flushQueue.size());
-            resetDataProducer(flushPart);
-            return false;
-        }
         catch (Exception e) {
-            if (Utils.isInterrupted(e) || e instanceof ReplicaMapException) {
-                log.warn("Failed to flush data for partition {}, flushConsumerOffset: {}, flushQueueSize: {}, reason: {}",
-                    dataPart, flushConsumerOffset, flushQueue.size(), Utils.getMessage(e));
+            boolean fenced = e instanceof ProducerFencedException;
+
+            if (fenced || Utils.isInterrupted(e)) {
+                log.warn("Failed to flush data for partition {}, flushConsumerOffset: {}" +
+                        ", flushOffsetOps: {}, flushQueueSize: {}, reason: {}",
+                    dataPart, flushConsumerOffset, flushOffsetOps, flushQueue.size(), Utils.getMessage(e));
             }
             else {
                 log.error("Failed to flush data for partition " + dataPart + ", flushConsumerOffset: " + flushConsumerOffset +
-                    ", exception:", e);
+                    ", flushOffsetOps: " + flushOffsetOps + ", exception:", e);
             }
 
-            resetAll(flushConsumer);
+            if (fenced)
+                resetDataProducer(flushPart);
+            else
+                resetAll(flushConsumer);
+
             return false; // No other handling, the next flush will be our retry.
         }
 
         if (log.isDebugEnabled()) {
-            log.debug("Committed flush offset for data partition {} is {}, dataProducer: {}, dataBatch: {}",
-                dataPart, flushOffsetData, dataProducer, dataBatch);
+            log.debug("Committed tx for data partition {}, flushOffsetData: {}, flushOffsetOps: {}, dataProducer: {}, dataBatch: {}",
+                dataPart, flushOffsetData, flushOffsetOps, dataProducer, dataBatch);
         }
 
         clearUnprocessedFlushRequestsUntil(flushPart, flushOffsetOps);
