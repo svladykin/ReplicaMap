@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.List;
@@ -234,6 +235,10 @@ public final class Utils {
         }
 
         return max;
+    }
+
+    public static <T> List<T> copy(Collection<T> c) {
+        return c == null || c.isEmpty() ? Collections.emptyList() : new ArrayList<>(c);
     }
 
     public static Set<Integer> assignPartitionsRoundRobin(int workerId, int allWorkers, int allParts) {

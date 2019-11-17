@@ -153,9 +153,9 @@ public class FlushWorker extends Worker {
             long cleanedCnt = flushQueue.clean(flushOffsetOps, "processCleanRequests");
 
             if (log.isDebugEnabled()) {
-                log.debug("Processed clean request {} for partition {}, flushQueueSize: {}, cleanedCnt: {}",
-                    cleanRequest, new TopicPartition(cleanRequest.topic(), cleanRequest.partition()), cleanedCnt,
-                    flushQueue.size());
+                log.debug("Processed clean request for partition {}, flushQueueSize: {}, cleanedCnt: {}, clean request: {}",
+                    new TopicPartition(cleanRequest.topic(), cleanRequest.partition()), cleanedCnt,
+                    flushQueue.size(), cleanRequest);
             }
         }
     }
@@ -312,7 +312,7 @@ public class FlushWorker extends Worker {
                 max = nextMax;
         }
 
-        log.debug("Found max history flush request {} for partition {}", max, flushPart);
+        log.debug("Found max history flush request for partition {}: {}", flushPart, max);
 
         flushConsumer.seek(flushPart, currentPosition);
         return max;
@@ -331,7 +331,7 @@ public class FlushWorker extends Worker {
         FlushQueue flushQueue = flushQueues.get(part);
         TopicPartition dataPart = flushQueue.getDataPartition();
 
-        log.debug("Processing flush requests {} for partition {}", flushReqs, dataPart);
+        log.debug("Processing flush requests for partition {}: {}", dataPart, flushReqs);
 
         flushQueue.clean(flushReqs.getMaxCleanOffsetOps(), "flushPartition begin");
         FlushQueue.Batch dataBatch = flushQueue.collect(flushReqs.getFlushOffsetOpsStream());
@@ -385,14 +385,14 @@ public class FlushWorker extends Worker {
         }
 
         if (log.isDebugEnabled()) {
-            log.debug("Committed tx for data partition {}, flushOffsetData: {}, flushOffsetOps: {}, dataProducer: {}, dataBatch: {}",
+            log.debug("Committed tx for partition {}, flushOffsetData: {}, flushOffsetOps: {}, dataProducer: {}, dataBatch: {}",
                 dataPart, flushOffsetData, flushOffsetOps, dataProducer, dataBatch);
         }
 
         clearUnprocessedFlushRequestsUntil(flushPart, flushOffsetOps);
 
         if (flushQueue.clean(flushOffsetOps, "flushPartition end") > 0) {
-            sendFlushNotification(part, flushOffsetData, flushOffsetOps);
+            sendFlushNotification(dataPart, flushOffsetData, flushOffsetOps);
 
             if (log.isDebugEnabled()) {
                 log.debug("Successfully flushed {} data records for partition {}, flushOffsetOps: {}" +
@@ -429,18 +429,19 @@ public class FlushWorker extends Worker {
         return lastDataRecMetaFut.get().offset();
     }
 
-    protected void sendFlushNotification(int part, long flushOffsetData, long flushOffsetOps) {
-        ProducerRecord<Object,OpMessage> flushNotification = new ProducerRecord<>(opsTopic, part, null,
+    protected void sendFlushNotification(TopicPartition dataPart, long flushOffsetData, long flushOffsetOps) {
+        ProducerRecord<Object,OpMessage> flushNotification = new ProducerRecord<>(opsTopic, dataPart.partition(), null,
             newOpMessage(flushOffsetData, flushOffsetOps));
 
-        log.debug("Sending flush notification: {}", flushNotification);
+        if (log.isDebugEnabled())
+            log.debug("Sending flush notification for partition {}: {}", dataPart, flushNotification);
 
         try {
             opsProducer.send(flushNotification);
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
-                log.error("Failed to send flush notification: " + flushNotification, e);
+                log.error("Failed to send flush notification for partition " + dataPart + ": " + flushNotification, e);
         }
     }
 
@@ -463,15 +464,14 @@ public class FlushWorker extends Worker {
 
     protected void clearUnprocessedFlushRequests(Collection<TopicPartition> flushPartitions) {
         log.debug("Clearing unprocessed flush requests for partitions: {}", flushPartitions);
+
         for (TopicPartition part : flushPartitions)
             unprocessedFlushRequests.remove(part);
     }
 
     protected void initDataProducers(Collection<TopicPartition> flushPartitions) {
-        if (log.isDebugEnabled()) {
-            log.debug("Initializing data producers for partitions: {}", flushPartitions.stream()
-                .map(p -> new TopicPartition(dataTopic, p.partition())).collect(toList()));
-        }
+        if (log.isDebugEnabled())
+            log.debug("Initializing data producers for partitions: {}", convert(flushPartitions, dataTopic));
 
         for (TopicPartition partition : flushPartitions) {
             int part = partition.partition();
@@ -483,11 +483,15 @@ public class FlushWorker extends Worker {
         }
     }
 
+    protected List<TopicPartition> convert(Collection<TopicPartition> partitions, String topic) {
+        return partitions.stream()
+            .map(p -> new TopicPartition(topic, p.partition()))
+            .collect(toList());
+    }
+
     protected void resetDataProducers(Collection<TopicPartition> flushPartitions) {
-        if (log.isDebugEnabled()) {
-            log.debug("Resetting data producers for partitions: {}", flushPartitions.stream()
-                .map(p -> new TopicPartition(dataTopic, p.partition())).collect(toList()));
-        }
+        if (log.isDebugEnabled())
+            log.debug("Resetting data producers for partitions: {}", convert(flushPartitions, dataTopic));
 
         for (TopicPartition flushPart : flushPartitions)
             resetDataProducer(flushPart);
@@ -510,6 +514,10 @@ public class FlushWorker extends Worker {
     protected class PartitionRebalanceListener implements ConsumerRebalanceListener {
         @Override
         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+            partitions = Utils.copy(partitions);
+            if (partitions.isEmpty())
+                return;
+
             log.debug("Flush partitions assigned: {}", partitions);
             clearUnprocessedFlushRequests(partitions);
             initDataProducers(partitions);
@@ -517,6 +525,10 @@ public class FlushWorker extends Worker {
 
         @Override
         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+            partitions = Utils.copy(partitions);
+            if (partitions.isEmpty())
+                return;
+
             log.debug("Flush partitions revoked: {}", partitions);
             clearUnprocessedFlushRequests(partitions);
             resetDataProducers(partitions);
