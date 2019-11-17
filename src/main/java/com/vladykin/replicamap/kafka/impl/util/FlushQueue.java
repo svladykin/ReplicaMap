@@ -219,6 +219,7 @@ public class FlushQueue {
             return "Batch{" +
                 "maxOffset=" + maxOffset +
                 ", collectedAll=" + collectedAll +
+                ", size=" + size() +
                 ", map=" + super.toString() +
                 '}';
         }
