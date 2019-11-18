@@ -109,7 +109,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final long opsSendTimeout;
     protected final int flushPeriodOps;
     protected final long flushMaxPollTimeout;
-    protected final int historyFlushRecords;
     protected final String flushConsumerGroupId;
     protected final String dataTransactionalId;
 
@@ -167,18 +166,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
         flushPeriodOps = cfg.getInt(FLUSH_PERIOD_OPS);
         checkPositive(flushPeriodOps, FLUSH_PERIOD_OPS);
-
-        // This is the number of historical flush records we need to load to
-        // make sure that we have no races (avoid flush reordering) with slow
-        // clients that submit outdated flush requests.
-        // Value of maxActiveOps / flushPeriodOps is a number of flush requests
-        // a slow client can produce before blocking on opsSemaphore.
-        // This formula assumes that these parameters are the same on all the clients,
-        // but if they are not it can be compensated by larger maxClients number.
-        // Also it says that it is good idea to keep maxActiveOps less than
-        // flushPeriodOps to load less data. Though, flush requests are small
-        // and it should be fast to load thousands of them.
-        historyFlushRecords = (maxActiveOps / flushPeriodOps + 1) * maxClients + 1;
 
         int opsWorkers = cfg.getInt(OPS_WORKERS);
         checkPositive(opsWorkers, OPS_WORKERS);
@@ -296,7 +283,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
             flushTopic,
             workerId,
             flushConsumerGroupId,
-            historyFlushRecords,
             dataProducersLazyList,
             opsProducer,
             flushQueues,

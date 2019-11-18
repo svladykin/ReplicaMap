@@ -1,5 +1,6 @@
 package com.vladykin.replicamap.kafka.impl.worker;
 
+import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
@@ -7,7 +8,6 @@ import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.UnprocessedFlushRequests;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,12 +33,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.findMax;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
-import static java.util.Comparator.comparingLong;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -57,8 +55,6 @@ public class FlushWorker extends Worker {
     protected final String flushTopic;
 
     protected final String flushConsumerGroupId;
-    protected final int historyFlushRecords;
-
     protected final LazyList<Consumer<Object,OpMessage>> flushConsumers;
     protected final Supplier<Consumer<Object,OpMessage>> flushConsumerFactory;
 
@@ -83,7 +79,6 @@ public class FlushWorker extends Worker {
         String flushTopic,
         int workerId,
         String flushConsumerGroupId,
-        int historyFlushRecords,
         LazyList<Producer<Object,Object>> dataProducers,
         Producer<Object,OpMessage> opsProducer,
         List<FlushQueue> flushQueues,
@@ -102,7 +97,6 @@ public class FlushWorker extends Worker {
         this.opsTopic = opsTopic;
         this.flushTopic = flushTopic;
         this.flushConsumerGroupId = flushConsumerGroupId;
-        this.historyFlushRecords = historyFlushRecords;
         this.dataProducers = dataProducers;
         this.opsProducer = opsProducer;
         this.flushQueues = flushQueues;
@@ -277,44 +271,36 @@ public class FlushWorker extends Worker {
     protected ConsumerRecord<Object,OpMessage> loadMaxCommittedFlushRequest(
         Consumer<Object,OpMessage> flushConsumer,
         TopicPartition flushPart,
-        long maxOffset
+        long firstFlushReqOffset
     ) {
+        if (firstFlushReqOffset == 0)
+            return null; // We are at the beginning, no previous committed flush requests.
+
         long currentPosition = flushConsumer.position(flushPart);
-        assert currentPosition >= maxOffset + 1: currentPosition + " " + maxOffset;
+        assert currentPosition >= firstFlushReqOffset + 1: currentPosition + " " + firstFlushReqOffset;
 
-        long startOffset = maxOffset - historyFlushRecords;
-        if (startOffset < 0)
-            startOffset = 0;
+        long startOffset = firstFlushReqOffset - 1; // Take the previous record.
         flushConsumer.seek(flushPart, startOffset);
-
-        Comparator<ConsumerRecord<Object,OpMessage>> cmpFlushOffsetOps =
-            comparingLong(r -> r.value().getFlushOffsetOps());
 
         ConsumerRecord<Object,OpMessage> max = null;
 
-        while (flushConsumer.position(flushPart) < maxOffset) {
-            List<ConsumerRecord<Object,OpMessage>> flushRecs = flushConsumer.poll(seconds(1))
-                .records(flushPart);
+        do {
+            List<ConsumerRecord<Object,OpMessage>> flushRecs = flushConsumer.poll(seconds(1)).records(flushPart);
 
             if (flushRecs.isEmpty())
                 continue;
 
-            flushRecs = flushRecs.stream()
-                .filter(r -> r.offset() < maxOffset)
-                .collect(toList());
-
-            if (flushRecs.isEmpty())
-                break;
-
-            ConsumerRecord<Object,OpMessage> nextMax = findMax(flushRecs, cmpFlushOffsetOps);
-
-            if (max == null || cmpFlushOffsetOps.compare(max, nextMax) < 0)
-                max = nextMax;
+            max = flushRecs.get(0);
         }
+        while (flushConsumer.position(flushPart) < firstFlushReqOffset);
 
         log.debug("Found max history flush request for partition {}: {}", flushPart, max);
 
+        if (max == null)
+            throw new ReplicaMapException("Committed flush requests lost before offset: " + firstFlushReqOffset);
+
         flushConsumer.seek(flushPart, currentPosition);
+
         return max;
     }
 

@@ -38,7 +38,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class FlushWorkerTest {
-    static final int HISTORY_RECS = 10;
     static final long MAX_POLL_TIMEOUT = 20;
 
     LazyList<Consumer<Object,Object>> dataConsumers;
@@ -79,7 +78,6 @@ class FlushWorkerTest {
             CLIENT1_ID, TOPIC_DATA, TOPIC_OPS, TOPIC_FLUSH,
             0,
             "flush-consumer-group-id",
-            HISTORY_RECS,
             dataProducers,
             opsProducer,
             flushQueues,
@@ -280,7 +278,7 @@ class FlushWorkerTest {
     }
 
     @Test
-    void testLoadFlushHistoryMax() {
+    void testLoadMaxCommittedFlushRequest() {
         flushConsumer.subscribe(singleton(TOPIC_FLUSH));
         flushConsumer.rebalance(singletonList(flushPart));
 
@@ -306,6 +304,6 @@ class FlushWorkerTest {
         OpMessage flush = flushWorker.loadMaxCommittedFlushRequest(flushConsumer, flushPart, 112).value();
         assertEquals(113, flushConsumer.position(flushPart));
 
-        assertEquals(1015, flush.getFlushOffsetOps());
+        assertEquals(1004, flush.getFlushOffsetOps());
     }
 }

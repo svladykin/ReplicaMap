@@ -157,8 +157,7 @@ to fence the previous flushers in case of partition rebalancing. This is needed 
 
 To avoid flush reordering (when a slow client requests a flush for the data that was already 
 flushed time ago by another client and newer updates can be overwritten by the older ones) 
-`FlushWorker` loads flush request history up to the safe depth and checks that the incoming 
-flush requests have higher `ops` offset.
+`FlushWorker` ignores the incoming out of order flush requests.
 
 ## Topics configuration
 

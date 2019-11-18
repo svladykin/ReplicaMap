@@ -24,8 +24,6 @@ import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.LongSerializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
@@ -50,8 +48,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class KReplicaMapManagerMultithreadedWindowTest {
-    private static final Logger log = LoggerFactory.getLogger(KReplicaMapManagerMultithreadedWindowTest.class);
-
     static final String TOPIC_SUFFIX = "_zzz";
     static final String DATA = "data" + TOPIC_SUFFIX;
     static final String OPS = "ops" + TOPIC_SUFFIX;
@@ -86,8 +82,6 @@ public class KReplicaMapManagerMultithreadedWindowTest {
 
     @Test
     void testMultithreadedSlidingWindowWithRestart() throws Exception {
-        log.warn("TEST START");
-
         int threadsCnt = 31;
         int managersCnt = 9;
         int parts = 4;
