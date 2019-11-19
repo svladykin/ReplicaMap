@@ -2,7 +2,7 @@
 [![Release](https://jitpack.io/v/com.vladykin/replicamap.svg)](https://jitpack.io/#com.vladykin/replicamap)
 [![License](https://img.shields.io/badge/license-LGPLv3-blue.svg)](https://github.com/svladykin/replicamap/blob/master/LICENSE)
 [![Build Status](https://travis-ci.org/svladykin/replicamap.svg?branch=master)](https://travis-ci.org/svladykin/replicamap)
-![Coverage](https://img.shields.io/badge/coverage-93%25-green)
+![Coverage](https://img.shields.io/badge/coverage-92%25-green)
 
 ### All the buzzwords description: 
 
@@ -231,6 +231,8 @@ bin/kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVER | grep $DATA_TOP
 
 ### How to start with an existing key-value topic as the `data` topic:
 
+0. Make sure other consumers of this data topic (if any) support `read_committed` isolation level.
+
 1. Create empty `ops` and `flush` topics according to the instructions above.
 
 2. Stop all the updates to your existing `data` topic.  
@@ -246,7 +248,7 @@ bin/kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVER | grep $DATA_TOP
 
 4. Run the following command to initialize `ops` topic with the last `data` topic offsets:  
     ```shell script
-    java -cp slf4j-api-1.7.26.jar:kafka-clients-2.3.1.jar:replicamap-0.2.jar com.vladykin.replicamap.kafka.KReplicaMapTools \
+    java -cp slf4j-api-1.7.26.jar:kafka-clients-2.3.1.jar:replicamap-0.3.jar com.vladykin.replicamap.kafka.KReplicaMapTools \
           initExisting $BOOTSTRAP_SERVER $DATA_TOPIC $OPS_TOPIC
     ```
     it must print `OK: ...`

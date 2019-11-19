@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.vladykin"
-version = "0.3-SNAPSHOT"
+version = "0.3"
 
 repositories {
     mavenCentral()
