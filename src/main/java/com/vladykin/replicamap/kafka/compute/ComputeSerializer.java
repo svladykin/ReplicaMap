@@ -10,9 +10,11 @@ import org.apache.kafka.common.serialization.Serializer;
  * Optimized Compute: {@link Serializer} for the compute functions.
  *
  * @see KReplicaMapManagerConfig#COMPUTE_SERIALIZER_CLASS
+ * @see ComputeDeserializer
  * @see ReplicaMap#compute(Object, BiFunction)
  * @see ReplicaMap#computeIfPresent(Object, BiFunction)
  * @see ReplicaMap#merge(Object, Object, BiFunction)
+ * @see ReplicaMap#replaceAll(BiFunction)
  *
  * @author Sergi Vladykin http://vladykin.com
  */
