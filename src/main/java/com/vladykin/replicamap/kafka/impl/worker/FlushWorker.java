@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -23,6 +24,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.NoOffsetForPartitionException;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -171,11 +173,11 @@ public class FlushWorker extends Worker implements AutoCloseable {
     protected boolean awaitOpsWorkersSteady(long pollTimeoutMs) throws ExecutionException, InterruptedException {
         try {
             opsSteadyFut.get(pollTimeoutMs, TimeUnit.MILLISECONDS);
+            return true;
         }
         catch (TimeoutException e) {
             return false;
         }
-        return true;
     }
 
     protected boolean processFlushRequests(long pollTimeoutMs) throws InterruptedException, ExecutionException {
@@ -197,7 +199,13 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
         ConsumerRecords<Object,OpMessage> recs;
         try {
-            recs = flushConsumer.poll(millis(pollTimeoutMs));
+            try {
+                recs = flushConsumer.poll(millis(pollTimeoutMs));
+            }
+            catch (NoOffsetForPartitionException e) {
+                initFlushConsumerOffset(flushConsumer, e);
+                recs = flushConsumer.poll(millis(pollTimeoutMs));
+            }
 
             // Add new records to unprocessed set and load history if it is the first flush for the partition.
             for (TopicPartition flushPart : recs.partitions())
@@ -218,6 +226,21 @@ public class FlushWorker extends Worker implements AutoCloseable {
              flushed |= flushPartition(flushConsumer, entry.getKey(), entry.getValue());
 
         return flushed;
+    }
+
+    protected void initFlushConsumerOffset(
+        Consumer<Object,OpMessage> flushConsumer,
+        NoOffsetForPartitionException e
+    ) {
+        Set<TopicPartition> partitions = e.partitions();
+        flushConsumer.seekToBeginning(partitions);
+
+        // Check that it is just a fresh flush topic,
+        // otherwise we must always have committed offset for the flush consumer group.
+        for (TopicPartition partition : partitions) {
+            if (flushConsumer.position(partition) != 0L)
+                throw new ReplicaMapException("Failed to init flush consumer offset.", e);
+        }
     }
 
     protected void collectUnprocessedFlushRequests(

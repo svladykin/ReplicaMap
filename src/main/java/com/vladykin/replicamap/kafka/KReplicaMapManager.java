@@ -386,6 +386,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         conCfg.putIfAbsent(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, false);
         conCfg.putIfAbsent(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         conCfg.putIfAbsent(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
+        conCfg.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "none");
     }
 
     /**
@@ -393,7 +394,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
      * @param conCfg Data consumer config.
      */
     protected void configureConsumerData(Map<String, Object> conCfg) {
-        conCfg.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "none");
+        // no-op
     }
 
     /**
@@ -401,7 +402,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
      * @param conCfg Ops consumer config.
      */
     protected void configureConsumerOps(Map<String, Object> conCfg) {
-        conCfg.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "none");
+        // no-op
     }
 
     /**
@@ -409,14 +410,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
      * @param conCfg Flush consumer config.
      */
     protected void configureConsumerFlush(Map<String, Object> conCfg) {
-        // When there is no committed offset, then we take "earliest", e.g start from the beginning.
-        conCfg.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         conCfg.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, flushConsumerGroupId);
-
-        conCfg.putIfAbsent(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG,
-            cfg.getInt(KReplicaMapManagerConfig.FLUSH_CONSUMER_MAX_POLL_INTERVAL_MS));
-        conCfg.putIfAbsent(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG,
-            cfg.getInt(KReplicaMapManagerConfig.FLUSH_CONSUMER_SESSION_TIMEOUT_MS));
     }
 
     protected Producer<Object,Object> newKafkaProducerData(int part) {

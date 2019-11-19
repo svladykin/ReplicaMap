@@ -46,8 +46,6 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String FLUSH_PERIOD_OPS = "flush.period.ops";
     public static final String FLUSH_MAX_POLL_TIMEOUT_MS = "flush.max.poll.timeout.ms";
     public static final String FLUSH_WORKERS = "flush.workers";
-    public static final String FLUSH_CONSUMER_MAX_POLL_INTERVAL_MS = "flush.consumer.max.poll.interval.ms";
-    public static final String FLUSH_CONSUMER_SESSION_TIMEOUT_MS = "flush.consumer.session.timeout.ms";
     public static final String MAPS_HOLDER = "maps.holder";
 
     // Defaults.
@@ -83,10 +81,6 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
             "Max poll timeout for a flusher in milliseconds.")
         .define(FLUSH_WORKERS, INT, Math.max(1, Utils.cpus() / 6), HIGH,
             "Number of workers periodically flushing the updated key-value pairs to the data topic.")
-        .define(FLUSH_CONSUMER_MAX_POLL_INTERVAL_MS, INT, 3000, HIGH,
-            "Sets 'max.poll.interval.ms' for flush consumer.")
-        .define(FLUSH_CONSUMER_SESSION_TIMEOUT_MS, INT, 7000, HIGH,
-            "Sets 'session.timeout.ms'  for flush consumer.")
         .define(MAPS_HOLDER, CLASS, MapsHolderSingle.class, HIGH,
             "Responsible for creating and holding all the replica maps for the manager and also mapping keys to their maps.")
         .define(KEY_SERIALIZER_CLASS, CLASS, StringSerializer.class, HIGH,
