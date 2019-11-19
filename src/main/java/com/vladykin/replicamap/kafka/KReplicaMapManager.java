@@ -81,6 +81,7 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.checkPositive;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.generateUniqueNodeId;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.getMacAddresses;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
+import static java.util.stream.Collectors.toList;
 
 /**
  * Manages {@link ReplicaMap}s and communication with Kafka.
@@ -117,8 +118,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected ComputeSerializer computeSerializer;
     protected final Producer<Object,OpMessage> opsProducer;
     protected final Producer<Object,OpMessage> flushProducer;
-    protected final LazyList<Consumer<Object,OpMessage>> flushConsumers;
-    protected final List<LazyList<Producer<Object,Object>>> dataProducers;
 
     protected final Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
     protected final List<FlushQueue> flushQueues;
@@ -149,10 +148,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         checkPositive(maxClients, CLIENTS_MAX_NUM);
 
         dataTopic = cfg.getString(DATA_TOPIC);
-        opsTopic = ifNull(cfg.getString(OPS_TOPIC),
-            dataTopic + DEFAULT_OPS_TOPIC_SUFFIX);
-        flushTopic = ifNull(cfg.getString(FLUSH_TOPIC),
-            dataTopic + DEFAULT_FLUSH_TOPIC_SUFFIX);
+        opsTopic = ifNull(cfg.getString(OPS_TOPIC), dataTopic + DEFAULT_OPS_TOPIC_SUFFIX);
+        flushTopic = ifNull(cfg.getString(FLUSH_TOPIC), dataTopic + DEFAULT_FLUSH_TOPIC_SUFFIX);
 
         int maxActiveOps = cfg.getInt(OPS_MAX_PARALLEL);
         checkPositive(maxActiveOps, OPS_MAX_PARALLEL);
@@ -186,51 +183,38 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
             if (opsWorkers > parts)
                 opsWorkers = parts;
+
             if (opsWorkers > flushWorkers)
                 flushWorkers = opsWorkers;
 
             flushProducer = newKafkaProducerFlush();
-            dataProducers = new ArrayList<>(flushWorkers);
             flushQueues = new ArrayList<>(parts);
-            flushConsumers = newLazyList(flushWorkers);
             cleanQueue = newCleanQueue();
 
             for (int part = 0; part < parts; part++)
                 flushQueues.add(newFlushQueue(new TopicPartition(dataTopic, part)));
 
             this.opsWorkers = new ArrayList<>(opsWorkers);
-            CompletableFuture<?>[] opsSteadyFuts = new CompletableFuture[opsWorkers];
-
             for (int workerId = 0; workerId < opsWorkers; workerId++) {
                 Set<Integer> assignedParts = assignPartitionsToWorker(workerId, opsWorkers, parts);
-
-                if (assignedParts == null || assignedParts.isEmpty())
-                    throw new ReplicaMapException("Ops worker " + workerId + " received 0 partitions.");
-
-                OpsWorker opsWorker = newOpsWorker(workerId, assignedParts);
-                this.opsWorkers.add(opsWorker);
-                opsSteadyFuts[workerId] = opsWorker.getSteadyFuture();
+                this.opsWorkers.add(newOpsWorker(workerId, assignedParts));
             }
 
-            opsSteadyFut = CompletableFuture.allOf(opsSteadyFuts).handle(this::onWorkersSteady);
+            opsSteadyFut = Utils.allOf(this.opsWorkers.stream()
+                .map(OpsWorker::getSteadyFuture)
+                .collect(toList())
+            ).handle(this::onWorkersSteady);
 
             this.flushWorkers = new ArrayList<>(flushWorkers);
+            for (int workerId = 0; workerId < flushWorkers; workerId++)
+                this.flushWorkers.add(newFlushWorker(workerId, parts));
 
-            for (int workerId = 0; workerId < flushWorkers; workerId++) {
-                assert dataProducers.size() == workerId;
-
-                LazyList<Producer<Object,Object>> dataProducersLazyList = newLazyList(parts);
-                dataProducers.add(dataProducersLazyList);
-
-                this.flushWorkers.add(newFlushWorker(workerId, dataProducersLazyList));
-            }
+            onNewReplicaMapManager();
 
             if (log.isDebugEnabled()) {
                 log.debug("ReplicaMap manager for topics [{}, {}, {}] is created, client id: {}",
                     dataTopic, opsTopic, flushTopic, Long.toHexString(clientId));
             }
-
-            onNewReplicaMapManager();
         }
         catch (Exception e) {
             Utils.close(this);
@@ -272,7 +256,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new FlushQueue(dataPart);
     }
 
-    protected FlushWorker newFlushWorker(int workerId, LazyList<Producer<Object,Object>> dataProducersLazyList) {
+    protected FlushWorker newFlushWorker(int workerId, int parts) {
         if (log.isDebugEnabled())
             log.debug("Creating new flush worker {}", workerId);
 
@@ -283,14 +267,14 @@ public class KReplicaMapManager implements ReplicaMapManager {
             flushTopic,
             workerId,
             flushConsumerGroupId,
-            dataProducersLazyList,
             opsProducer,
             flushQueues,
             cleanQueue,
             opsSteadyFut,
             flushMaxPollTimeout,
+            newLazyList(parts),
             this::newKafkaProducerData,
-            flushConsumers,
+            newLazyList(1),
             this::newKafkaConsumerFlush
         );
     }
@@ -457,7 +441,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             newOpMessageSerializer(
                 newValueSerializer(proCfg),
                 updateComputeSerializer(
-                    newBiFunctionSerializer(proCfg))));
+                    newComputeSerializer(proCfg))));
     }
 
     protected Producer<Object,OpMessage> newKafkaProducerFlush() {
@@ -494,7 +478,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             newKeyDeserializer(conCfg),
             newOpMessageDeserializer(
                 newValueDeserializer(conCfg),
-                newBiFunctionDeserializer(conCfg)));
+                newComputeDeserializer(conCfg)));
     }
 
     protected Consumer<Object,OpMessage> newKafkaConsumerFlush() {
@@ -524,7 +508,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return s;
     }
 
-    protected ComputeSerializer newBiFunctionSerializer(Map<String, Object> proCfg) {
+    protected ComputeSerializer newComputeSerializer(Map<String, Object> proCfg) {
         ComputeSerializer s = cfg.getConfiguredInstance(COMPUTE_SERIALIZER_CLASS, ComputeSerializer.class);
         if (s != null)
             s.configure(proCfg, false);
@@ -552,19 +536,19 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return d;
     }
 
-    protected ComputeDeserializer newBiFunctionDeserializer(Map<String, Object> conCfg) {
+    protected ComputeDeserializer newComputeDeserializer(Map<String, Object> conCfg) {
         ComputeDeserializer d = cfg.getConfiguredInstance(COMPUTE_DESERIALIZER_CLASS, ComputeDeserializer.class);
         if (d != null)
             d.configure(conCfg, false);
         return d;
     }
 
-    protected <V> Deserializer<OpMessage> newOpMessageDeserializer(Deserializer<V> v, ComputeDeserializer f) {
-        return new OpMessageDeserializer<>(v, f);
+    protected <V> Deserializer<OpMessage> newOpMessageDeserializer(Deserializer<V> v, ComputeDeserializer c) {
+        return new OpMessageDeserializer<>(v, c);
     }
 
-    protected <V> Serializer<OpMessage> newOpMessageSerializer(Serializer<V> v, ComputeSerializer f) {
-        return new OpMessageSerializer<>(v, f);
+    protected <V> Serializer<OpMessage> newOpMessageSerializer(Serializer<V> v, ComputeSerializer c) {
+        return new OpMessageSerializer<>(v, c);
     }
 
     @Override
@@ -588,6 +572,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         if (ex == null && casState(STARTING, RUNNING)) {
             log.info("Started for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic,
                 Long.toHexString(clientId));
+
             return this;
         }
 
@@ -652,15 +637,15 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected void doStop() {
         Worker.interruptAll(opsWorkers);
         Worker.interruptAll(flushWorkers);
+
         Worker.joinAll(opsWorkers);
         Worker.joinAll(flushWorkers);
 
         Utils.close(opsWorkers);
+        Utils.close(flushWorkers);
 
         Utils.close(opsProducer);
-        Utils.close(dataProducers);
         Utils.close(flushProducer);
-        Utils.close(flushConsumers);
 
         Utils.close(maps);
     }

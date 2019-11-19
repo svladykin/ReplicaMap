@@ -29,6 +29,7 @@ import static com.vladykin.replicamap.base.ReplicaMapBase.OpState.STARTING;
  *
  * @see #sendUpdate
  * @see #onReceiveUpdate
+ * @see #canSendFunction(BiFunction)
  *
  * @author Sergi Vladykin http://vladykin.com
  */

@@ -87,6 +87,9 @@ public class OpsWorker extends Worker implements AutoCloseable {
         super("replicamap-ops-" + dataTopic + "-" +
             Long.toHexString(clientId), workerId);
 
+        if (assignedParts == null || assignedParts.isEmpty())
+            throw new ReplicaMapException("Ops worker " + workerId + " received 0 partitions.");
+
         this.clientId = clientId;
         this.dataTopic = dataTopic;
         this.opsTopic = opsTopic;

@@ -6,8 +6,6 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
@@ -188,7 +186,7 @@ public final class Utils {
             close((AutoCloseable)c);
     }
 
-    public static CompletableFuture<?> allOf(Collection<? extends CompletableFuture<?>> futs) {
+    public static CompletableFuture<Void> allOf(Collection<? extends CompletableFuture<?>> futs) {
         return CompletableFuture.allOf(futs.toArray(new CompletableFuture[0]));
     }
 
@@ -221,26 +219,6 @@ public final class Utils {
         return rec.offset() > maxOffset;
     }
 
-    public static <X> X findMax(List<X> list, Comparator<X> cmp) {
-        if (list == null || list.isEmpty())
-            return null;
-
-        X max = list.get(0);
-
-        for (int i = 1; i < list.size(); i++) {
-            X item = list.get(i);
-
-            if (cmp.compare(item, max) >= 0)
-                max = item;
-        }
-
-        return max;
-    }
-
-    public static <T> List<T> copy(Collection<T> c) {
-        return c == null || c.isEmpty() ? Collections.emptyList() : new ArrayList<>(c);
-    }
-
     public static Set<Integer> assignPartitionsRoundRobin(int workerId, int allWorkers, int allParts) {
         Set<Integer> assignedParts = new TreeSet<>();
 
@@ -265,13 +243,15 @@ public final class Utils {
 
     public static void wakeup(Supplier<Consumer<?,?>> s) {
         if (s != null) {
-            Consumer<?,?> c = null;
+            Consumer<?,?> c;
             try {
                 c = s.get();
             }
             catch (Exception e) {
                 if (!isInterrupted(e))
                     log.error("Failed to get consumer for wakeup.", e);
+
+                return;
             }
             wakeup(c);
         }

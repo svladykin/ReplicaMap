@@ -45,7 +45,7 @@ import static java.util.stream.Collectors.toList;
  *
  * @author Sergi Vladykin http://vladykin.com
  */
-public class FlushWorker extends Worker {
+public class FlushWorker extends Worker implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(FlushWorker.class);
 
     protected final long clientId;
@@ -79,12 +79,12 @@ public class FlushWorker extends Worker {
         String flushTopic,
         int workerId,
         String flushConsumerGroupId,
-        LazyList<Producer<Object,Object>> dataProducers,
         Producer<Object,OpMessage> opsProducer,
         List<FlushQueue> flushQueues,
         Queue<ConsumerRecord<Object,OpMessage>> cleanQueue,
         CompletableFuture<ReplicaMapManager> opsSteadyFut,
         long maxPollTimeout,
+        LazyList<Producer<Object,Object>> dataProducers,
         IntFunction<Producer<Object,Object>> dataProducerFactory,
         LazyList<Consumer<Object,OpMessage>> flushConsumers,
         Supplier<Consumer<Object,OpMessage>> flushConsumerFactory
@@ -97,15 +97,21 @@ public class FlushWorker extends Worker {
         this.opsTopic = opsTopic;
         this.flushTopic = flushTopic;
         this.flushConsumerGroupId = flushConsumerGroupId;
-        this.dataProducers = dataProducers;
         this.opsProducer = opsProducer;
         this.flushQueues = flushQueues;
         this.cleanQueue = cleanQueue;
         this.opsSteadyFut = opsSteadyFut;
         this.maxPollTimeout = maxPollTimeout;
-        this.flushConsumers = flushConsumers;
+        this.dataProducers = dataProducers;
         this.dataProducerFactory = dataProducerFactory;
+        this.flushConsumers = flushConsumers;
         this.flushConsumerFactory = flushConsumerFactory;
+    }
+
+    @Override
+    public void close() {
+        Utils.close(dataProducers);
+        Utils.close(flushConsumers);
     }
 
     @Override
@@ -122,7 +128,7 @@ public class FlushWorker extends Worker {
 
     @Override
     protected void interruptThread() {
-        Utils.wakeup(() -> flushConsumers.get(workerId, null));
+        Utils.wakeup(() -> flushConsumers.get(0, null));
         super.interruptThread();
     }
 
@@ -180,7 +186,7 @@ public class FlushWorker extends Worker {
 
         Consumer<Object,OpMessage> flushConsumer;
         try {
-            flushConsumer = flushConsumers.get(workerId, this::newFlushConsumer);
+            flushConsumer = flushConsumers.get(0, this::newFlushConsumer);
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
@@ -244,10 +250,10 @@ public class FlushWorker extends Worker {
     protected void resetAll(Consumer<Object,OpMessage> flushConsumer) {
         unprocessedFlushRequests.clear();
 
-        for (int i = 0; i < dataProducers.size(); i++)
-            resetDataProducer(new TopicPartition(flushTopic, i));
+        for (int part = 0; part < dataProducers.size(); part++)
+            resetDataProducer(new TopicPartition(flushTopic, part));
 
-        flushConsumers.reset(workerId, flushConsumer);
+        flushConsumers.reset(0, flushConsumer);
     }
 
     protected UnprocessedFlushRequests initUnprocessedFlushRequests(
@@ -500,7 +506,6 @@ public class FlushWorker extends Worker {
     protected class PartitionRebalanceListener implements ConsumerRebalanceListener {
         @Override
         public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-            partitions = Utils.copy(partitions);
             if (partitions.isEmpty())
                 return;
 
@@ -511,7 +516,6 @@ public class FlushWorker extends Worker {
 
         @Override
         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-            partitions = Utils.copy(partitions);
             if (partitions.isEmpty())
                 return;
 

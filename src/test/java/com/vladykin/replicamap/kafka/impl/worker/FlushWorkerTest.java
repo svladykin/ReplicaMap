@@ -78,12 +78,12 @@ class FlushWorkerTest {
             CLIENT1_ID, TOPIC_DATA, TOPIC_OPS, TOPIC_FLUSH,
             0,
             "flush-consumer-group-id",
-            dataProducers,
             opsProducer,
             flushQueues,
             cleanQueue,
             opsSteadyFut,
             MAX_POLL_TIMEOUT,
+            dataProducers,
             this::createDataProducer,
             flushConsumers,
             this::createFlushConsumer
