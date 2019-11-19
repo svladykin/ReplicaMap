@@ -36,7 +36,6 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String COMPUTE_DESERIALIZER_CLASS = "compute.deserializer";
 
     public static final String CLIENT_ID = "client.id";
-    public static final String CLIENTS_MAX_NUM = "clients.max.number";
     public static final String DATA_TOPIC = "data.topic";
     public static final String OPS_TOPIC = "ops.topic";
     public static final String OPS_MAX_PARALLEL = "ops.max.parallel";
@@ -57,12 +56,6 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
         .define(CLIENT_ID, LONG, null, HIGH,
             "Unique client id, must be different for each map manager instance. " +
                 "If not set, it will be generated automatically.")
-        .define(CLIENTS_MAX_NUM, INT, 100, HIGH,
-            "Max number of participating clients. Together with " + OPS_MAX_PARALLEL + " and " +
-                FLUSH_PERIOD_OPS + " gives the number of historical flush records we need to preload " +
-                "to avoid races with slow clients (avoid flush reordering). It is good idea to keep " +
-                OPS_MAX_PARALLEL + " lower than " + FLUSH_PERIOD_OPS + ", the estimated number of clients " +
-                "must not be very precise, but it must always be not lower than the actual number of clients.")
         .define(DATA_TOPIC, STRING, DEFAULT_DATA_TOPIC, HIGH,
             "Kafka topic for key-value pairs.")
         .define(OPS_TOPIC, STRING, null, HIGH,
@@ -102,5 +95,4 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public KReplicaMapManagerConfig(Map<?,?> originals) {
         super(CONFIG, originals);
     }
-
 }

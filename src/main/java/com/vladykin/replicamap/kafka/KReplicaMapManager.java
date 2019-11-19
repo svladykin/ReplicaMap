@@ -55,7 +55,6 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STARTING;
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STOPPED;
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STOPPING;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.CLIENTS_MAX_NUM;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.CLIENT_ID;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_SERIALIZER_CLASS;
@@ -84,7 +83,7 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
 import static java.util.stream.Collectors.toList;
 
 /**
- * Manages {@link ReplicaMap}s and communication with Kafka.
+ * Manages all {@link ReplicaMap} instances attached to a Kafka data topic.
  *
  * @author Sergi Vladykin http://vladykin.com
  */
@@ -105,7 +104,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final String opsTopic;
     protected final String flushTopic;
 
-    protected final int maxClients;
     protected final Semaphore opsSemaphore;
     protected final long opsSendTimeout;
     protected final int flushPeriodOps;
@@ -143,9 +141,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
             log.debug("Creating {} instance.", getClass().getSimpleName());
 
         this.cfg = new KReplicaMapManagerConfig(config);
-
-        maxClients = cfg.getInt(CLIENTS_MAX_NUM);
-        checkPositive(maxClients, CLIENTS_MAX_NUM);
 
         dataTopic = cfg.getString(DATA_TOPIC);
         opsTopic = ifNull(cfg.getString(OPS_TOPIC), dataTopic + DEFAULT_OPS_TOPIC_SUFFIX);
