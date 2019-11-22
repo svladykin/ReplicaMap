@@ -38,8 +38,6 @@ import static java.util.Collections.singleton;
  * @author Sergi Vladykin http://vladykin.com
  */
 public class OpsWorker extends Worker implements AutoCloseable {
-    public static boolean logLoadedData = true; // for debug
-
     private static final Logger log = LoggerFactory.getLogger(OpsWorker.class);
 
     protected static final ConsumerRecord<Object,OpMessage> NOT_FOUND = new ConsumerRecord<>("NOT_FOUND", 0, 0, null, null);
@@ -150,7 +148,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         int loadedRecsCnt = 0;
         long lastRecOffset = -1;
 
-        Map<Object,Object> loadedData = logLoadedData ? new HashMap<>() : null;
+        Map<Object,Object> loadedData = log.isTraceEnabled() ? new HashMap<>() : null;
 
         outer: for (;;) {
             ConsumerRecords<Object,Object> recs = dataConsumer.poll(pollTimeout);
