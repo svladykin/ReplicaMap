@@ -245,64 +245,59 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         Object result = null;
         Throwable ex = null;
         boolean updated;
-        V old;
+        final V old;
 
         Map<K,V> m = map;
 
         try {
+            old = m.get(key);
+
             switch (updateType) {
                 case OP_PUT:
                     result = m.put(key, upd);
-                    old = (V)result;
                     updated = true;
                     break;
 
                 case OP_PUT_IF_ABSENT:
                     result = m.putIfAbsent(key, upd);
-                    old = (V)result;
-                    updated = old == null;
+                    updated = result == null;
                     break;
 
                 case OP_REPLACE_EXACT:
                     result = m.replace(key, exp, upd);
-                    old = exp;
                     updated = (boolean)result;
                     break;
 
                 case OP_REPLACE_ANY:
                     result = m.replace(key, upd);
-                    old = (V)result;
-                    updated = old != null;
+                    updated = result != null;
                     break;
 
                 case OP_REMOVE_ANY:
                     result = m.remove(key);
-                    old = (V)result;
-                    updated = old != null;
+                    updated = result != null;
+                    upd = null;
                     break;
 
                 case OP_REMOVE_EXACT:
                     result = m.remove(key, exp);
-                    old = exp;
                     updated = (boolean)result;
+                    upd = null;
                     break;
 
                 case OP_COMPUTE:
-                    old = m.get(key);
                     result = m.compute(key, (BiFunction<? super K,? super V,? extends V>)function);
                     upd = (V)result;
                     updated = wasUpdated(old, upd, function);
                     break;
 
                 case OP_COMPUTE_IF_PRESENT:
-                    old = m.get(key);
                     result = m.computeIfPresent(key, (BiFunction<? super K,? super V,? extends V>)function);
                     upd = (V)result;
                     updated = wasUpdated(old, upd, function);
                     break;
 
                 case OP_MERGE:
-                    old = m.get(key);
                     result = m.merge(key, upd, (BiFunction<? super V,? super V,? extends V>)function);
                     upd = (V)result;
                     updated = wasUpdated(old, upd, function);
@@ -311,7 +306,6 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
                 default:
                     assert !myUpdate;
                     log.warn("Unexpected op type: {}", (char)updateType);
-                    old = null;
                     result = null;
                     updated = false;
             }
