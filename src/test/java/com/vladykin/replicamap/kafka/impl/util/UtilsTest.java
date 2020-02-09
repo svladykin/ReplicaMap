@@ -194,19 +194,19 @@ class UtilsTest {
     @Test
     void testAssignPartitionsRoundRobin() {
         assertEquals(new HashSet<>(asList(0, 3, 6)),
-            assignPartitionsRoundRobin(0, 3, 8));
+            assignPartitionsRoundRobin(0, 3, 8, null));
         assertEquals(new HashSet<>(asList(1, 4, 7)),
-            assignPartitionsRoundRobin(1, 3, 8));
+            assignPartitionsRoundRobin(1, 3, 8, null));
         assertEquals(new HashSet<>(asList(2, 5)),
-            assignPartitionsRoundRobin(2, 3, 8));
+            assignPartitionsRoundRobin(2, 3, 8, null));
 
         assertEquals(new HashSet<>(asList(0, 4, 8)),
-            assignPartitionsRoundRobin(0, 4, 12));
+            assignPartitionsRoundRobin(0, 4, 12, null));
         assertEquals(new HashSet<>(asList(1, 5, 9)),
-            assignPartitionsRoundRobin(1, 4, 12));
+            assignPartitionsRoundRobin(1, 4, 12, null));
         assertEquals(new HashSet<>(asList(2, 6, 10)),
-            assignPartitionsRoundRobin(2, 4, 12));
+            assignPartitionsRoundRobin(2, 4, 12, null));
         assertEquals(new HashSet<>(asList(3, 7, 11)),
-            assignPartitionsRoundRobin(3, 4, 12));
+            assignPartitionsRoundRobin(3, 4, 12, null));
     }
 }

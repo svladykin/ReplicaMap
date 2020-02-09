@@ -5,6 +5,7 @@ import java.net.NetworkInterface;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Enumeration;
 import java.util.List;
@@ -215,16 +216,35 @@ public final class Utils {
         return rec.offset() > maxOffset;
     }
 
+    public static boolean contains(short[] sortedArr, short x) {
+        if (sortedArr.length <= 32) {
+            for (int y : sortedArr) {
+                if (x == y)
+                    return true;
+
+                if (x < y)
+                    return false;
+            }
+        }
+        else
+            return Arrays.binarySearch(sortedArr, x) >= 0;
+
+        return false;
+    }
+
     public static boolean isOverMaxOffset(MiniRecord rec, long maxOffset) {
         return rec.offset() > maxOffset;
     }
 
-    public static Set<Integer> assignPartitionsRoundRobin(int workerId, int allWorkers, int allParts) {
+    public static Set<Integer> assignPartitionsRoundRobin(int workerId, int allWorkers, int allParts, short[] allowedParts) {
+        if (allowedParts != null)
+            allParts = allowedParts.length;
+
         Set<Integer> assignedParts = new TreeSet<>();
 
         for (int part = 0; part < allParts; part++) {
             if (part % allWorkers == workerId)
-                assignedParts.add(part);
+                assignedParts.add(allowedParts == null ? part : allowedParts[part]);
         }
 
         return assignedParts;

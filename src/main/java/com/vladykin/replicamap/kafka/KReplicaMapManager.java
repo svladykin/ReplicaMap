@@ -10,9 +10,9 @@ import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageDeserializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
+import com.vladykin.replicamap.kafka.impl.util.AllowedOnlyPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
-import com.vladykin.replicamap.kafka.impl.util.KeyBytesPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.NeverPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
@@ -27,6 +27,7 @@ import java.util.NavigableMap;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
@@ -40,6 +41,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -54,6 +56,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.RUNNING;
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STARTING;
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STOPPED;
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STOPPING;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.ALLOWED_PARTITIONS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.CLIENT_ID;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_DESERIALIZER_CLASS;
@@ -72,6 +75,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_MAX_PAR
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_SEND_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.PARTITIONER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.assignPartitionsRoundRobin;
@@ -87,7 +91,7 @@ import static java.util.stream.Collectors.toList;
  *
  * @author Sergi Vladykin http://vladykin.com
  */
-@SuppressWarnings("unused")
+//@SuppressWarnings("unused")
 public class KReplicaMapManager implements ReplicaMapManager {
     private static final Logger log = LoggerFactory.getLogger(KReplicaMapManager.class);
 
@@ -125,6 +129,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected final CompletableFuture<ReplicaMapManager> opsSteadyFut;
     protected final CompletableFuture<ReplicaMapManager> stoppedFut = new CompletableFuture<>();
+
+    protected final short[] allowedPartitions;
 
     protected volatile State state = NEW;
 
@@ -169,6 +175,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         dataTransactionalId = dataTopic + SUFFIX;
 
         clientId = ifNull(cfg.getLong(CLIENT_ID), this::generateClientId);
+
+        allowedPartitions = parseAllowedPartitions(cfg.getList(ALLOWED_PARTITIONS));
 
         try {
             maps = cfg.getConfiguredInstance(MAPS_HOLDER, MapsHolder.class);
@@ -216,6 +224,33 @@ public class KReplicaMapManager implements ReplicaMapManager {
             throw new ReplicaMapException("Failed to create ReplicaMap manager for topics [" +
                 dataTopic + ", " + opsTopic + ", " + flushTopic + "].", e);
         }
+    }
+
+    protected short[] parseAllowedPartitions(List<String> list) {
+        if (list == null)
+            return null;
+
+        if (list.isEmpty())
+            throw new ReplicaMapException("List of allowed partitions is empty.");
+
+        Set<Short> set = new TreeSet<>(); // The resulting array must be sorted.
+
+        for (String p : list) {
+            short part = Short.parseShort(p);
+
+            if (part < 0)
+                throw new ReplicaMapException("Negative partition found in " + ALLOWED_PARTITIONS + ": " + list);
+
+            set.add(part);
+        }
+
+        short[] res = new short[set.size()];
+        int i = 0;
+
+        for (Short part : set)
+            res[i++] = part;
+
+        return res;
     }
 
     protected int getPartitions() {
@@ -296,7 +331,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     }
 
     protected Set<Integer> assignPartitionsToWorker(int workerId, int allWorkers, int allParts) {
-        return assignPartitionsRoundRobin(workerId, allWorkers, allParts);
+        return assignPartitionsRoundRobin(workerId, allWorkers, allParts, allowedPartitions);
     }
 
     protected long generateClientId() {
@@ -358,7 +393,16 @@ public class KReplicaMapManager implements ReplicaMapManager {
      */
     protected void configureProducerOps(Map<String, Object> proCfg) {
         proCfg.putIfAbsent(ProducerConfig.LINGER_MS_CONFIG, 0L);
-        proCfg.putIfAbsent(ProducerConfig.PARTITIONER_CLASS_CONFIG, KeyBytesPartitioner.class);
+
+        if (allowedPartitions != null) {
+            proCfg.putIfAbsent(ProducerConfig.PARTITIONER_CLASS_CONFIG, AllowedOnlyPartitioner.class);
+
+            proCfg.putIfAbsent(AllowedOnlyPartitioner.ALLOWED_PARTS, allowedPartitions);
+            proCfg.putIfAbsent(AllowedOnlyPartitioner.DELEGATE,
+                cfg.getConfiguredInstance(PARTITIONER_CLASS, Partitioner.class));
+        }
+        else
+            proCfg.putIfAbsent(ProducerConfig.PARTITIONER_CLASS_CONFIG, cfg.getClass(PARTITIONER_CLASS));
     }
 
     /**
@@ -388,7 +432,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
      * Setup data consumer.
      * @param conCfg Data consumer config.
      */
-    protected void configureConsumerData(Map<String, Object> conCfg) {
+    protected void configureConsumerData(@SuppressWarnings("unused") Map<String, Object> conCfg) {
         // no-op
     }
 
@@ -396,7 +440,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
      * Setup ops consumer.
      * @param conCfg Ops consumer config.
      */
-    protected void configureConsumerOps(Map<String, Object> conCfg) {
+    protected void configureConsumerOps(@SuppressWarnings("unused") Map<String, Object> conCfg) {
         // no-op
     }
 
@@ -651,9 +695,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
                 opsSemaphore, opsSendTimeout, TimeUnit.MILLISECONDS);
     }
 
-    @SuppressWarnings("unused")
     protected <K,V> ProducerRecord<Object,OpMessage> newOpRecord(
-        KReplicaMap<K,V> map,
+        @SuppressWarnings("unused") KReplicaMap<K,V> map,
         long opId,
         byte updateType,
         K key,

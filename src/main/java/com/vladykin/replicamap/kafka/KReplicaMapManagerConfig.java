@@ -1,6 +1,7 @@
 package com.vladykin.replicamap.kafka;
 
 import com.vladykin.replicamap.holder.MapsHolderSingle;
+import com.vladykin.replicamap.kafka.impl.util.KeyBytesPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Map;
 import org.apache.kafka.clients.CommonClientConfigs;
@@ -31,6 +32,9 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String VALUE_SERIALIZER_CLASS = ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG;
     public static final String KEY_DESERIALIZER_CLASS = ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG;
     public static final String VALUE_DESERIALIZER_CLASS = ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG;
+
+    public static final String PARTITIONER_CLASS = ProducerConfig.PARTITIONER_CLASS_CONFIG;
+    public static final String ALLOWED_PARTITIONS = "allowed.partitions";
 
     public static final String COMPUTE_SERIALIZER_CLASS = "compute.serializer";
     public static final String COMPUTE_DESERIALIZER_CLASS = "compute.deserializer";
@@ -90,6 +94,10 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
             "Deserializer class for the functions passed to compute methods.")
         .define(BOOTSTRAP_SERVERS, LIST, emptyList(), HIGH,
             "Bootstrap Kafka servers.")
+        .define(PARTITIONER_CLASS, CLASS, KeyBytesPartitioner.class, HIGH,
+            "Partitioner class that implements the <code>org.apache.kafka.clients.producer.Partitioner</code> interface.")
+        .define(ALLOWED_PARTITIONS, LIST, null, HIGH,
+            "Set of allowed partition numbers for sharding. By default all the partitions available.")
         ;
 
     public KReplicaMapManagerConfig(Map<?,?> originals) {
