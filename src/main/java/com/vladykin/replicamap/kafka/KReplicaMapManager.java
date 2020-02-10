@@ -7,14 +7,14 @@ import com.vladykin.replicamap.base.FailureCallback;
 import com.vladykin.replicamap.holder.MapsHolder;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
+import com.vladykin.replicamap.kafka.impl.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageDeserializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
 import com.vladykin.replicamap.kafka.impl.part.AllowedOnlyPartitioner;
-import com.vladykin.replicamap.kafka.impl.util.Box;
-import com.vladykin.replicamap.kafka.impl.FlushQueue;
-import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.part.NeverPartitioner;
+import com.vladykin.replicamap.kafka.impl.util.Box;
+import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import com.vladykin.replicamap.kafka.impl.worker.FlushWorker;
 import com.vladykin.replicamap.kafka.impl.worker.OpsWorker;
@@ -391,18 +391,16 @@ public class KReplicaMapManager implements ReplicaMapManager {
      * Setup ops producer.
      * @param proCfg Ops producer config.
      */
+    @SuppressWarnings("unchecked")
     protected void configureProducerOps(Map<String, Object> proCfg) {
         proCfg.putIfAbsent(ProducerConfig.LINGER_MS_CONFIG, 0L);
 
-        if (allowedPartitions != null) {
-            proCfg.putIfAbsent(ProducerConfig.PARTITIONER_CLASS_CONFIG, AllowedOnlyPartitioner.class);
+        Class<? extends Partitioner> partitionerClass = (Class<? extends Partitioner>)cfg.getClass(PARTITIONER_CLASS);
 
-            proCfg.putIfAbsent(AllowedOnlyPartitioner.ALLOWED_PARTS, allowedPartitions);
-            proCfg.putIfAbsent(AllowedOnlyPartitioner.DELEGATE,
-                cfg.getConfiguredInstance(PARTITIONER_CLASS, Partitioner.class));
-        }
+        if (allowedPartitions != null)
+            AllowedOnlyPartitioner.setupProducerConfig(proCfg, allowedPartitions, partitionerClass);
         else
-            proCfg.putIfAbsent(ProducerConfig.PARTITIONER_CLASS_CONFIG, cfg.getClass(PARTITIONER_CLASS));
+            proCfg.putIfAbsent(ProducerConfig.PARTITIONER_CLASS_CONFIG, partitionerClass);
     }
 
     /**

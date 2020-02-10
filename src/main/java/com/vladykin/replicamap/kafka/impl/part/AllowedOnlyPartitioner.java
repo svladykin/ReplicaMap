@@ -4,6 +4,7 @@ import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Arrays;
 import java.util.Map;
 import org.apache.kafka.clients.producer.Partitioner;
+import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.Cluster;
 
 /**
@@ -12,16 +13,33 @@ import org.apache.kafka.common.Cluster;
  * @author Sergi Vladykin http://vladykin.com
  */
 public class AllowedOnlyPartitioner implements Partitioner {
-    public static final String DELEGATE = AllowedOnlyPartitioner.class + ".delegate";
-    public static final String ALLOWED_PARTS = AllowedOnlyPartitioner.class + ".allowedParts";
+    public static final String DELEGATE = AllowedOnlyPartitioner.class.getName() + ".delegate";
+    public static final String ALLOWED_PARTS = AllowedOnlyPartitioner.class.getName() + ".allowedParts";
 
     protected Partitioner delegate;
     protected short[] allowedParts;
 
+    public static void setupProducerConfig(
+        Map<String,Object> configs,
+        short[] allowedPartitions,
+        Class<? extends Partitioner> partitionerClass
+    ) {
+        Utils.requireNonNull(allowedPartitions, "allowedPartitions");
+        Utils.requireNonNull(partitionerClass, "partitionerClass");
+
+        configs.putIfAbsent(ProducerConfig.PARTITIONER_CLASS_CONFIG, AllowedOnlyPartitioner.class);
+
+        configs.putIfAbsent(AllowedOnlyPartitioner.ALLOWED_PARTS, allowedPartitions);
+        configs.putIfAbsent(AllowedOnlyPartitioner.DELEGATE, partitionerClass);
+    }
+
+    @SuppressWarnings("unchecked")
     @Override
     public void configure(Map<String,?> configs) {
         allowedParts = Utils.requireNonNull((short[])configs.get(ALLOWED_PARTS), "allowedParts");
-        delegate = (Partitioner)Utils.requireNonNull(configs.get(DELEGATE), "delegate");
+
+        Class<? extends Partitioner> delegateClass = (Class<? extends Partitioner>)configs.get(DELEGATE);
+        delegate = Utils.getConfiguredInstance(delegateClass, configs);
     }
 
     @Override

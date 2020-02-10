@@ -19,6 +19,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
@@ -304,5 +305,14 @@ public final class Utils {
 
     public static boolean isEndPosition(Consumer<?,?> consumer, TopicPartition part) {
         return endOffset(consumer, part) == consumer.position(part);
+    }
+
+    public static <T> T getConfiguredInstance(Class<T> clazz, Map<String,?> configs) {
+        T instance = org.apache.kafka.common.utils.Utils.newInstance(clazz);
+
+        if (instance instanceof Configurable)
+            ((Configurable) instance).configure(configs);
+
+        return instance;
     }
 }
