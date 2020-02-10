@@ -62,7 +62,7 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
         HashMap<String,Object> cfg = new HashMap<>();
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
 
-        cfg.put(FLUSH_PERIOD_OPS, 30);
+        cfg.put(FLUSH_PERIOD_OPS, 10);
 
         cfg.put(DATA_TOPIC, "data");
         cfg.put(OPS_TOPIC, "ops");
