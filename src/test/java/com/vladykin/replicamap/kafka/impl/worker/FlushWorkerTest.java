@@ -2,7 +2,7 @@ package com.vladykin.replicamap.kafka.impl.worker;
 
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
-import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
+import com.vladykin.replicamap.kafka.impl.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import java.util.List;
 import java.util.Queue;

@@ -1,4 +1,4 @@
-package com.vladykin.replicamap.kafka.impl.util;
+package com.vladykin.replicamap.kafka.impl;
 
 /**
  * Simple key-value record with offset.

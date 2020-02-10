@@ -1,5 +1,6 @@
-package com.vladykin.replicamap.kafka.impl.util;
+package com.vladykin.replicamap.kafka.impl.part;
 
+import com.vladykin.replicamap.kafka.impl.util.Utils;
 import org.apache.kafka.clients.producer.internals.DefaultPartitioner;
 import org.apache.kafka.common.Cluster;
 

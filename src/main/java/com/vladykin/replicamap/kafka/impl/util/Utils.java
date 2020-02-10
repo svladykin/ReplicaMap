@@ -1,6 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.util;
 
 import com.vladykin.replicamap.ReplicaMapException;
+import com.vladykin.replicamap.kafka.impl.MiniRecord;
 import java.net.NetworkInterface;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;

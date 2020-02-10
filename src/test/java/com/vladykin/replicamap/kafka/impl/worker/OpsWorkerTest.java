@@ -3,7 +3,7 @@ package com.vladykin.replicamap.kafka.impl.worker;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Box;
-import com.vladykin.replicamap.kafka.impl.util.FlushQueue;
+import com.vladykin.replicamap.kafka.impl.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.time.Duration;
 import java.util.List;

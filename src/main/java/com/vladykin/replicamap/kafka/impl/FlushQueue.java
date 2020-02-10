@@ -1,4 +1,4 @@
-package com.vladykin.replicamap.kafka.impl.util;
+package com.vladykin.replicamap.kafka.impl;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;

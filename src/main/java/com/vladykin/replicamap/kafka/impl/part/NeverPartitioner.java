@@ -1,4 +1,4 @@
-package com.vladykin.replicamap.kafka.impl.util;
+package com.vladykin.replicamap.kafka.impl.part;
 
 import java.util.Map;
 import org.apache.kafka.clients.producer.Partitioner;

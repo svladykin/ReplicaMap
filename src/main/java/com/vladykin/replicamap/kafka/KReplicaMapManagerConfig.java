@@ -1,7 +1,7 @@
 package com.vladykin.replicamap.kafka;
 
 import com.vladykin.replicamap.holder.MapsHolderSingle;
-import com.vladykin.replicamap.kafka.impl.util.KeyBytesPartitioner;
+import com.vladykin.replicamap.kafka.impl.part.KeyBytesPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Map;
 import org.apache.kafka.clients.CommonClientConfigs;

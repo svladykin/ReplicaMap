@@ -1,4 +1,4 @@
-package com.vladykin.replicamap.kafka.impl.util;
+package com.vladykin.replicamap.kafka.impl;
 
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import java.util.ArrayDeque;
