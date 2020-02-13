@@ -2,6 +2,7 @@ package com.vladykin.replicamap.kafka.impl.util;
 
 import com.vladykin.replicamap.ReplicaMapException;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
@@ -16,10 +17,13 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.macHash1;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.rotateRight;
 import static java.lang.Integer.toBinaryString;
 import static java.util.Arrays.asList;
+import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -208,6 +212,26 @@ class UtilsTest {
             assignPartitionsRoundRobin(2, 4, 12, null));
         assertEquals(new HashSet<>(asList(3, 7, 11)),
             assignPartitionsRoundRobin(3, 4, 12, null));
+
+        assertEquals(new HashSet<>(asList(1, 6)),
+            assignPartitionsRoundRobin(0, 3, 8, new short[]{1,2,5,6}));
+        assertEquals(new HashSet<>(asList(6)),
+            assignPartitionsRoundRobin(1, 3, 8, new short[]{2,6,7}));
+        assertEquals(new HashSet<>(asList(2, 6)),
+            assignPartitionsRoundRobin(2, 3, 8, new short[]{0,1,2,3,5,6,7}));
+    }
+
+    @Test
+    void testParseAllowedPartitions() {
+        assertNull(Utils.parseAllowedPartitions(null));
+        assertThrows(ReplicaMapException.class, () -> Utils.parseAllowedPartitions(emptyList()));
+
+        assertArrayEquals(new short[]{100}, Utils.parseAllowedPartitions(Arrays.asList("100")));
+        assertArrayEquals(new short[]{1,5}, Utils.parseAllowedPartitions(Arrays.asList("1","5")));
+        assertArrayEquals(new short[]{0,555,1000}, Utils.parseAllowedPartitions(Arrays.asList("1000","555","0")));
+
+        assertThrows(ReplicaMapException.class, () -> Utils.parseAllowedPartitions(Arrays.asList("1", "-1")));
+        assertThrows(NumberFormatException.class, () -> Utils.parseAllowedPartitions(Arrays.asList("1", "bla")));
     }
 
     @Test

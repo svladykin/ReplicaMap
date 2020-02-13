@@ -27,7 +27,6 @@ import java.util.NavigableMap;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
@@ -84,6 +83,7 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.checkPositive;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.generateUniqueNodeId;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.getMacAddresses;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.parseAllowedPartitions;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -224,33 +224,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
             throw new ReplicaMapException("Failed to create ReplicaMap manager for topics [" +
                 dataTopic + ", " + opsTopic + ", " + flushTopic + "].", e);
         }
-    }
-
-    protected short[] parseAllowedPartitions(List<String> list) {
-        if (list == null)
-            return null;
-
-        if (list.isEmpty())
-            throw new ReplicaMapException("List of allowed partitions is empty.");
-
-        Set<Short> set = new TreeSet<>(); // The resulting array must be sorted.
-
-        for (String p : list) {
-            short part = Short.parseShort(p);
-
-            if (part < 0)
-                throw new ReplicaMapException("Negative partition found in " + ALLOWED_PARTITIONS + ": " + list);
-
-            set.add(part);
-        }
-
-        short[] res = new short[set.size()];
-        int i = 0;
-
-        for (Short part : set)
-            res[i++] = part;
-
-        return res;
     }
 
     protected int getPartitions() {
