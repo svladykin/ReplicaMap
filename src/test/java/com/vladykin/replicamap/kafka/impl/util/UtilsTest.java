@@ -209,4 +209,24 @@ class UtilsTest {
         assertEquals(new HashSet<>(asList(3, 7, 11)),
             assignPartitionsRoundRobin(3, 4, 12, null));
     }
+
+    @Test
+    void testContains() {
+        assertFalse(Utils.contains(new short[] {1, 2, 3}, (short)0));
+        assertTrue(Utils.contains(new short[] {1, 2, 3}, (short)1));
+        assertTrue(Utils.contains(new short[] {1, 2, 3}, (short)2));
+        assertTrue(Utils.contains(new short[] {1, 2, 3}, (short)3));
+        assertFalse(Utils.contains(new short[] {1, 2, 3}, (short)4));
+
+        short[] arr = new short[100];
+        for (int i = 0; i < arr.length; i++)
+            arr[i] = (short)(i * 2);
+
+//        System.out.println(Arrays.toString(arr));
+
+        for (int i = 0; i < 101; i++) {
+//            System.out.println(i);
+            assertEquals((i & 1) == 0, Utils.contains(arr, (short)i));
+        }
+    }
 }
