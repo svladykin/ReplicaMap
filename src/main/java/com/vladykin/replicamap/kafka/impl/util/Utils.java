@@ -227,11 +227,11 @@ public final class Utils {
                 if (x < y)
                     return false;
             }
-        }
-        else
-            return Arrays.binarySearch(sortedArr, x) >= 0;
 
-        return false;
+            return false;
+        }
+
+        return Arrays.binarySearch(sortedArr, x) >= 0;
     }
 
     public static boolean isOverMaxOffset(MiniRecord rec, long maxOffset) {
