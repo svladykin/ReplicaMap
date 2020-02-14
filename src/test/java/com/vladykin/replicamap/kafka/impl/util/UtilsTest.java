@@ -222,16 +222,15 @@ class UtilsTest {
     }
 
     @Test
-    void testParseAllowedPartitions() {
-        assertNull(Utils.parseAllowedPartitions(null));
-        assertThrows(ReplicaMapException.class, () -> Utils.parseAllowedPartitions(emptyList()));
+    void testParseAndSortShortSet() {
+        assertNull(Utils.parseAndSortShortSet(null));
+        assertArrayEquals(new short[]{}, Utils.parseAndSortShortSet(emptyList()));
+        assertArrayEquals(new short[]{100}, Utils.parseAndSortShortSet(Arrays.asList("100")));
+        assertArrayEquals(new short[]{1,5}, Utils.parseAndSortShortSet(Arrays.asList("1","5")));
+        assertArrayEquals(new short[]{0,555,1000}, Utils.parseAndSortShortSet(Arrays.asList("1000","555","0")));
+        assertArrayEquals(new short[]{-1000,0,555}, Utils.parseAndSortShortSet(Arrays.asList("-1000","555","0")));
 
-        assertArrayEquals(new short[]{100}, Utils.parseAllowedPartitions(Arrays.asList("100")));
-        assertArrayEquals(new short[]{1,5}, Utils.parseAllowedPartitions(Arrays.asList("1","5")));
-        assertArrayEquals(new short[]{0,555,1000}, Utils.parseAllowedPartitions(Arrays.asList("1000","555","0")));
-
-        assertThrows(ReplicaMapException.class, () -> Utils.parseAllowedPartitions(Arrays.asList("1", "-1")));
-        assertThrows(NumberFormatException.class, () -> Utils.parseAllowedPartitions(Arrays.asList("1", "bla")));
+        assertThrows(NumberFormatException.class, () -> Utils.parseAndSortShortSet(Arrays.asList("1", "bla")));
     }
 
     @Test

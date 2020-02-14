@@ -21,6 +21,7 @@ import com.vladykin.replicamap.kafka.impl.worker.OpsWorker;
 import com.vladykin.replicamap.kafka.impl.worker.Worker;
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -83,7 +84,7 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.checkPositive;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.generateUniqueNodeId;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.getMacAddresses;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.parseAllowedPartitions;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.parseAndSortShortSet;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -176,13 +177,15 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
         clientId = ifNull(cfg.getLong(CLIENT_ID), this::generateClientId);
 
-        allowedPartitions = parseAllowedPartitions(cfg.getList(ALLOWED_PARTITIONS));
+        allowedPartitions = parseAndSortShortSet(cfg.getList(ALLOWED_PARTITIONS));
 
         try {
             maps = cfg.getConfiguredInstance(MAPS_HOLDER, MapsHolder.class);
 
             opsProducer = newKafkaProducerOps();
             int parts = getPartitions();
+
+            validateAllowedPartitions(parts);
 
             if (opsWorkers > parts)
                 opsWorkers = parts;
@@ -223,6 +226,18 @@ public class KReplicaMapManager implements ReplicaMapManager {
             Utils.close(this);
             throw new ReplicaMapException("Failed to create ReplicaMap manager for topics [" +
                 dataTopic + ", " + opsTopic + ", " + flushTopic + "].", e);
+        }
+    }
+
+    protected void validateAllowedPartitions(int parts) {
+        if (allowedPartitions != null) {
+            if (allowedPartitions.length == 0)
+                throw new ReplicaMapException("Allowed partitions list is empty.");
+
+            for (short part : allowedPartitions) {
+                if (part < 0 || part >= parts)
+                    throw new ReplicaMapException("Invalid allowed partitions: " + Arrays.toString(allowedPartitions));
+            }
         }
     }
 

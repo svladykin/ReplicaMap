@@ -27,7 +27,6 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.ALLOWED_PARTITIONS;
 import static java.util.Collections.singleton;
 
 /**
@@ -253,25 +252,16 @@ public final class Utils {
         return assignedParts;
     }
 
-    public static short[] parseAllowedPartitions(List<String> list) {
+    public static short[] parseAndSortShortSet(List<String> list) {
         if (list == null)
             return null;
-
-        if (list.isEmpty())
-            throw new ReplicaMapException("List of allowed partitions is empty.");
 
         log.debug("Parsing list of allowed partitions: {}", list);
 
         Set<Short> set = new TreeSet<>(); // The resulting array must be sorted.
 
-        for (String p : list) {
-            short part = Short.parseShort(p);
-
-            if (part < 0)
-                throw new ReplicaMapException("Negative partition found in " + ALLOWED_PARTITIONS + ": " + list);
-
-            set.add(part);
-        }
+        for (String p : list)
+            set.add(Short.parseShort(p));
 
         short[] res = new short[set.size()];
         int i = 0;
@@ -279,8 +269,7 @@ public final class Utils {
         for (Short part : set)
             res[i++] = part;
 
-        if (log.isDebugEnabled())
-            log.debug("Parsed set of allowed partitions: {}", Arrays.toString(res));
+        log.debug("Parsed set of allowed partitions: {}", res);
 
         return res;
     }
