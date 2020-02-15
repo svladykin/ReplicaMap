@@ -138,6 +138,9 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
             if (!flushTopic.equals(part.topic()))
                 throw new IllegalStateException("Expected flush topic: " + flushTopic + ", actual: " + part.topic());
 
+            if (allowedParts == null)
+                continue;
+
             int p = part.partition();
 
             if (p < 0 || p > Short.MAX_VALUE || !Utils.contains(allowedParts, (short)p))
