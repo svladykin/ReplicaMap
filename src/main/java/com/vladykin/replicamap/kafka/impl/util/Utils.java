@@ -3,6 +3,7 @@ package com.vladykin.replicamap.kafka.impl.util;
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.MiniRecord;
 import java.net.NetworkInterface;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -336,5 +337,32 @@ public final class Utils {
             ((Configurable) instance).configure(configs);
 
         return instance;
+    }
+
+    public static ByteBuffer serializeShortArray(short[] arr) {
+        if (arr == null)
+            return ByteBuffer.allocate(0);
+
+        ByteBuffer buf = ByteBuffer.allocate(4 + arr.length * 2);
+
+        buf.putInt(arr.length);
+        for (short x : arr)
+            buf.putShort(x);
+
+        buf.flip();
+        return buf;
+    }
+
+    public static short[] deserializeShortArray(ByteBuffer buf) {
+        if (buf.remaining() == 0)
+            return null;
+
+        int len = buf.getInt();
+        short[] arr = new short[len];
+
+        for (int i = 0; i < len; i++)
+            arr[i] = buf.getShort();
+
+        return arr;
     }
 }

@@ -188,10 +188,10 @@ public class KReplicaMapManager implements ReplicaMapManager {
             validateAllowedPartitions(parts);
 
             if (opsWorkers > parts)
-                opsWorkers = parts;
+                opsWorkers = allowedPartitions == null ? parts : allowedPartitions.length;
 
             if (opsWorkers > flushWorkers)
-                flushWorkers = opsWorkers;
+                flushWorkers = Math.max(opsWorkers >>> 1, 1);
 
             flushProducer = newKafkaProducerFlush();
             flushQueues = new ArrayList<>(parts);
