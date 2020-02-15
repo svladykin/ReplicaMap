@@ -340,9 +340,6 @@ public final class Utils {
     }
 
     public static ByteBuffer serializeShortArray(short[] arr) {
-        if (arr == null)
-            return ByteBuffer.allocate(0);
-
         ByteBuffer buf = ByteBuffer.allocate(4 + arr.length * 2);
 
         buf.putInt(arr.length);
@@ -354,7 +351,7 @@ public final class Utils {
     }
 
     public static short[] deserializeShortArray(ByteBuffer buf) {
-        if (buf.remaining() == 0)
+        if (buf == null || buf.remaining() == 0)
             return null;
 
         int len = buf.getInt();

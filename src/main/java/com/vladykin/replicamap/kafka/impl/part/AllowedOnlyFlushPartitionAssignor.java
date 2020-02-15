@@ -33,9 +33,10 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
     @Override
     public void configure(Map<String,?> configs) {
         flushTopic = (String)Utils.requireNonNull(configs.get(FLUSH_TOPIC), "flushTopic");
+        allowedParts = (short[])configs.get(ALLOWED_PARTS); // null means that all partitions are allowed
 
-        allowedParts = (short[])Utils.requireNonNull(configs.get(ALLOWED_PARTS), "allowedParts");
-        allowedPartsBytes = Utils.serializeShortArray(allowedParts).array();
+        if (allowedParts != null)
+            allowedPartsBytes = Utils.serializeShortArray(allowedParts).array();
     }
 
     @Override
@@ -43,7 +44,11 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         if (topics.size() != 1 || !topics.contains(flushTopic))
             throw new IllegalStateException("Expected flush topic: " + flushTopic + ", actual: " + topics);
 
-        return new Subscription(new ArrayList<>(topics), ByteBuffer.wrap(allowedPartsBytes));
+        List<String> topicsList = new ArrayList<>(topics);
+
+        return allowedPartsBytes == null ?
+            new Subscription(topicsList) :
+            new Subscription(topicsList, ByteBuffer.wrap(allowedPartsBytes));
     }
 
     @Override
@@ -54,18 +59,24 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         if (partitionsPerTopic.size() != 1 || !partitionsPerTopic.containsKey(flushTopic))
             throw new IllegalStateException("Partitions per topic: " + partitionsPerTopic);
 
-        int parts = partitionsPerTopic.get(flushTopic);
-
         if (subscriptionsPerMember == null || subscriptionsPerMember.isEmpty())
             return Collections.emptyMap();
 
         Map<String, short[]> allowedPartsPerMember = new HashMap<>();
 
-        for (Map.Entry<String,Subscription> entry : subscriptionsPerMember.entrySet())
-            allowedPartsPerMember.put(entry.getKey(), Utils.deserializeShortArray(entry.getValue().userData()));
+        for (Map.Entry<String,Subscription> entry : subscriptionsPerMember.entrySet()) {
+            short[] allowed = Utils.deserializeShortArray(entry.getValue().userData());
+
+            if (allowed != null)
+                allowedPartsPerMember.put(entry.getKey(), allowed);
+        }
 
         Map<String,List<TopicPartition>> result = new HashMap<>();
+        int parts = partitionsPerTopic.get(flushTopic);
 
+        // To have a balanced assignment try to assign each partition to members in the following order:
+        // - first try assign to the members with less assigned parts
+        // - within members with the same number of assigned parts try to assign to members with less allowed partitions
         PriorityQueue<String> prioritized = new PriorityQueue<>((m1, m2) -> {
             int cmp = Integer.compare(
                 result.getOrDefault(m1, emptyList()).size(),
@@ -85,24 +96,22 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
             return cmp;
         });
         prioritized.addAll(subscriptionsPerMember.keySet());
-
-        List<String> skipped = new ArrayList<>();
+        List<String> skipped = new ArrayList<>(prioritized.size() >>> 1);
 
         for (int part = 0; part < parts; part++) {
             for (;;) {
                 String member = prioritized.poll();
 
-                if (member != null) { // we may end up not assigning a partition to any member
+                if (member != null) { // we may end up not assigning a partition because it never appeared in `allowed`
                     short[] allowed = allowedPartsPerMember.get(member);
 
-                    // if allowed is null, then the member can accept any partitions
+                    // if `allowed` is null, then the member can accept any partitions
                     if (allowed != null && !Utils.contains(allowed, (short)part)) {
                         skipped.add(member);
                         continue;
                     }
 
-                    List<TopicPartition> partsList = result.computeIfAbsent(member, k -> new ArrayList<>());
-                    partsList.add(new TopicPartition(flushTopic, part));
+                    result.computeIfAbsent(member, k -> new ArrayList<>()).add(new TopicPartition(flushTopic, part));
                 }
 
                 if (!skipped.isEmpty()) {

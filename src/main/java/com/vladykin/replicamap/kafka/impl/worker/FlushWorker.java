@@ -73,6 +73,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
     protected final long maxPollTimeout;
 
     protected final Map<TopicPartition,UnprocessedFlushRequests> unprocessedFlushRequests = new HashMap<>();
+    protected final short[] allowedPartitions;
 
     public FlushWorker(
         long clientId,
@@ -86,6 +87,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         Queue<ConsumerRecord<Object,OpMessage>> cleanQueue,
         CompletableFuture<ReplicaMapManager> opsSteadyFut,
         long maxPollTimeout,
+        short[] allowedPartitions,
         LazyList<Producer<Object,Object>> dataProducers,
         IntFunction<Producer<Object,Object>> dataProducerFactory,
         LazyList<Consumer<Object,OpMessage>> flushConsumers,
@@ -104,6 +106,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         this.cleanQueue = cleanQueue;
         this.opsSteadyFut = opsSteadyFut;
         this.maxPollTimeout = maxPollTimeout;
+        this.allowedPartitions = allowedPartitions;
         this.dataProducers = dataProducers;
         this.dataProducerFactory = dataProducerFactory;
         this.flushConsumers = flushConsumers;
@@ -208,8 +211,11 @@ public class FlushWorker extends Worker implements AutoCloseable {
             }
 
             // Add new records to unprocessed set and load history if it is the first flush for the partition.
-            for (TopicPartition flushPart : recs.partitions())
-                collectUnprocessedFlushRequests(flushConsumer, flushPart, recs.records(flushPart));
+            for (TopicPartition flushPart : recs.partitions()) {
+                // Ignore disallowed partitions, they usually should not come except the mixed ReplicaMap versions case.
+                if (allowedPartitions == null || Utils.contains(allowedPartitions, (short)flushPart.partition()))
+                    collectUnprocessedFlushRequests(flushConsumer, flushPart, recs.records(flushPart));
+            }
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))

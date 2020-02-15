@@ -83,6 +83,7 @@ class FlushWorkerTest {
             cleanQueue,
             opsSteadyFut,
             MAX_POLL_TIMEOUT,
+            null,
             dataProducers,
             this::createDataProducer,
             flushConsumers,

@@ -11,6 +11,7 @@ import com.vladykin.replicamap.kafka.impl.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageDeserializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
+import com.vladykin.replicamap.kafka.impl.part.AllowedOnlyFlushPartitionAssignor;
 import com.vladykin.replicamap.kafka.impl.part.AllowedOnlyPartitioner;
 import com.vladykin.replicamap.kafka.impl.part.NeverPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.Box;
@@ -40,6 +41,7 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.RangeAssignor;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.clients.producer.Producer;
@@ -290,6 +292,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             cleanQueue,
             opsSteadyFut,
             flushMaxPollTimeout,
+            allowedPartitions,
             newLazyList(parts),
             this::newKafkaProducerData,
             newLazyList(1),
@@ -436,6 +439,14 @@ public class KReplicaMapManager implements ReplicaMapManager {
      */
     protected void configureConsumerFlush(Map<String, Object> conCfg) {
         conCfg.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, flushConsumerGroupId);
+
+        conCfg.putIfAbsent(AllowedOnlyFlushPartitionAssignor.FLUSH_TOPIC, flushTopic);
+        conCfg.putIfAbsent(AllowedOnlyFlushPartitionAssignor.ALLOWED_PARTS, allowedPartitions);
+
+        conCfg.putIfAbsent(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, Arrays.asList(
+            AllowedOnlyFlushPartitionAssignor.class, // This one must go first to have higher priority.
+            RangeAssignor.class // This is for backward compatibility.
+        ));
     }
 
     protected Producer<Object,Object> newKafkaProducerData(int part) {
