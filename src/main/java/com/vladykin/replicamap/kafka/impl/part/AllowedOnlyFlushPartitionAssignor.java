@@ -92,17 +92,23 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
             for (;;) {
                 String member = prioritized.poll();
 
-                if (member != null) {
+                if (member != null) { // we may end up not assigning a partition to any member
                     short[] allowed = allowedPartsPerMember.get(member);
 
-                    if (!Utils.contains(allowed, (short)part)) {
+                    // if allowed is null, then the member can accept any partitions
+                    if (allowed != null && !Utils.contains(allowed, (short)part)) {
                         skipped.add(member);
                         continue;
                     }
+
+                    List<TopicPartition> partsList = result.computeIfAbsent(member, k -> new ArrayList<>());
+                    partsList.add(new TopicPartition(flushTopic, part));
                 }
 
-                prioritized.addAll(skipped);
-                skipped.clear();
+                if (!skipped.isEmpty()) {
+                    prioritized.addAll(skipped);
+                    skipped.clear();
+                }
                 break;
             }
         }
@@ -119,7 +125,7 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         if (parts == null || parts.isEmpty())
             return;
 
-        for (TopicPartition part : parts) {
+        for (TopicPartition part : parts) { // check that assigned partitions are valid
             if (!flushTopic.equals(part.topic()))
                 throw new IllegalStateException("Expected flush topic: " + flushTopic + ", actual: " + part.topic());
 
