@@ -4,7 +4,6 @@ import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,8 +12,6 @@ import java.util.Set;
 import org.apache.kafka.clients.consumer.internals.AbstractPartitionAssignor;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.TopicPartition;
-
-import static java.util.Collections.emptyList;
 
 public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor implements Configurable {
 
@@ -59,9 +56,6 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         if (partitionsPerTopic.size() != 1 || !partitionsPerTopic.containsKey(flushTopic))
             throw new IllegalStateException("Partitions per topic: " + partitionsPerTopic);
 
-        if (subscriptionsPerMember == null || subscriptionsPerMember.isEmpty())
-            return Collections.emptyMap();
-
         Map<String, short[]> allowedPartsPerMember = new HashMap<>();
 
         for (Map.Entry<String,Subscription> entry : subscriptionsPerMember.entrySet()) {
@@ -72,6 +66,10 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         }
 
         Map<String,List<TopicPartition>> result = new HashMap<>();
+
+        for (String member : subscriptionsPerMember.keySet())
+            result.put(member, new ArrayList<>());
+
         int parts = partitionsPerTopic.get(flushTopic);
 
         // To have a balanced assignment try to assign each partition to members in the following order:
@@ -79,8 +77,8 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         // - within members with the same number of assigned parts try to assign to members with less allowed partitions
         PriorityQueue<String> prioritized = new PriorityQueue<>((m1, m2) -> {
             int cmp = Integer.compare(
-                result.getOrDefault(m1, emptyList()).size(),
-                result.getOrDefault(m2, emptyList()).size()
+                result.get(m1).size(),
+                result.get(m2).size()
             );
 
             if (cmp == 0) {
@@ -111,7 +109,7 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
                         continue;
                     }
 
-                    result.computeIfAbsent(member, k -> new ArrayList<>()).add(new TopicPartition(flushTopic, part));
+                    result.get(member).add(new TopicPartition(flushTopic, part));
                 }
 
                 if (!skipped.isEmpty()) {

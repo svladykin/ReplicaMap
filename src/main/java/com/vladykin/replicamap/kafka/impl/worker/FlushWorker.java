@@ -219,7 +219,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
-                log.error("Failed to poll flush consumer for topic " + flushTopic, e);
+                log.error("Failed to poll flush consumer for topic: " + flushTopic, e);
 
             resetAll(flushConsumer);
             return false;
