@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -253,26 +254,16 @@ public final class Utils {
         return assignedParts;
     }
 
-    public static short[] parseAndSortShortSet(List<String> list) {
+    public static Set<Integer> parseIntSet(List<String> list) {
         if (list == null)
             return null;
 
-        log.debug("Parsing list of allowed partitions: {}", list);
-
-        Set<Short> set = new TreeSet<>(); // The resulting array must be sorted.
+        Set<Integer> set = new HashSet<>();
 
         for (String p : list)
-            set.add(Short.parseShort(p));
+            set.add(Integer.parseInt(p));
 
-        short[] res = new short[set.size()];
-        int i = 0;
-
-        for (Short part : set)
-            res[i++] = part;
-
-        log.debug("Parsed set of allowed partitions: {}", res);
-
-        return res;
+        return set;
     }
 
     public static void wakeup(Consumer<?,?> c) {

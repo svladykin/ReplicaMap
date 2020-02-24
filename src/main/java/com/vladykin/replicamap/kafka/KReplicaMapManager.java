@@ -29,6 +29,7 @@ import java.util.NavigableMap;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
@@ -36,6 +37,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiFunction;
+import java.util.function.Supplier;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -59,6 +61,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STARTING;
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STOPPED;
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.STOPPING;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.ALLOWED_PARTITIONS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.ALLOWED_PARTITIONS_RESOLVER;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.CLIENT_ID;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_DESERIALIZER_CLASS;
@@ -86,7 +89,7 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.checkPositive;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.generateUniqueNodeId;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.getMacAddresses;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.parseAndSortShortSet;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.parseIntSet;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -94,7 +97,6 @@ import static java.util.stream.Collectors.toList;
  *
  * @author Sergi Vladykin http://vladykin.com
  */
-//@SuppressWarnings("unused")
 public class KReplicaMapManager implements ReplicaMapManager {
     private static final Logger log = LoggerFactory.getLogger(KReplicaMapManager.class);
 
@@ -179,13 +181,18 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
         clientId = ifNull(cfg.getLong(CLIENT_ID), this::generateClientId);
 
-        allowedPartitions = parseAndSortShortSet(cfg.getList(ALLOWED_PARTITIONS));
+        allowedPartitions = resolveAllowedPartitions();
+
+        if (allowedPartitions != null && log.isDebugEnabled()) {
+            log.debug("Resolved allowed partitions for topics [{}, {}, {}]: {}",
+                dataTopic, opsTopic, flushTopic, allowedPartitions);
+        }
 
         try {
             maps = cfg.getConfiguredInstance(MAPS_HOLDER, MapsHolder.class);
 
             opsProducer = newKafkaProducerOps();
-            int parts = getPartitions();
+            int parts = resolveTotalPartitions();
 
             validateAllowedPartitions(parts);
 
@@ -231,19 +238,47 @@ public class KReplicaMapManager implements ReplicaMapManager {
         }
     }
 
-    protected void validateAllowedPartitions(int parts) {
-        if (allowedPartitions != null) {
-            if (allowedPartitions.length == 0)
-                throw new ReplicaMapException("Allowed partitions list is empty.");
+    @SuppressWarnings("unchecked")
+    protected short[] resolveAllowedPartitions() {
+        Set<Integer> apSet = parseIntSet(cfg.getList(ALLOWED_PARTITIONS));
 
+        if (apSet == null) {
+            Supplier<Set<Integer>> resolver = cfg.getConfiguredInstance(ALLOWED_PARTITIONS_RESOLVER, Supplier.class);
+
+            if (resolver != null)
+                apSet = resolver.get();
+        }
+
+        if (apSet == null)
+            return null;
+
+        if (apSet.isEmpty())
+            throw new ReplicaMapException("Allowed partitions list is empty.");
+
+        apSet = new TreeSet<>(apSet); // sort the partitions
+        short[] ap = new short[apSet.size()];
+        int i = 0;
+
+        for (Integer p : apSet) {
+            if (p < 0 || p > Short.MAX_VALUE)
+                throw new ReplicaMapException("Invalid allowed partitions: " + apSet);
+
+            ap[i++] = (short)p.intValue();
+        }
+
+        return ap;
+    }
+
+    protected void validateAllowedPartitions(int totalParts) {
+        if (allowedPartitions != null) {
             for (short part : allowedPartitions) {
-                if (part < 0 || part >= parts)
+                if (part >= totalParts)
                     throw new ReplicaMapException("Invalid allowed partitions: " + Arrays.toString(allowedPartitions));
             }
         }
     }
 
-    protected int getPartitions() {
+    protected int resolveTotalPartitions() {
         int opsParts = opsProducer.partitionsFor(opsTopic).size();
         int flushParts = opsProducer.partitionsFor(flushTopic).size();
         int dataParts = opsProducer.partitionsFor(dataTopic).size();

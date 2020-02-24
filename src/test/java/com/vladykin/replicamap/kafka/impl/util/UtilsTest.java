@@ -19,7 +19,6 @@ import static java.lang.Integer.toBinaryString;
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -222,15 +221,15 @@ class UtilsTest {
     }
 
     @Test
-    void testParseAndSortShortSet() {
-        assertNull(Utils.parseAndSortShortSet(null));
-        assertArrayEquals(new short[]{}, Utils.parseAndSortShortSet(emptyList()));
-        assertArrayEquals(new short[]{100}, Utils.parseAndSortShortSet(Arrays.asList("100")));
-        assertArrayEquals(new short[]{1,5}, Utils.parseAndSortShortSet(Arrays.asList("1","5")));
-        assertArrayEquals(new short[]{0,555,1000}, Utils.parseAndSortShortSet(Arrays.asList("1000","555","0")));
-        assertArrayEquals(new short[]{-1000,0,555}, Utils.parseAndSortShortSet(Arrays.asList("-1000","555","0")));
+    void testParseIntSet() {
+        assertNull(Utils.parseIntSet(null));
+        assertEquals(new HashSet<>(), Utils.parseIntSet(emptyList()));
+        assertEquals(new HashSet<>(Arrays.asList(100)), Utils.parseIntSet(Arrays.asList("100")));
+        assertEquals(new HashSet<>(Arrays.asList(1,5)), Utils.parseIntSet(Arrays.asList("1","5")));
+        assertEquals(new HashSet<>(Arrays.asList(0,555,1000)), Utils.parseIntSet(Arrays.asList("1000","555","0")));
+        assertEquals(new HashSet<>(Arrays.asList(-1000,0,555)), Utils.parseIntSet(Arrays.asList("-1000","555","0")));
 
-        assertThrows(NumberFormatException.class, () -> Utils.parseAndSortShortSet(Arrays.asList("1", "bla")));
+        assertThrows(NumberFormatException.class, () -> Utils.parseIntSet(Arrays.asList("1", "bla")));
     }
 
     @Test

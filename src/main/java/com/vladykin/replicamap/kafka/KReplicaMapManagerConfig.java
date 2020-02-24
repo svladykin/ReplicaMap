@@ -35,6 +35,7 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
 
     public static final String PARTITIONER_CLASS = ProducerConfig.PARTITIONER_CLASS_CONFIG;
     public static final String ALLOWED_PARTITIONS = "allowed.partitions";
+    public static final String ALLOWED_PARTITIONS_RESOLVER = "allowed.partitions.resolver";
 
     public static final String COMPUTE_SERIALIZER_CLASS = "compute.serializer";
     public static final String COMPUTE_DESERIALIZER_CLASS = "compute.deserializer";
@@ -95,9 +96,11 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
         .define(BOOTSTRAP_SERVERS, LIST, emptyList(), HIGH,
             "Bootstrap Kafka servers.")
         .define(PARTITIONER_CLASS, CLASS, KeyBytesPartitioner.class, HIGH,
-            "Partitioner class that implements the <code>org.apache.kafka.clients.producer.Partitioner</code> interface.")
+            "Partitioner class that implements the `org.apache.kafka.clients.producer.Partitioner` interface.")
         .define(ALLOWED_PARTITIONS, LIST, null, HIGH,
             "Set of allowed partition numbers for sharding. By default all the partitions available.")
+        .define(ALLOWED_PARTITIONS_RESOLVER, CLASS, null, HIGH,
+            "`Supplier<Set<Integer>>` function that resolves the set of allowed partitions.")
         ;
 
     public KReplicaMapManagerConfig(Map<?,?> originals) {
