@@ -43,7 +43,6 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.consumer.RangeAssignor;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.clients.producer.Producer;
@@ -475,13 +474,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected void configureConsumerFlush(Map<String, Object> conCfg) {
         conCfg.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, flushConsumerGroupId);
 
-        conCfg.putIfAbsent(AllowedOnlyFlushPartitionAssignor.FLUSH_TOPIC, flushTopic);
-        conCfg.putIfAbsent(AllowedOnlyFlushPartitionAssignor.ALLOWED_PARTS, allowedPartitions);
-
-        conCfg.putIfAbsent(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, Arrays.asList(
-            AllowedOnlyFlushPartitionAssignor.class, // This one must go first to have higher priority.
-            RangeAssignor.class // This is for backward compatibility.
-        ));
+        AllowedOnlyFlushPartitionAssignor.setupConsumerConfig(conCfg, allowedPartitions, flushTopic);
     }
 
     protected Producer<Object,Object> newKafkaProducerData(int part) {

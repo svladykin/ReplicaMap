@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.RangeAssignor;
 import org.apache.kafka.clients.consumer.internals.AbstractPartitionAssignor;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.TopicPartition;
@@ -25,6 +27,23 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
     @Override
     public String name() {
         return "ReplicaMap-flush";
+    }
+
+    public static void setupConsumerConfig(
+        Map<String,Object> configs,
+        short[] allowedPartitions,
+        String flushTopic
+    ) {
+        Utils.requireNonNull(flushTopic, "flushTopic");
+        configs.putIfAbsent(FLUSH_TOPIC, flushTopic);
+
+        if (allowedPartitions != null)
+            configs.putIfAbsent(ALLOWED_PARTS, allowedPartitions);
+
+        configs.putIfAbsent(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, Arrays.asList(
+            AllowedOnlyFlushPartitionAssignor.class, // This one must go first to have higher priority.
+            RangeAssignor.class // This is for backward compatibility with previous versions.
+        ));
     }
 
     @Override
