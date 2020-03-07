@@ -131,6 +131,7 @@ class KReplicaMapManagerSimpleShardingTest {
         awaitForFlush(4, shard1, shard2, shard3, shard4);
     }
 
+    @SuppressWarnings("SameParameterValue")
     void awaitForFlush(long flushes, KReplicaMapManager... ms) throws InterruptedException, TimeoutException {
         long start = System.nanoTime();
 
@@ -143,7 +144,7 @@ class KReplicaMapManagerSimpleShardingTest {
             if (flushes == total)
                 break;
 
-                Thread.sleep(20);
+            Thread.sleep(20);
 
             if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(30))
                 throw new TimeoutException();
