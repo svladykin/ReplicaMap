@@ -18,6 +18,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.IntFunction;
 import java.util.function.Supplier;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -75,6 +76,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
     protected final Map<TopicPartition,UnprocessedFlushRequests> unprocessedFlushRequests = new HashMap<>();
     protected final short[] allowedPartitions;
 
+    protected final LongAdder successfulFlushes;
+
     public FlushWorker(
         long clientId,
         String dataTopic,
@@ -86,6 +89,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         List<FlushQueue> flushQueues,
         Queue<ConsumerRecord<Object,OpMessage>> cleanQueue,
         CompletableFuture<ReplicaMapManager> opsSteadyFut,
+        LongAdder successfulFlushes,
         long maxPollTimeout,
         short[] allowedPartitions,
         LazyList<Producer<Object,Object>> dataProducers,
@@ -105,6 +109,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         this.flushQueues = flushQueues;
         this.cleanQueue = cleanQueue;
         this.opsSteadyFut = opsSteadyFut;
+        this.successfulFlushes = successfulFlushes;
         this.maxPollTimeout = maxPollTimeout;
         this.allowedPartitions = allowedPartitions;
         this.dataProducers = dataProducers;
@@ -422,6 +427,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             }
         }
 
+        successfulFlushes.increment();
         return true;
     }
 

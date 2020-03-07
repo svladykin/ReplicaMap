@@ -36,6 +36,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
 import org.apache.kafka.clients.CommonClientConfigs;
@@ -127,6 +128,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected final Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
     protected final List<FlushQueue> flushQueues;
+    protected final LongAdder successfulFlushes = new LongAdder();
 
     protected final List<FlushWorker> flushWorkers;
     protected final List<OpsWorker> opsWorkers;
@@ -325,6 +327,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             flushQueues,
             cleanQueue,
             opsSteadyFut,
+            successfulFlushes,
             flushMaxPollTimeout,
             allowedPartitions,
             newLazyList(parts),
@@ -367,6 +370,16 @@ public class KReplicaMapManager implements ReplicaMapManager {
         );
     }
 
+    /**
+     * @return Number of successful flushes done by this manager.
+     */
+    public long getSuccessfulFlushes() {
+        return successfulFlushes.sum();
+    }
+
+    /**
+     * @return Current state of this manager.
+     */
     public State getState() {
         return state;
     }

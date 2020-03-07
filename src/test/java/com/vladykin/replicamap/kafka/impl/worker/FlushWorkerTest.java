@@ -1,14 +1,15 @@
 package com.vladykin.replicamap.kafka.impl.worker;
 
 import com.vladykin.replicamap.ReplicaMapManager;
-import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.FlushQueue;
+import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.LongAdder;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
@@ -58,6 +59,8 @@ class FlushWorkerTest {
     TopicPartition flushPart = new TopicPartition(TOPIC_FLUSH, 0);
     TopicPartition dataPart = new TopicPartition(TOPIC_DATA, 0);
 
+    LongAdder successfulFlushes = new LongAdder();
+
     @BeforeEach
     void beforeEachTest() {
         dataConsumers = new LazyList<>(1);
@@ -82,6 +85,7 @@ class FlushWorkerTest {
             flushQueues,
             cleanQueue,
             opsSteadyFut,
+            successfulFlushes,
             MAX_POLL_TIMEOUT,
             null,
             dataProducers,
@@ -205,9 +209,11 @@ class FlushWorkerTest {
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(101, 98);
 
+        assertEquals(0, successfulFlushes.sum());
         assertTrue(flushWorker.processFlushRequests(0));
         assertTrue(dataProducer.transactionCommitted());
         assertEquals(1, flushQueue.size());
+        assertEquals(1, successfulFlushes.sum());
 
         List<ProducerRecord<Object,Object>> data = dataProducer.history();
         assertEquals(2, data.size());
@@ -239,6 +245,7 @@ class FlushWorkerTest {
         assertEquals(1, flushQueue.size());
         assertFalse(flushWorker.processFlushRequests(0));
         assertEquals(1, flushQueue.size());
+        assertEquals(1, successfulFlushes.sum());
 
         dataProducer = new MockProducer<>();
         flushWorker.initDataProducers(singleton(flushPart));
@@ -248,6 +255,7 @@ class FlushWorkerTest {
 
         assertFalse(flushWorker.processFlushRequests(0));
         assertEquals(1, flushQueue.size());
+        assertEquals(1, successfulFlushes.sum());
 
         opsProducer.clear();
         dataProducer = new MockProducer<>();
@@ -260,6 +268,7 @@ class FlushWorkerTest {
         assertEquals(0, flushQueue.size());
         assertEquals(1, dataProducer.history().size());
         assertEquals(1, opsProducer.history().size());
+        assertEquals(2, successfulFlushes.sum());
     }
 
     private void initFlushConsumer(long flushOffsetOps, long lastCleanOffsetOps) {
