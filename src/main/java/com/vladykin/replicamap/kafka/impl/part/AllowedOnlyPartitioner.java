@@ -1,5 +1,6 @@
 package com.vladykin.replicamap.kafka.impl.part;
 
+import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Arrays;
 import java.util.Map;
@@ -58,7 +59,7 @@ public class AllowedOnlyPartitioner implements Partitioner {
         if (part >= 0 && part <= Short.MAX_VALUE && Utils.contains(allowedParts, (short)part))
             return part;
 
-        throw new IllegalStateException("Partition " + part + " is not allowed for the topic [" + topic +
+        throw new ReplicaMapException("Partition " + part + " is not allowed for the topic [" + topic +
             "], allowed partitions: " + Arrays.toString(allowedParts));
     }
 }
