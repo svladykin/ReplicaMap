@@ -59,6 +59,7 @@ class FlushWorkerTest {
     TopicPartition flushPart = new TopicPartition(TOPIC_FLUSH, 0);
     TopicPartition dataPart = new TopicPartition(TOPIC_DATA, 0);
 
+    LongAdder receivedFlushRequests = new LongAdder();
     LongAdder successfulFlushes = new LongAdder();
 
     @BeforeEach
@@ -85,6 +86,7 @@ class FlushWorkerTest {
             flushQueues,
             cleanQueue,
             opsSteadyFut,
+            receivedFlushRequests,
             successfulFlushes,
             MAX_POLL_TIMEOUT,
             null,

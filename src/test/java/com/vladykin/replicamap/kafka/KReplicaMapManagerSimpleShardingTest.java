@@ -95,7 +95,7 @@ class KReplicaMapManagerSimpleShardingTest {
         for (int i = 0; i < 12; i++)
             all.getMap().put(i, 0);
 
-        awaitForFlush(4, all);
+        awaitForFlush(all);
 
         KReplicaMapManager shard1 = new KReplicaMapManager(getShardedConfig("0,3", false));
         KReplicaMapManager shard2 = new KReplicaMapManager(getShardedConfig("1,2", true));
@@ -128,11 +128,31 @@ class KReplicaMapManagerSimpleShardingTest {
         assertEquals(0, shard4.getMap().put(0, 1));
         assertThrows(ReplicaMapException.class, () -> shard4.getMap().put(5, 1));
 
-        awaitForFlush(4, shard1, shard2, shard3, shard4);
+        awaitForFlushRequests(4, shard1, shard2, shard3, shard4);
+        awaitForFlush(shard1, shard2, shard3, shard4);
     }
 
     @SuppressWarnings("SameParameterValue")
-    void awaitForFlush(long flushes, KReplicaMapManager... ms) throws InterruptedException, TimeoutException {
+    void awaitForFlushRequests(long flushReqs, KReplicaMapManager... ms) throws InterruptedException, TimeoutException {
+        long start = System.nanoTime();
+
+        for (;;) {
+            int total = 0;
+
+            for (KReplicaMapManager m : ms)
+                total += m.getReceivedFlushRequests();
+
+            if (flushReqs == total)
+                break;
+
+            Thread.sleep(20);
+
+            if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(30))
+                throw new TimeoutException();
+        }
+    }
+
+    void awaitForFlush(KReplicaMapManager... ms) throws InterruptedException, TimeoutException {
         long start = System.nanoTime();
 
         for (;;) {
@@ -141,7 +161,7 @@ class KReplicaMapManagerSimpleShardingTest {
             for (KReplicaMapManager m : ms)
                 total += m.getSuccessfulFlushes();
 
-            if (flushes == total)
+            if (total > 0)
                 break;
 
             Thread.sleep(20);

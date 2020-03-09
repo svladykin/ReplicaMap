@@ -76,6 +76,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
     protected final Map<TopicPartition,UnprocessedFlushRequests> unprocessedFlushRequests = new HashMap<>();
     protected final short[] allowedPartitions;
 
+    protected final LongAdder receivedFlushRequests;
     protected final LongAdder successfulFlushes;
 
     public FlushWorker(
@@ -89,6 +90,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         List<FlushQueue> flushQueues,
         Queue<ConsumerRecord<Object,OpMessage>> cleanQueue,
         CompletableFuture<ReplicaMapManager> opsSteadyFut,
+        LongAdder receivedFlushRequests,
         LongAdder successfulFlushes,
         long maxPollTimeout,
         short[] allowedPartitions,
@@ -109,6 +111,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         this.flushQueues = flushQueues;
         this.cleanQueue = cleanQueue;
         this.opsSteadyFut = opsSteadyFut;
+        this.receivedFlushRequests = receivedFlushRequests;
         this.successfulFlushes = successfulFlushes;
         this.maxPollTimeout = maxPollTimeout;
         this.allowedPartitions = allowedPartitions;
@@ -278,6 +281,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             flushReqs = initUnprocessedFlushRequests(flushPart, maxFlushReqOffset, maxFlushOffsetOps);
         }
 
+        receivedFlushRequests.add(partRecs.size());
         flushReqs.addFlushRequests(flushPart, partRecs);
     }
 

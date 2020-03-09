@@ -15,6 +15,11 @@ import org.apache.kafka.clients.consumer.internals.AbstractPartitionAssignor;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.TopicPartition;
 
+/**
+ * Partition assignor that assigns only allowed partitions.
+ *
+ * @author Sergi Vladykin http://vladykin.com
+ */
 public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor implements Configurable {
 
     public static final String FLUSH_TOPIC = AllowedOnlyFlushPartitionAssignor.class.getName() + ".flushTopic";

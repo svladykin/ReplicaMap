@@ -128,6 +128,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected final Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
     protected final List<FlushQueue> flushQueues;
+
+    protected final LongAdder receivedFlushRequests = new LongAdder();
     protected final LongAdder successfulFlushes = new LongAdder();
 
     protected final List<FlushWorker> flushWorkers;
@@ -327,6 +329,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             flushQueues,
             cleanQueue,
             opsSteadyFut,
+            receivedFlushRequests,
             successfulFlushes,
             flushMaxPollTimeout,
             allowedPartitions,
@@ -368,6 +371,13 @@ public class KReplicaMapManager implements ReplicaMapManager {
             getMacAddresses(),
             new SecureRandom()
         );
+    }
+
+    /**
+     * @return Number of received flush requests.
+     */
+    public long getReceivedFlushRequests() {
+        return receivedFlushRequests.sum();
     }
 
     /**
