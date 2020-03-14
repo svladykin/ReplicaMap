@@ -9,19 +9,25 @@ import org.apache.kafka.common.Cluster;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AllowedOnlyPartitionerTest {
     @Test
     void testAllowedOnlyPartitioner() {
+        short[] allowedParts = {1, 3, 7};
+
         AllowedOnlyPartitioner p = new AllowedOnlyPartitioner();
 
         Map<String,Object> cfg = new HashMap<>();
-        AllowedOnlyPartitioner.setupProducerConfig(cfg, new short[]{1, 3, 7}, IntPartitioner.class);
+        AllowedOnlyPartitioner.setupProducerConfig(cfg, allowedParts, IntPartitioner.class);
 
         assertEquals(0, IntPartitioner.configured.get());
         p.configure(cfg);
         assertEquals(1, IntPartitioner.configured.get());
+
+        assertEquals(allowedParts, p.allowedParts);
+        assertSame(p.delegate.getClass(), IntPartitioner.class);
 
         assertEquals(1, p.partition(null, 1, null, null, null, null));
         assertEquals(3, p.partition(null, 3, null, null, null, null));
