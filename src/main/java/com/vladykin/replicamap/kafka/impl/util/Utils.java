@@ -221,19 +221,25 @@ public final class Utils {
     }
 
     public static boolean contains(short[] sortedArr, short x) {
+        return indexOf(sortedArr, x) >= 0;
+    }
+
+    public static int indexOf(short[] sortedArr, short x) {
         if (sortedArr.length <= 32) {
-            for (int y : sortedArr) {
+            for (int i = 0; i < sortedArr.length; i++) {
+                short y = sortedArr[i];
+
                 if (x == y)
-                    return true;
+                    return i;
 
                 if (x < y)
-                    return false;
+                    return -1;
             }
 
-            return false;
+            return -1;
         }
 
-        return Arrays.binarySearch(sortedArr, x) >= 0;
+        return Arrays.binarySearch(sortedArr, x);
     }
 
     public static boolean isOverMaxOffset(MiniRecord rec, long maxOffset) {

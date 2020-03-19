@@ -7,13 +7,14 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.PriorityQueue;
 import java.util.Set;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.RangeAssignor;
 import org.apache.kafka.clients.consumer.internals.AbstractPartitionAssignor;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.TopicPartition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Partition assignor that assigns only allowed partitions.
@@ -21,6 +22,8 @@ import org.apache.kafka.common.TopicPartition;
  * @author Sergi Vladykin http://vladykin.com
  */
 public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor implements Configurable {
+
+    private static final Logger log = LoggerFactory.getLogger(AllowedOnlyFlushPartitionAssignor.class);
 
     public static final String FLUSH_TOPIC = AllowedOnlyFlushPartitionAssignor.class.getName() + ".flushTopic";
     public static final String ALLOWED_PARTS = AllowedOnlyFlushPartitionAssignor.class.getName() + ".allowedParts";
@@ -80,69 +83,46 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         if (partitionsPerTopic.size() != 1 || !partitionsPerTopic.containsKey(flushTopic))
             throw new IllegalStateException("Partitions per topic: " + partitionsPerTopic);
 
-        Map<String, short[]> allowedPartsPerMember = new HashMap<>();
+        List<Member> members = new ArrayList<>(subscriptionsPerMember.size());
 
         for (Map.Entry<String,Subscription> entry : subscriptionsPerMember.entrySet()) {
             short[] allowed = Utils.deserializeShortArray(entry.getValue().userData());
 
-            if (allowed != null)
-                allowedPartsPerMember.put(entry.getKey(), allowed);
+            members.add(new Member(entry.getKey(), allowed));
         }
-
-        Map<String,List<TopicPartition>> result = new HashMap<>();
-
-        for (String member : subscriptionsPerMember.keySet())
-            result.put(member, new ArrayList<>());
 
         int parts = partitionsPerTopic.get(flushTopic);
 
-        // To have a balanced assignment try to assign each partition to members in the following order:
-        // - first try assign to the members with less assigned parts
-        // - within members with the same number of assigned parts try to assign to members with less allowed partitions
-        PriorityQueue<String> prioritized = new PriorityQueue<>((m1, m2) -> {
-            int cmp = Integer.compare(
-                result.get(m1).size(),
-                result.get(m2).size()
-            );
+        for (short part = 0; part < parts; part++) {
+            Member best = null;
+            int bestAssignable = 0;
 
-            if (cmp == 0) {
-                short[] allowedParts1 = allowedPartsPerMember.get(m1);
-                short[] allowedParts2 = allowedPartsPerMember.get(m2);
+            for (Member member : members) {
+                int assignable = member.assignable(part, parts);
 
-                cmp = Integer.compare(
-                    allowedParts1 == null ? parts : allowedParts1.length,
-                    allowedParts2 == null ? parts : allowedParts2.length
-                );
+                if (assignable == 0)
+                    continue; // Ignore the member, can not assign this partition to it.
+
+                if (best == null || assignable < bestAssignable ||
+                    (assignable == bestAssignable && member.assignments() < best.assignments()))
+                {
+                    best = member;
+                    bestAssignable = assignable;
+                }
             }
 
-            return cmp;
-        });
-        prioritized.addAll(subscriptionsPerMember.keySet());
-        List<String> skipped = new ArrayList<>(prioritized.size() >>> 1);
+            TopicPartition p = new TopicPartition(flushTopic, part);
 
-        for (int part = 0; part < parts; part++) {
-            for (;;) {
-                String member = prioritized.poll();
-
-                if (member != null) { // we may end up not assigning a partition because it never appeared in `allowed`
-                    short[] allowed = allowedPartsPerMember.get(member);
-
-                    // if `allowed` is null, then the member can accept any partitions
-                    if (allowed != null && !Utils.contains(allowed, (short)part)) {
-                        skipped.add(member);
-                        continue;
-                    }
-
-                    result.get(member).add(new TopicPartition(flushTopic, part));
-                }
-
-                if (!skipped.isEmpty()) {
-                    prioritized.addAll(skipped);
-                    skipped.clear();
-                }
-                break;
-            }
+            if (best != null) // Some partitions may be unassigned because they are forbidden.
+                best.assign(p);
+            else
+                log.warn("Partition was not assigned: {}", p);
         }
+
+        Map<String,List<TopicPartition>> result = new HashMap<>(members.size());
+
+        for (Member member : members)
+            result.put(member.id, member.assignments);
 
         return result;
     }
@@ -168,6 +148,38 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
             if (p < 0 || p > Short.MAX_VALUE || !Utils.contains(allowedParts, (short)p))
                 throw new IllegalStateException("Invalid partition " + p + " for flush topic [" + flushTopic +
                     "] with allowed partitions: " + Arrays.toString(allowedParts));
+        }
+    }
+
+    static class Member {
+        final String id;
+        final short[] allowedParts; // sorted
+
+        final List<TopicPartition> assignments = new ArrayList<>();
+
+        Member(String id, short[] allowedParts) {
+            this.id = id;
+            this.allowedParts = allowedParts;
+        }
+
+        int assignable(short part, int parts) {
+            if (allowedParts == null)
+                return parts - part;
+
+            int index = Utils.indexOf(allowedParts, part);
+
+            if (index < 0)
+                return 0;
+
+            return allowedParts.length - index;
+        }
+
+        int assignments() {
+            return assignments.size();
+        }
+
+        void assign(TopicPartition part) {
+            assignments.add(part);
         }
     }
 }
