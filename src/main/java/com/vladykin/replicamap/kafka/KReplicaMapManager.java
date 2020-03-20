@@ -500,6 +500,14 @@ public class KReplicaMapManager implements ReplicaMapManager {
         AllowedOnlyFlushPartitionAssignor.setupConsumerConfig(conCfg, allowedPartitions, flushTopic);
     }
 
+    protected <K,V> Producer<K,V> newKafkaProducer(
+        Map<String, Object> proCfg,
+        Serializer<K> keySerializer,
+        Serializer<V> valueSerializer
+    ) {
+        return new KafkaProducer<>(proCfg, keySerializer, valueSerializer);
+    }
+
     protected Producer<Object,Object> newKafkaProducerData(int part) {
         Map<String, Object> proCfg = new TreeMap<>();
 
@@ -507,7 +515,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         configureAllProducers(proCfg);
         configureProducerData(proCfg, part);
 
-        return new KafkaProducer<>(proCfg);
+        return newKafkaProducer(proCfg, null, null);
     }
 
     protected Producer<Object,OpMessage> newKafkaProducerOps() {
@@ -517,7 +525,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         configureAllProducers(proCfg);
         configureProducerOps(proCfg);
 
-        return new KafkaProducer<>(proCfg,
+        return newKafkaProducer(proCfg,
             newKeySerializer(proCfg),
             newOpMessageSerializer(
                 newValueSerializer(proCfg),
@@ -532,10 +540,18 @@ public class KReplicaMapManager implements ReplicaMapManager {
         configureAllProducers(proCfg);
         configureProducerFlush(proCfg);
 
-        return new KafkaProducer<>(proCfg,
+        return newKafkaProducer(proCfg,
             newKeySerializer(proCfg),
             newOpMessageSerializer(
                 newValueSerializer(proCfg), null));
+    }
+
+    protected <K,V> Consumer<K,V> newKafkaConsumer(
+        Map<String, Object> conCfg,
+        Deserializer<K> keyDeserializer,
+        Deserializer<V> valueDeserializer
+    ) {
+        return new KafkaConsumer<>(conCfg, keyDeserializer, valueDeserializer);
     }
 
     protected Consumer<Object,Object> newKafkaConsumerData() {
@@ -545,7 +561,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         configureAllConsumers(conCfg);
         configureConsumerData(conCfg);
 
-        return new KafkaConsumer<>(conCfg);
+        return newKafkaConsumer(conCfg, null, null);
     }
 
     protected Consumer<Object,OpMessage> newKafkaConsumerOps() {
@@ -555,7 +571,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         configureAllConsumers(conCfg);
         configureConsumerOps(conCfg);
 
-        return new KafkaConsumer<>(conCfg,
+        return newKafkaConsumer(conCfg,
             newKeyDeserializer(conCfg),
             newOpMessageDeserializer(
                 newValueDeserializer(conCfg),
@@ -569,7 +585,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         configureAllConsumers(conCfg);
         configureConsumerFlush(conCfg);
 
-        return new KafkaConsumer<>(conCfg,
+        return newKafkaConsumer(conCfg,
             newKeyDeserializer(conCfg),
             newOpMessageDeserializer(
                 newValueDeserializer(conCfg), null));
