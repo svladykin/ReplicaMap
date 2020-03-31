@@ -202,7 +202,19 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                 }
 
                 System.out.println("minMapSize: " + minMapSize + ", maxMapSize: " + maxMapSize);
-                assertTrue(maxMapSize <= threadsCnt); // MAPS_CHECK_PRECONDITION is set to false for that
+                assertTrue(maxMapSize <= threadsCnt, () -> { // MAPS_CHECK_PRECONDITION is set to false for that
+                    StringBuilder sb = new StringBuilder("\n");
+
+                    for (KReplicaMap<Long,Long> m : maps) {
+                        sb.append("\n")
+                          .append(Long.toHexString(m.getManager().clientId))
+                          .append("  ")
+                          .append(m.unwrap().toString());
+                    }
+
+                    sb.append("\n\n");
+                    return sb.toString();
+                });
 
                 awaitEqual(maps, (m1, m2) -> {
                     Iterator<Long> it1 = m1.keySet().iterator();
