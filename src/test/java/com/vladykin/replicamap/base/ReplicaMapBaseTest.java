@@ -259,10 +259,71 @@ class ReplicaMapBaseTest {
         assertEquals(10, maxActiveOps.availablePermits());
     }
 
+    @SuppressWarnings("ConstantConditions")
+    @Test
+    void testDisabledPreconditions() throws ExecutionException, InterruptedException {
+        Queue<TestReplicaMapUpdate<Integer,String>> queue = new ArrayDeque<>();
+        Map<Integer, String> map = new HashMap<>();
+        Semaphore maxActiveOps = new Semaphore(10);
+
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>(
+            'x', map, maxActiveOps, false, Long.MAX_VALUE, TimeUnit.NANOSECONDS
+        ) {
+            @Override
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
+                queue.add(update);
+            }
+
+            @Override
+            protected boolean canSendFunction(BiFunction<?,?,?> function) {
+                return true;
+            }
+        };
+
+        String one = "one";
+        CompletableFuture<String> putFut = rmap.asyncPut(1, one);
+        assertFalse(putFut.isDone());
+        rmap.update(true, queue.poll());
+        assertNull(putFut.get());
+
+        String anotherOne = "ONE".toLowerCase();
+        assertNotSame(one, anotherOne);
+        putFut = rmap.asyncPut(1, anotherOne);
+        assertFalse(putFut.isDone());
+        rmap.update(true, queue.poll());
+        assertSame(one, putFut.get());
+        assertSame(anotherOne, rmap.get(1));
+
+        int queueSize = 0;
+        assertTrue(queue.isEmpty());
+        assertFalse(rmap.asyncPutIfAbsent(1, "two").isDone());
+        assertEquals(++queueSize, queue.size());
+
+        assertFalse(rmap.asyncRemove(1, "two").isDone());
+        assertEquals(++queueSize, queue.size());
+
+        assertFalse(rmap.asyncRemove(2).isDone());
+        assertEquals(++queueSize, queue.size());
+
+        assertFalse(rmap.asyncReplace(2, "two").isDone());
+        assertEquals(++queueSize, queue.size());
+
+        assertFalse(rmap.asyncReplace(1, "two", "five").isDone());
+        assertEquals(++queueSize, queue.size());
+
+        assertFalse(rmap.asyncComputeIfAbsent(1, (k) -> String.valueOf(k + 1)).isDone());
+        assertEquals(++queueSize, queue.size());
+
+        assertFalse(rmap.asyncComputeIfPresent(100, (k, v) -> k + v).isDone());
+        assertEquals(++queueSize, queue.size());
+
+        assertEquals(10 - queueSize, maxActiveOps.availablePermits());
+    }
+
     @Test
     void testSendTimeoutOnAcquirePermit() throws InterruptedException {
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
-            new Semaphore(0), 1, TimeUnit.MILLISECONDS) {
+            new Semaphore(0), true, 1, TimeUnit.MILLISECONDS) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
                 throw new  IllegalStateException();
@@ -367,7 +428,7 @@ class ReplicaMapBaseTest {
     @Test
     void testForwardCompatibility() {
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
-            new Semaphore(10), 1, TimeUnit.MILLISECONDS) {
+            new Semaphore(10), true, 1, TimeUnit.MILLISECONDS) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
                 throw new  IllegalStateException();

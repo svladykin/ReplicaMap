@@ -4,6 +4,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 
 public class TestMap<K,V> implements ReplicaMap<K,V> {
     private Object id;
@@ -129,6 +130,12 @@ public class TestMap<K,V> implements ReplicaMap<K,V> {
             fut.completeExceptionally(e);
         }
         return fut;
+    }
+
+    @Override
+    public CompletableFuture<V> asyncComputeIfAbsent(K key, Function<? super K,? extends V> mappingFunction) {
+        V newValue = mappingFunction.apply(key);
+        return asyncPutIfAbsent(key, newValue).thenApply(v -> v == null ? newValue : v);
     }
 
     @Override

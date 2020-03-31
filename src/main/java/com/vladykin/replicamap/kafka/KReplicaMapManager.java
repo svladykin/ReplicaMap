@@ -75,6 +75,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_SERIALIZER_CLASS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.MAPS_CHECK_PRECONDITION;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.MAPS_HOLDER;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_MAX_PARALLEL;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_SEND_TIMEOUT_MS;
@@ -114,6 +115,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final String flushTopic;
 
     protected final Semaphore opsSemaphore;
+    protected final boolean mapsCheckPrecondition;
     protected final long opsSendTimeout;
     protected final int flushPeriodOps;
     protected final long flushMaxPollTimeout;
@@ -159,6 +161,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         dataTopic = cfg.getString(DATA_TOPIC);
         opsTopic = ifNull(cfg.getString(OPS_TOPIC), dataTopic + DEFAULT_OPS_TOPIC_SUFFIX);
         flushTopic = ifNull(cfg.getString(FLUSH_TOPIC), dataTopic + DEFAULT_FLUSH_TOPIC_SUFFIX);
+
+        mapsCheckPrecondition = cfg.getBoolean(MAPS_CHECK_PRECONDITION);
 
         int maxActiveOps = cfg.getInt(OPS_MAX_PARALLEL);
         checkPositive(maxActiveOps, OPS_MAX_PARALLEL);
@@ -754,9 +758,9 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected <K,V> KReplicaMap<K,V> newReplicaMap(Object mapId, Map<K,V> map) {
         return map instanceof NavigableMap ?
             new KReplicaNavigableMap<>(this, mapId, (NavigableMap<K,V>)map,
-                opsSemaphore, opsSendTimeout, TimeUnit.MILLISECONDS) :
+                opsSemaphore, mapsCheckPrecondition, opsSendTimeout, TimeUnit.MILLISECONDS) :
             new KReplicaMap<>(this, mapId, map,
-                opsSemaphore, opsSendTimeout, TimeUnit.MILLISECONDS);
+                opsSemaphore, mapsCheckPrecondition, opsSendTimeout, TimeUnit.MILLISECONDS);
     }
 
     protected <K,V> ProducerRecord<Object,OpMessage> newOpRecord(

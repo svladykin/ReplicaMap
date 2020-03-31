@@ -117,16 +117,7 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
      * @param mappingFunction Function to compute a value.
      * @return Future.
      */
-    default CompletableFuture<V> asyncComputeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
-        Utils.requireNonNull(mappingFunction, "mappingFunction");
-
-        V oldValue = get(key);
-        if (oldValue != null)
-            return CompletableFuture.completedFuture(oldValue);
-
-        V newValue = mappingFunction.apply(key);
-        return asyncPutIfAbsent(key, newValue).thenApply(v -> v == null ? newValue : v);
-    }
+    CompletableFuture<V> asyncComputeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction);
 
     /**
      * Asynchronous version of {@link Map#computeIfPresent(Object, BiFunction)}.

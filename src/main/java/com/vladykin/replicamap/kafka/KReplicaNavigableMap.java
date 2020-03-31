@@ -16,10 +16,11 @@ public class KReplicaNavigableMap<K,V> extends KReplicaMap<K,V> implements Repli
         Object id,
         NavigableMap<K,V> map,
         Semaphore opsSemaphore,
+        boolean checkPrecondition,
         long sendTimeout,
         TimeUnit timeUnit
     ) {
-        super(mgr, id, map, opsSemaphore, sendTimeout, timeUnit);
+        super(mgr, id, map, opsSemaphore, checkPrecondition, sendTimeout, timeUnit);
     }
 
     @Override

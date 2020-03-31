@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicLongFieldUpdater;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,9 +54,11 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
     public static final byte OP_FLUSH_REQUEST = 'f';
     public static final byte OP_FLUSH_NOTIFICATION = 'F';
 
+    @SuppressWarnings("rawtypes")
     protected static final AtomicReferenceFieldUpdater<ReplicaMapBase, ReplicaMapListener> LISTENER =
         AtomicReferenceFieldUpdater.newUpdater(ReplicaMapBase.class, ReplicaMapListener.class, "listener");
 
+    @SuppressWarnings("rawtypes")
     protected static final AtomicLongFieldUpdater<ReplicaMapBase> LAST_OP_ID =
         AtomicLongFieldUpdater.newUpdater(ReplicaMapBase.class, "lastOpId");
 
@@ -67,13 +70,22 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
     protected final Semaphore opsSemaphore;
     protected final long sendTimeout;
     protected final TimeUnit timeUnit;
+    protected final boolean checkPrecondition;
 
     protected volatile ReplicaMapListener<K,V> listener;
 
-    public ReplicaMapBase(Object id, Map<K,V> map, Semaphore opsSemaphore, long sendTimeout, TimeUnit timeUnit) {
+    public ReplicaMapBase(
+        Object id,
+        Map<K,V> map,
+        Semaphore opsSemaphore,
+        boolean checkPrecondition,
+        long sendTimeout,
+        TimeUnit timeUnit
+    ) {
         this.id = id;
         this.map = Utils.requireNonNull(map, "map");
         this.opsSemaphore = Utils.requireNonNull(opsSemaphore, "opsSemaphore");
+        this.checkPrecondition = checkPrecondition;
         this.sendTimeout = sendTimeout;
         this.timeUnit = Utils.requireNonNull(timeUnit, "timeUnit");
     }
@@ -146,6 +158,21 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
     ) {
         checkCanSendFunction(remappingFunction);
         return new ComputeIfPresent<>(this, key, remappingFunction).start();
+    }
+
+    @Override
+    public CompletableFuture<V> asyncComputeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
+        Utils.requireNonNull(mappingFunction, "mappingFunction");
+
+        if (checkPrecondition) {
+            V oldValue = get(key);
+
+            if (oldValue != null)
+                return CompletableFuture.completedFuture(oldValue);
+        }
+
+        V newValue = mappingFunction.apply(key);
+        return asyncPutIfAbsent(key, newValue).thenApply(v -> v == null ? newValue : v);
     }
 
     @Override
@@ -459,6 +486,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
     }
 
     protected static abstract class AsyncOp<R,K,V> extends CompletableFuture<R> implements FailureCallback {
+        @SuppressWarnings("rawtypes")
         protected static final AtomicReferenceFieldUpdater<AsyncOp, OpState> STATE =
             AtomicReferenceFieldUpdater.newUpdater(AsyncOp.class, OpState.class, "state");
 
@@ -506,17 +534,24 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
             state = STARTING;
 
-            if (checkPrecondition(false) && map.acquirePermit(this))
+            if (doCheckPrecondition(false) && map.acquirePermit(this))
                 tryRun();
 
             return this;
+        }
+
+        protected boolean doCheckPrecondition(boolean releaseOnFail) {
+            if (map.checkPrecondition)
+                return checkPrecondition(releaseOnFail);
+
+            return true;
         }
 
         @SuppressWarnings("unchecked")
         protected void tryRun() {
             map.beforeTryRun(this);
 
-            if (!checkPrecondition(true))
+            if (!doCheckPrecondition(true))
                 return;
 
             // isDone means here that the future was either cancelled or exceptionally completed some other way.

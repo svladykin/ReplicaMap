@@ -13,17 +13,18 @@ public abstract class TestReplicaMapBase<K, V> extends ReplicaMapBase<K, V> {
         Map<K,V> map,
         Semaphore maxActiveOps
     ) {
-        this(id, map, maxActiveOps, Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        this(id, map, maxActiveOps, true, Long.MAX_VALUE, TimeUnit.NANOSECONDS);
     }
 
     public TestReplicaMapBase(
         char id,
         Map<K,V> map,
         Semaphore maxActiveOps,
+        boolean checkPrecondition,
         long sendTimeout,
         TimeUnit timeUnit
     ) {
-        super(id, map, maxActiveOps, sendTimeout, timeUnit);
+        super(id, map, maxActiveOps, checkPrecondition, sendTimeout, timeUnit);
     }
 
     @Override

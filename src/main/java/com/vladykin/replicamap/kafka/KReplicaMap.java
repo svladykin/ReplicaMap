@@ -22,10 +22,11 @@ public class KReplicaMap<K,V> extends ReplicaMapBase<K,V> {
         Object id,
         Map<K,V> map,
         Semaphore opsSemaphore,
+        boolean checkPrecondition,
         long sendTimeout,
         TimeUnit timeUnit
     ) {
-        super(id, map, opsSemaphore, sendTimeout, timeUnit);
+        super(id, map, opsSemaphore, checkPrecondition, sendTimeout, timeUnit);
         this.manager = Utils.requireNonNull(manager, "mgr");
     }
 

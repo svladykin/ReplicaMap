@@ -14,6 +14,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 
 import static java.util.Collections.emptyList;
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
+import static org.apache.kafka.common.config.ConfigDef.Type.BOOLEAN;
 import static org.apache.kafka.common.config.ConfigDef.Type.CLASS;
 import static org.apache.kafka.common.config.ConfigDef.Type.INT;
 import static org.apache.kafka.common.config.ConfigDef.Type.LIST;
@@ -51,6 +52,7 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String FLUSH_MAX_POLL_TIMEOUT_MS = "flush.max.poll.timeout.ms";
     public static final String FLUSH_WORKERS = "flush.workers";
     public static final String MAPS_HOLDER = "maps.holder";
+    public static final String MAPS_CHECK_PRECONDITION = "maps.check.precondition";
 
     // Defaults.
     public static final String DEFAULT_DATA_TOPIC = "replicamap";
@@ -101,6 +103,8 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
             "Set of allowed partition numbers for sharding. By default all the partitions available.")
         .define(ALLOWED_PARTITIONS_RESOLVER, CLASS, null, HIGH,
             "`Supplier<Set<Integer>>` function that resolves the set of allowed partitions.")
+        .define(MAPS_CHECK_PRECONDITION, BOOLEAN, true, HIGH,
+            "If true map will check preconditions locally before sending out any operations. By default is true.")
         ;
 
     public KReplicaMapManagerConfig(Map<?,?> originals) {
