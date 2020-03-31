@@ -5,11 +5,15 @@ import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -33,6 +37,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_SERIALIZER_CLASS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.MAPS_CHECK_PRECONDITION;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.MAPS_HOLDER;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS;
@@ -46,6 +51,7 @@ import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class KReplicaMapManagerMultithreadedWindowTest {
     static final String TOPIC_SUFFIX = "_zzz";
@@ -60,7 +66,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         HashMap<String,Object> cfg = new HashMap<>();
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
 
-        cfg.put(FLUSH_PERIOD_OPS, 20);
+        cfg.put(FLUSH_PERIOD_OPS, 5);
 
         cfg.put(DATA_TOPIC, DATA);
         cfg.put(OPS_TOPIC, OPS);
@@ -77,14 +83,20 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         cfg.put(VALUE_SERIALIZER_CLASS, LongSerializer.class);
         cfg.put(VALUE_DESERIALIZER_CLASS, LongDeserializer.class);
 
+        cfg.put(MAPS_CHECK_PRECONDITION, false);
+
         return cfg;
     }
 
     @Test
     void testMultithreadedSlidingWindowWithRestart() throws Exception {
         int threadsCnt = 31;
-        int managersCnt = 9;
+        int managersCnt = 39;
+        int maxNonStopCnt = 2;
         int parts = 4;
+        int iterations = 10;
+        int updatesPerIteration = 300;
+        int restartPeriod = 100;
 
         createTopics(sharedKafkaTestResource,
             DATA, OPS, FLUSH, parts);
@@ -111,25 +123,33 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         }
         assertEquals(threadsCnt, mgr.getMap().size());
 
+        Random rndx = ThreadLocalRandom.current();
         ExecutorService exec = Executors.newFixedThreadPool(threadsCnt);
 
         try {
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < iterations; i++) {
                 AtomicInteger threadIds = new AtomicInteger();
                 CyclicBarrier start = new CyclicBarrier(threadsCnt);
+
+                int nonStopCnt = rndx.nextInt(1 + maxNonStopCnt);
+                Set<Integer> nonStop = new HashSet<>();
+                for (int k = 0; k < nonStopCnt; k++)
+                    nonStop.add(rndx.nextInt(managersCnt));
+                System.out.println("managersCnt: " + managersCnt + ",  nonStop: " + new TreeSet<>(nonStop));
 
                 CompletableFuture<?> fut = Utils.allOf(executeThreads(threadsCnt, exec, () -> {
                     Random rnd = ThreadLocalRandom.current();
                     int threadId = threadIds.getAndIncrement();
-                    int mgrId = rnd.nextInt(managersCnt);
 
                     start.await();
 
-                    for (int j = 0; j < 500; j++) {
+                    for (int j = 0; j < updatesPerIteration; j++) {
+                        int mgrId = rnd.nextInt(managersCnt);
                         KReplicaMapManager m = managers.get(mgrId, managersFactory);
+
                         try {
-                            // Periodically restart managers, but keep one always running.
-                            if (mgrId != 0 && rnd.nextInt(1000) == 0) {
+                            // Periodically restart managers, but keep some always running.
+                            if (!nonStop.contains(mgrId) && rnd.nextInt(restartPeriod) == 0) {
                                 System.out.println("stopping: " + mgrId + " " +  Long.toHexString(m.clientId));
                                 managers.reset(mgrId, m);
                                 continue;
@@ -158,16 +178,31 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                     return null;
                 }));
 
-                fut.get(300, SECONDS);
+                fut.get(600, SECONDS);
 
                 System.out.println("checking " + i);
+                System.out.println("last keys: " + Arrays.asList(lastAddedKey));
 
                 List<KReplicaMap<Long,Long>> maps = new ArrayList<>();
+                int minMapSize = Integer.MAX_VALUE;
+                int maxMapSize = -1;
 
                 for (int mgrId = 0; mgrId < managersCnt; mgrId++) {
                     KReplicaMapManager m = managers.get(mgrId, managersFactory);
-                    maps.add(m.getMap());
+                    KReplicaMap<Long,Long> map = m.getMap();
+                    maps.add(map);
+
+                    int size = map.size();
+
+                    if (size > maxMapSize)
+                        maxMapSize = size;
+
+                    if (size < minMapSize)
+                        minMapSize = size;
                 }
+
+                System.out.println("minMapSize: " + minMapSize + ", maxMapSize: " + maxMapSize);
+                assertTrue(maxMapSize <= threadsCnt); // MAPS_CHECK_PRECONDITION is set to false for that
 
                 awaitEqual(maps, (m1, m2) -> {
                     Iterator<Long> it1 = m1.keySet().iterator();
@@ -204,9 +239,13 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                 System.out.println("iteration " + i + " OK");
             }
         }
+        catch (Throwable e) {
+            e.printStackTrace();
+            fail(e.toString());
+        }
         finally {
             exec.shutdownNow();
-            assertTrue(exec.awaitTermination(10, SECONDS));
+            assertTrue(exec.awaitTermination(30, SECONDS));
             Utils.close(managers);
         }
     }
