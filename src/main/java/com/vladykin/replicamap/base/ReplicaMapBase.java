@@ -521,7 +521,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
             return STATE.compareAndSet(this, exp, upd);
         }
 
-        protected abstract boolean checkPrecondition(boolean releaseOnFail);
+        protected abstract boolean checkPrecondition();
 
         public AsyncOp<R,K,V> start() {
             try {
@@ -534,24 +534,17 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
             state = STARTING;
 
-            if (doCheckPrecondition(false) && map.acquirePermit(this))
+            if (map.acquirePermit(this))
                 tryRun();
 
             return this;
-        }
-
-        protected boolean doCheckPrecondition(boolean releaseOnFail) {
-            if (map.checkPrecondition)
-                return checkPrecondition(releaseOnFail);
-
-            return true;
         }
 
         @SuppressWarnings("unchecked")
         protected void tryRun() {
             map.beforeTryRun(this);
 
-            if (!doCheckPrecondition(true))
+            if (map.checkPrecondition && !checkPrecondition())
                 return;
 
             // isDone means here that the future was either cancelled or exceptionally completed some other way.
@@ -606,13 +599,13 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
-        protected boolean checkPrecondition(boolean releaseOnFail) {
+        protected boolean checkPrecondition() {
             V v = map.map.get(opKey.key);
 
             if (!upd.equals(v))
                 return true;
 
-            finish(v, null, releaseOnFail);
+            finish(v, null, true);
             return false;
         }
     }
@@ -623,13 +616,13 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
-        protected boolean checkPrecondition(boolean releaseOnFail) {
+        protected boolean checkPrecondition() {
             V v = map.map.get(opKey.key);
 
             if (v == null)
                 return true;
 
-            finish(v, null, releaseOnFail);
+            finish(v, null, true);
             return false;
         }
     }
@@ -643,11 +636,11 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
-        protected boolean checkPrecondition(boolean releaseOnFail) {
+        protected boolean checkPrecondition() {
             if (exp.equals(map.map.get(opKey.key)))
                 return true;
 
-            finish(Boolean.FALSE, null, releaseOnFail);
+            finish(Boolean.FALSE, null, true);
             return false;
         }
     }
@@ -658,11 +651,11 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
-        protected boolean checkPrecondition(boolean releaseOnFail) {
+        protected boolean checkPrecondition() {
             if (map.map.containsKey(opKey.key))
                 return true;
 
-            finish(null, null, releaseOnFail);
+            finish(null, null, true);
             return false;
         }
     }
@@ -673,11 +666,11 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
-        protected boolean checkPrecondition(boolean releaseOnFail) {
+        protected boolean checkPrecondition() {
             if (map.map.containsKey(opKey.key))
                 return true;
 
-            finish(null, null, releaseOnFail);
+            finish(null, null, true);
             return false;
         }
     }
@@ -688,11 +681,11 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
-        protected boolean checkPrecondition(boolean releaseOnFail) {
+        protected boolean checkPrecondition() {
             if (exp.equals(map.map.get(opKey.key)))
                 return true;
 
-            finish(Boolean.FALSE, null, releaseOnFail);
+            finish(Boolean.FALSE, null, true);
             return false;
         }
     }
@@ -708,7 +701,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
-        protected boolean checkPrecondition(boolean releaseOnFail) {
+        protected boolean checkPrecondition() {
             return true;
         }
     }
@@ -724,11 +717,11 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
-        protected boolean checkPrecondition(boolean releaseOnFail) {
+        protected boolean checkPrecondition() {
             if (map.map.containsKey(opKey.key))
                 return true;
 
-            finish(null, null, releaseOnFail);
+            finish(null, null, true);
             return false;
         }
     }
@@ -746,7 +739,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
-        protected boolean checkPrecondition(boolean releaseOnFail) {
+        protected boolean checkPrecondition() {
             return true;
         }
     }
