@@ -107,6 +107,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected static final String SUFFIX = "_replicamap";
 
     protected final long clientId;
+    protected final String clientIdHex;
 
     protected final KReplicaMapManagerConfig cfg;
 
@@ -187,6 +188,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         dataTransactionalId = dataTopic + SUFFIX;
 
         clientId = ifNull(cfg.getLong(CLIENT_ID), this::generateClientId);
+        clientIdHex = Long.toHexString(clientId);
 
         allowedPartitions = resolveAllowedPartitions();
 
@@ -235,7 +237,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
             if (log.isDebugEnabled()) {
                 log.debug("ReplicaMap manager for topics [{}, {}, {}] is created, client id: {}",
-                    dataTopic, opsTopic, flushTopic, Long.toHexString(clientId));
+                    dataTopic, opsTopic, flushTopic, clientIdHex);
             }
         }
         catch (Exception e) {
@@ -657,8 +659,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         if (!casState(NEW, STARTING))
             throw new IllegalStateException("The state is not " + NEW + ", actual state: " + getState());
 
-        log.info("Starting for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic,
-            Long.toHexString(clientId));
+        log.info("Starting for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientIdHex);
 
         for (OpsWorker worker : opsWorkers)
             worker.start();
@@ -671,15 +672,14 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected ReplicaMapManager onWorkersSteady(Void ignore, Throwable ex) {
         if (ex == null && casState(STARTING, RUNNING)) {
-            log.info("Started for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic,
-                Long.toHexString(clientId));
+            log.info("Started for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientIdHex);
 
             return this;
         }
 
         Utils.close(this);
         throw new ReplicaMapException("Failed to start for topics [" +
-            dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + Long.toHexString(clientId), ex);
+            dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + clientIdHex, ex);
     }
 
     @Override
@@ -717,7 +717,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         }
 
         log.info("Stopping for topics [{}, {}, {}], client id {}",
-            dataTopic, opsTopic, flushTopic, Long.toHexString(clientId));
+            dataTopic, opsTopic, flushTopic, clientIdHex);
 
         try {
             doStop();
@@ -728,11 +728,10 @@ public class KReplicaMapManager implements ReplicaMapManager {
             stoppedFut.completeExceptionally(e);
 
             throw new ReplicaMapException("Failed to stop for topics [" +
-                dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + Long.toHexString(clientId), e);
+                dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + clientIdHex, e);
         }
 
-        log.info("Stopped for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic,
-            Long.toHexString(clientId));
+        log.info("Stopped for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientIdHex);
     }
 
     protected void doStop() {
@@ -831,7 +830,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     @Override
     public String toString() {
         return "KReplicaMapManager{" +
-            "clientId=" + Long.toHexString(clientId) +
+            "clientId=" + clientIdHex +
             ", dataTopic='" + dataTopic + '\'' +
             ", opsTopic='" + opsTopic + '\'' +
             ", flushTopic='" + flushTopic + '\'' +
