@@ -91,6 +91,7 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.generateUniqueNodeId
 import static com.vladykin.replicamap.kafka.impl.util.Utils.getMacAddresses;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.parseIntSet;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -792,12 +793,30 @@ public class KReplicaMapManager implements ReplicaMapManager {
                 (char)updateType, maps.getMapId(key), opsTopic, key, exp, upd);
         }
 
-        opsProducer.send(newOpRecord(map, opId, updateType, key, exp, upd, function), onSendFailed);
+        opsProducer.send(newOpRecord(map, opId, updateType, key, exp, upd, function), (meta, err) -> {
+            if (err == null && meta != null)
+                trace.trace("sendUpdate {} offset={}, key={}, val={}", clientIdHex, meta.offset(), key, upd);
+
+            onSendFailed.onCompletion(meta, err);
+        });
     }
 
-    protected <K,V> boolean applyReceivedUpdate(long clientId, long opId, byte updateType, K key, V exp, V upd,
-        BiFunction<?,?,?> function, Box<V> updatedValueBox
+    protected <K,V> boolean applyReceivedUpdate(
+        String topic,
+        int part,
+        long offset,
+        long clientId,
+        long opId,
+        byte updateType,
+        K key,
+        V exp,
+        V upd,
+        BiFunction<?,?,?> function,
+        Box<V> updatedValueBox
     ) {
+        trace.trace("applyReceivedUpdate {} offset={}, key={}, val={}",
+            new TopicPartition(topic, part), offset, key, upd);
+
         Object mapId = maps.getMapId(key);
 
         if (log.isTraceEnabled()) {

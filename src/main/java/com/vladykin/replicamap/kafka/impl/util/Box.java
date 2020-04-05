@@ -32,4 +32,11 @@ public class Box<X> implements Supplier<X>, Consumer<X> {
     public void accept(X x) {
         set(x);
     }
+
+    @Override
+    public String toString() {
+        return "Box{" +
+            "value=" + value +
+            '}';
+    }
 }

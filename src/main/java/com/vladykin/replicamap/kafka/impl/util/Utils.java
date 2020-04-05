@@ -37,6 +37,8 @@ import static java.util.Collections.singleton;
  * @author Sergi Vladykin http://vladykin.com
  */
 public final class Utils {
+    public static final Logger trace = LoggerFactory.getLogger(Utils.class.getName() + ".trace");
+
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
 
     private static final Duration[] SECONDS = new Duration[1000];

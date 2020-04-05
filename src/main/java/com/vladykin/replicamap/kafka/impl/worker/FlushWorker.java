@@ -2,10 +2,10 @@ package com.vladykin.replicamap.kafka.impl.worker;
 
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
-import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.FlushQueue;
-import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.UnprocessedFlushRequests;
+import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
+import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Collection;
 import java.util.HashMap;
@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
@@ -447,10 +448,20 @@ public class FlushWorker extends Worker implements AutoCloseable {
         dataProducer.beginTransaction();
         for (Map.Entry<Object,Object> entry : dataBatch.entrySet()) {
             lastDataRecMetaFut = dataProducer.send(new ProducerRecord<>(
-                dataTopic, part, entry.getKey(), entry.getValue()));
+                dataTopic, part, entry.getKey(), entry.getValue())
+                , (meta, err) -> {
+                    if (err == null && meta != null) {
+                        trace.trace("flushTx pre offset={}, key={}, val={}",
+                            meta.offset(), entry.getKey(), entry.getValue());
+                    }
+                }
+            );
         }
         dataProducer.sendOffsetsToTransaction(singletonMap(flushPart, flushConsumerOffset), flushConsumerGroupId);
         dataProducer.commitTransaction();
+
+        for (Map.Entry<Object,Object> entry : dataBatch.entrySet())
+            trace.trace("flushTx OK key={}, val={}", entry.getKey(), entry.getValue());
 
         // We check that the batch is not empty, thus we have to have the last record non-null here.
         // Since ReplicaMap checks preconditions locally before sending anything to Kafka,

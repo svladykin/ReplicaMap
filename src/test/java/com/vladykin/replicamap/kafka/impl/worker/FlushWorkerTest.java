@@ -109,13 +109,13 @@ class FlushWorkerTest {
     void testProcessCleanRequests() {
         FlushQueue flushQueue = flushQueues.get(0);
 
-        flushQueue.add(null, null, 100, true, false);
-        flushQueue.add(null, null, 101, true, false);
-        flushQueue.add(null, null, 102, true, false);
-        flushQueue.add(null, null, 103, true, false);
-        flushQueue.add(null, null, 104, true, false);
-        flushQueue.add(null, null, 105, true, false);
-        flushQueue.add(null, null, 106, true, false);
+        flushQueue.add(1, null, 100, false);
+        flushQueue.add(2, null, 101, false);
+        flushQueue.add(3, null, 102, false);
+        flushQueue.add(4, null, 103, false);
+        flushQueue.add(5, null, 104, false);
+        flushQueue.add(6, null, 105, false);
+        flushQueue.add(7, null, 106, false);
 
         assertEquals(7, flushQueue.size());
 
@@ -177,11 +177,11 @@ class FlushWorkerTest {
 
         FlushQueue flushQueue = flushQueues.get(0);
 
-        flushQueue.add("a", "a", 98, true, true);
-        flushQueue.add("b", "b", 99, true, true);
-        flushQueue.add("a", "x", 100, true, true);
-        flushQueue.add("b", "y", 101, true, true);
-        flushQueue.add("a", "z", 102, true, true);
+        flushQueue.add("a", "a", 98, true);
+        flushQueue.add("b", "b", 99, true);
+        flushQueue.add("a", "x", 100, true);
+        flushQueue.add("b", "y", 101, true);
+        flushQueue.add("a", "z", 102, true);
 
         assertEquals(5, flushQueue.size());
 

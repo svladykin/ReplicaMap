@@ -30,10 +30,12 @@ import static com.vladykin.replicamap.base.ReplicaMapBase.OP_PUT;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_REMOVE_ANY;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.Collections.singleton;
 
 /**
- * Polls the `ops` topic and applies the updates to the inner map.
+ * Loads the initial state from the `data` topic and then
+ * polls the `ops` topic and applies the updates to the inner map.
  *
  * @author Sergi Vladykin http://vladykin.com
  */
@@ -125,6 +127,8 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
                     loadDataForPartition(dataPart, flushOffsetData, pollTimeout);
                     lastFlushNotifications.put(opsPart, op);
+
+                    trace.trace("last {} : {}", opsPart, lastFlushRec);
                 }
                 else
                     log.debug("Flush record does not exist for partition {}", opsPart);
@@ -148,7 +152,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         int loadedRecsCnt = 0;
         long lastRecOffset = -1;
 
-        Map<Object,Object> loadedData = log.isTraceEnabled() ? new HashMap<>() : null;
+        Map<Object,Object> loadedData = new HashMap<>(); // log.isTraceEnabled() ? new HashMap<>() : null;
 
         outer: for (;;) {
             ConsumerRecords<Object,Object> recs = dataConsumer.poll(pollTimeout);
@@ -157,9 +161,9 @@ public class OpsWorker extends Worker implements AutoCloseable {
                 long endOffsetData = Utils.endOffset(dataConsumer, dataPart);
 
                 if (log.isDebugEnabled()) {
-                    log.debug( "Empty records while loading data for partition {}, endOffsetData: {}, " +
-                            "flushOffsetData: {}, loadedRecs: {}, lastRecOffset: {}",
-                        dataPart, endOffsetData, flushOffsetData, loadedRecsCnt, lastRecOffset);
+                    log.debug("Empty records while loading data for partition {}, endOffsetData: {}, " +
+                                "flushOffsetData: {}, loadedRecs: {}, lastRecOffset: {}",
+                                dataPart, endOffsetData, flushOffsetData, loadedRecsCnt, lastRecOffset);
                 }
 
                 if (endOffsetData <= flushOffsetData) { // flushOffsetData is inclusive, endOffsetData is exclusive
@@ -194,6 +198,9 @@ public class OpsWorker extends Worker implements AutoCloseable {
         if (log.isDebugEnabled())
             log.debug("Loaded {} data records for partition {}: {}", loadedRecsCnt, dataPart, loadedData);
 
+        for (Map.Entry<Object,Object> entry : loadedData.entrySet())
+            trace.trace("loadDataForPartition {} key={}, val={}", dataPart, entry.getKey(), entry.getValue());
+
         return loadedRecsCnt;
     }
 
@@ -214,7 +221,8 @@ public class OpsWorker extends Worker implements AutoCloseable {
         Object val = dataRec.value();
         byte opType = val == null ? OP_REMOVE_ANY : OP_PUT;
 
-        updateHandler.applyReceivedUpdate(0L, 0L, opType, key, null, val, null, null);
+        updateHandler.applyReceivedUpdate(dataRec.topic(), dataRec.partition(), dataRec.offset(),
+            0L, 0L, opType, key, null, val, null, null);
     }
 
     protected void applyOpsTopicRecords(TopicPartition opsPart, List<ConsumerRecord<Object,OpMessage>> partRecs) {
@@ -255,6 +263,9 @@ public class OpsWorker extends Worker implements AutoCloseable {
             }
             else {
                 updated = updateHandler.applyReceivedUpdate(
+                    rec.topic(),
+                    rec.partition(),
+                    rec.offset(),
                     opClientId,
                     op.getOpId(),
                     opType,
@@ -263,13 +274,15 @@ public class OpsWorker extends Worker implements AutoCloseable {
                     op.getUpdatedValue(),
                     op.getFunction(),
                     updatedValueBox);
+
+                trace.trace("applyOpsTopicRecords updated={}, needFlush={}, key={}, val={}",
+                    updated, needFlush, key, updatedValueBox.get());
             }
 
             flushQueue.add(
-                key,
+                updated ? key : null,
                 updatedValueBox.get(),
                 rec.offset(),
-                updated,
                 needClean || needFlush || i == lastIndex);
 
             if (needFlush) {
@@ -399,6 +412,8 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
             if (log.isDebugEnabled())
                 log.debug("Seek ops consumer to {} for partition {}", offset, part);
+
+            trace.trace("seek offset={}, part={}", offset, part);
 
             opsConsumer.seek(part, offset);
 

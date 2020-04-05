@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FlushQueueTest {
@@ -28,7 +29,7 @@ class FlushQueueTest {
         assertEquals(-1, q.maxAddOffset);
         assertEquals(0, q.queue.size());
 
-        q.add(null,null, 0, true, false);
+        q.add(1,null, 0, false);
 
         assertEquals(-1, q.maxCleanOffset);
         assertEquals(0, q.maxAddOffset);
@@ -50,28 +51,28 @@ class FlushQueueTest {
         assertEquals(0, q.maxAddOffset);
         assertEquals(0, q.queue.size());
 
-        q.add(1,null, 1, true, false);
-        q.add(2,null, 2, true, false);
-        q.add(3,null, 3, true, false);
-        q.add(4,null, 4, true, false);
+        q.add(1,null, 1, false);
+        q.add(2,null, 2, false);
+        q.add(3,null, 3, false);
+        q.add(4,null, 4, false);
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(4, q.maxAddOffset);
         assertEquals(4, q.queue.size());
 
-        q.add(5,null, 5, false, false);
+        q.add(null,null, 5, false);
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(5, q.maxAddOffset);
         assertEquals(4, q.queue.size());
 
-        q.add(6,null, 6, false, false);
+        q.add(null,null, 6, false);
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(6, q.maxAddOffset);
         assertEquals(4, q.queue.size());
 
-        q.add(7,null, 7, true, false);
+        q.add(7,null, 7, false);
 
         assertEquals(0, q.maxCleanOffset);
         assertEquals(7, q.maxAddOffset);
@@ -94,22 +95,23 @@ class FlushQueueTest {
         assertEquals(7, q.maxAddOffset);
         assertEquals(0, q.queue.size());
 
-        q.add(8,null, 7, true, true);
+        assertThrows(IllegalStateException.class, () ->
+            q.add(8,null, 7, true));
 
         assertEquals(7, q.maxCleanOffset);
         assertEquals(7, q.maxAddOffset);
         assertEquals(0, q.queue.size());
 
-        q.add(9,null, 9, true, true);
+        q.add(9,null, 8, true);
 
         assertEquals(7, q.maxCleanOffset);
-        assertEquals(9, q.maxAddOffset);
+        assertEquals(8, q.maxAddOffset);
         assertEquals(1, q.queue.size());
 
          q.clean(6, "");
 
         assertEquals(7, q.maxCleanOffset);
-        assertEquals(9, q.maxAddOffset);
+        assertEquals(8, q.maxAddOffset);
         assertEquals(1, q.queue.size());
 
         System.out.println(q);
@@ -131,9 +133,9 @@ class FlushQueueTest {
 
         q.lock.acquireUninterruptibly();
 
-        q.add(null,null, 1, true, false);
-        q.add(null,null, 2, true, false);
-        q.add(null,null, 3, true, false);
+        q.add(1,null, 1, false);
+        q.add(1,null, 2, false);
+        q.add(1,null, 3, false);
 
         assertEquals(-1, q.maxCleanOffset);
         assertEquals(-1, q.maxAddOffset);
@@ -141,7 +143,7 @@ class FlushQueueTest {
 
         q.lock.release();
 
-        q.add(null,null, 4, true, true);
+        q.add(1,null, 4, true);
 
         assertEquals(-1, q.maxCleanOffset);
         assertEquals(4, q.maxAddOffset);
@@ -173,7 +175,7 @@ class FlushQueueTest {
                         boolean update = i == cnt || rnd.nextInt(10) == 0;
                         boolean waitLock = i == cnt || rnd.nextInt(20) == 0;
 
-                        q.add(null,null, lastAddedOffset.incrementAndGet(), update, waitLock);
+                        q.add(update ? i : null,null, lastAddedOffset.incrementAndGet(), waitLock);
 
                         allAddedCnt.incrementAndGet();
                     }

@@ -60,49 +60,53 @@ public class FlushQueue {
     }
 
     /**
-     * @param key Key.
+     * @param key Key or {@code null} if it is not an update or unsuccessful update attempt.
      * @param value Value.
      * @param offset Offset.
-     * @param update If {@code true} then it was a successful map update,
-     *               if {@code false} the it was a failed attempt or a flush record.
      * @param waitLock If {@code true} then current thread will wait for the lock acquisition,
      *                 if {@code false} and lock acquisition failed, then operation is allowed
      *                 to store the record into thread local buffer.
      */
-    public void add(Object key, Object value, long offset, boolean update, boolean waitLock) {
+    public void add(Object key, Object value, long offset, boolean waitLock) {
         ArrayDeque<MiniRecord> tlq = threadLocalQueue.get();
 
-        if (lock(waitLock)) {
-            try {
-                for (;;) {
-                    MiniRecord r = tlq.poll();
-
-                    if (r == null)
-                        break;
-
-                    if (isOverMaxOffset(r, maxAddOffset))
-                        addRecord(r);
-                }
-
-                if (offset > maxAddOffset) {
-                    if (log.isTraceEnabled())
-                        log.trace("For partition {} add maxAddOffset: {} -> {}", dataPart, maxAddOffset, offset);
-
-                    maxAddOffset = offset;
-
-                    if (update)
-                        addRecord(new MiniRecord(key, value, offset));
-                }
-            }
-            finally {
-                lock.release();
-            }
-        }
-        else if (update)
+        if (!lock(waitLock)) {
             tlq.add(new MiniRecord(key, value, offset));
+            return;
+        }
+
+        try {
+            for (;;) {
+                MiniRecord r = tlq.poll();
+
+                if (r == null)
+                    break;
+
+                addRecord(r);
+            }
+
+            addRecord(new MiniRecord(key, value, offset));
+        }
+        finally {
+            lock.release();
+        }
     }
 
     protected void addRecord(MiniRecord rec) {
+        if (maxAddOffset == -1)
+            maxAddOffset = rec.offset();
+        else {
+            long nextOffset = maxAddOffset + 1;
+
+            if (nextOffset != rec.offset()) // check that we do not miss any records
+                throw new IllegalStateException("Expected record offset " + nextOffset + ", actual " + rec.offset());
+
+            maxAddOffset = nextOffset;
+        }
+
+        if (rec.key() == null) // non-update record
+            return;
+
         if (log.isTraceEnabled())
             log.trace("For partition {} add record: {}", dataPart, rec);
 

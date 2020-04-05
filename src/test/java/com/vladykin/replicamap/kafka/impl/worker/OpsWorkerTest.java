@@ -99,7 +99,8 @@ class OpsWorkerTest {
         );
     }
 
-    protected <K, V> boolean applyReceivedUpdate(long clientId, long opId, byte updateType, K key, V exp, V upd,
+    protected <K, V> boolean applyReceivedUpdate(String topic, int part, long offset,
+        long clientId, long opId, byte updateType, K key, V exp, V upd,
         BiFunction<?,?,?> function, Box<V> updatedValueBox) {
         appliedUpdates.incrementAndGet();
         return true;
