@@ -35,10 +35,10 @@ class FlushQueueTest {
         assertEquals(0, q.maxAddOffset);
         assertEquals(1, q.queue.size());
 
-        FlushQueue.Batch batch = q.collect(iterator(1));
+        FlushQueue.Batch batch = q.collect(stream(1));
         assertNull(batch);
 
-        batch = q.collect(iterator(0));
+        batch = q.collect(stream(0));
         int collectedAll = batch.getCollectedAll();
 
         assertEquals(1, q.size());
@@ -78,7 +78,7 @@ class FlushQueueTest {
         assertEquals(7, q.maxAddOffset);
         assertEquals(5, q.queue.size());
 
-        batch = q.collect(iterator(7));
+        batch = q.collect(stream(7));
         collectedAll = batch.getCollectedAll();
 
         assertEquals(7, collectedAll);
@@ -123,7 +123,7 @@ class FlushQueueTest {
         assertEquals(0, q.queue.size());
     }
 
-    LongStream iterator(long... x) {
+    LongStream stream(long... x) {
         return LongStream.of(x);
     }
 
@@ -157,7 +157,6 @@ class FlushQueueTest {
         try {
             AtomicLong allAddedCnt = new AtomicLong();
             AtomicLong allCleanedCnt = new AtomicLong();
-
             AtomicLong lastAddedOffset = new AtomicLong(-1);
 
             FlushQueue q = new FlushQueue(null);
@@ -187,7 +186,7 @@ class FlushQueueTest {
                     start.await();
 
                     while (!addFut.isDone() || q.size() > 0) {
-                        FlushQueue.Batch batch = q.collect(iterator(lastAddedOffset.get()));
+                        FlushQueue.Batch batch = q.collect(stream(lastAddedOffset.get()));
 
                         if (batch == null)
                             continue;
