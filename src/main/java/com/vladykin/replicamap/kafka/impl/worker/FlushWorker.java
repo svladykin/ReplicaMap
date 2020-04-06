@@ -269,11 +269,15 @@ public class FlushWorker extends Worker implements AutoCloseable {
         if (flushReqs == null) {
             // Load flush history and clean the flushQueue until the max committed historical offset,
             // after that FlushQueue will not accept outdated records.
+            long firstRecOffset = partRecs.get(0).offset();
             ConsumerRecord<Object,OpMessage> maxCommittedFlushReq =
-                loadMaxCommittedFlushRequest(flushConsumer, flushPart, partRecs.get(0).offset());
+                loadMaxCommittedFlushRequest(flushConsumer, flushPart, firstRecOffset);
 
             long maxFlushOffsetOps = -1L;
             if (maxCommittedFlushReq != null) {
+                trace.trace("{} firstRecOffset={}, maxCommittedFlushReq={}",
+                    flushPart, firstRecOffset, maxCommittedFlushReq);
+
                 maxFlushOffsetOps = maxCommittedFlushReq.value().getFlushOffsetOps();
                 flushQueues.get(flushPart.partition()).clean(maxFlushOffsetOps, "maxHistory");
             }
@@ -364,7 +368,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
         log.debug("Processing flush requests for partition {}: {}", dataPart, flushReqs);
 
-        flushQueue.clean(flushReqs.getMaxCleanOffsetOps(), "flushPartition begin");
+        flushQueue.clean(flushReqs.getMaxCleanOffsetOps(), "flushPartitionBegin");
         FlushQueue.Batch dataBatch = flushQueue.collect(flushReqs.getFlushOffsetOpsStream());
 
         if (dataBatch == null || dataBatch.isEmpty()) {
@@ -422,7 +426,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
         clearUnprocessedFlushRequestsUntil(flushPart, flushOffsetOps);
 
-        if (flushQueue.clean(flushOffsetOps, "flushPartition end") > 0) {
+        if (flushQueue.clean(flushOffsetOps, "flushPartitionEnd") > 0) {
             sendFlushNotification(dataPart, flushOffsetData, flushOffsetOps);
 
             if (log.isDebugEnabled()) {
