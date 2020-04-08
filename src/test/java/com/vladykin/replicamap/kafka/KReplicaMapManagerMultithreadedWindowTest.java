@@ -66,7 +66,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         HashMap<String,Object> cfg = new HashMap<>();
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
 
-        cfg.put(FLUSH_PERIOD_OPS, 5);
+        cfg.put(FLUSH_PERIOD_OPS, 3);
 
         cfg.put(DATA_TOPIC, DATA);
         cfg.put(OPS_TOPIC, OPS);
