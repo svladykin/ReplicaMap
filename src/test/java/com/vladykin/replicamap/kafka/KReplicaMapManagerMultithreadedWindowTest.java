@@ -90,13 +90,13 @@ public class KReplicaMapManagerMultithreadedWindowTest {
 
     @Test
     void testMultithreadedSlidingWindowWithRestart() throws Exception {
-        int threadsCnt = 31;
-        int managersCnt = 39;
+        int threadsCnt = 11;
+        int managersCnt = 19;
         int maxNonStopCnt = 2;
         int parts = 4;
-        int iterations = 10;
-        int updatesPerIteration = 300;
-        int restartPeriod = 100;
+        int iterations = 5;
+        int updatesPerIteration = 200;
+        int restartPeriod = 50;
 
         createTopics(sharedKafkaTestResource,
             DATA, OPS, FLUSH, parts);
