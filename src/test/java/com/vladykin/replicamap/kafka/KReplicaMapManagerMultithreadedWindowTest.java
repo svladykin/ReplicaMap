@@ -94,7 +94,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         int managersCnt = 39;
         int maxNonStopCnt = 2;
         int parts = 4;
-        int iterations = 1000;
+        int iterations = 10;
         int updatesPerIteration = 300;
         int restartPeriod = 100;
 
