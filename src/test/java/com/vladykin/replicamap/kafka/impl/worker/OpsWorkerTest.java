@@ -1,9 +1,9 @@
 package com.vladykin.replicamap.kafka.impl.worker;
 
+import com.vladykin.replicamap.kafka.impl.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Box;
-import com.vladykin.replicamap.kafka.impl.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.time.Duration;
 import java.util.List;
@@ -329,22 +329,30 @@ class OpsWorkerTest {
         assertFalse(opsWorker.processOpsRecords(new ConsumerRecords<>(emptyMap())));
 
         assertFalse(opsWorker.processOpsRecords(new ConsumerRecords<>(singletonMap(opsPart, asList(
-            newPutRecord(CLIENT1_ID, 70),
-            newPutRecord(CLIENT2_ID, 71)
+            newPutRecord(CLIENT2_ID, 52),
+            newPutRecord(CLIENT2_ID, 53),
+            newPutRecord(CLIENT2_ID, 54),
+            newPutRecord(CLIENT2_ID, 55),
+            newPutRecord(CLIENT2_ID, 56),
+            newPutRecord(CLIENT2_ID, 57),
+            newPutRecord(CLIENT2_ID, 58),
+            newPutRecord(CLIENT2_ID, 59),
+            newPutRecord(CLIENT1_ID, 60),
+            newPutRecord(CLIENT1_ID, 61)
         )))));
 
-        assertEquals(4, appliedUpdates.get());
+        assertEquals(12, appliedUpdates.get());
 
-        List<ProducerRecord<Object,OpMessage>> flush = flushProducer.history();
-        assertEquals(1, flush.size());
+        List<ProducerRecord<Object,OpMessage>> flushHistory = flushProducer.history();
+        assertEquals(1, flushHistory.size());
 
-        ProducerRecord<Object,OpMessage> prepFlushReqRec = flush.get(0);
+        ProducerRecord<Object,OpMessage> prepFlushReqRec = flushHistory.get(0);
         assertNull(prepFlushReqRec.key());
 
         OpMessage flushReqOp = prepFlushReqRec.value();
         assertEquals(OP_FLUSH_REQUEST, flushReqOp.getOpType());
         assertEquals(CLIENT1_ID, flushReqOp.getClientId());
-        assertEquals(70, flushReqOp.getFlushOffsetOps());
+        assertEquals(60, flushReqOp.getFlushOffsetOps());
     }
 
     @Test
