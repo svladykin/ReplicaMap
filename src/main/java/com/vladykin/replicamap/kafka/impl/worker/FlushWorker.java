@@ -222,7 +222,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             // Add new records to unprocessed set and load history if it is the first flush for the partition.
             for (TopicPartition flushPart : recs.partitions()) {
                 // Ignore disallowed partitions, they usually should not come except the mixed ReplicaMap versions case.
-                if (allowedPartitions == null || Utils.contains(allowedPartitions, (short)flushPart.partition()))
+                if (isAllowedPartition(flushPart))
                     collectUnprocessedFlushRequests(flushConsumer, flushPart, recs.records(flushPart));
             }
         }
@@ -241,6 +241,10 @@ public class FlushWorker extends Worker implements AutoCloseable {
              flushed |= flushPartition(flushConsumer, entry.getKey(), entry.getValue());
 
         return flushed;
+    }
+
+    protected boolean isAllowedPartition(TopicPartition part) {
+        return allowedPartitions == null || Utils.contains(allowedPartitions, (short)part.partition());
     }
 
     protected void initFlushConsumerOffset(
@@ -345,8 +349,17 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
         log.debug("Found max history flush request for partition {}: {}", flushPart, max);
 
-        if (max == null)
-            throw new ReplicaMapException("Committed flush requests lost before offset: " + firstFlushReqOffset);
+        if (max == null) {
+            throw new ReplicaMapException("Committed flush requests lost before offset: " + firstFlushReqOffset +
+                ", check flush topic retention settings: " + flushTopic);
+        }
+
+        // Sometimes this happens because Kafka does not fetch correctly the previous record for some reason.
+        // This is not a critical error, we just reset and try again.
+        if (max.offset() >= firstFlushReqOffset) {
+            throw new ReplicaMapException("Committed flush requests lost before offset: " + firstFlushReqOffset +
+                ", found record: " + max);
+        }
 
         flushConsumer.seek(flushPart, currentPosition);
 
@@ -449,23 +462,22 @@ public class FlushWorker extends Worker implements AutoCloseable {
         int part = flushPart.partition();
         Future<RecordMetadata> lastDataRecMetaFut = null;
 
+        Map<Object,Future<RecordMetadata>> futs = new HashMap<>();
+
         dataProducer.beginTransaction();
         for (Map.Entry<Object,Object> entry : dataBatch.entrySet()) {
             lastDataRecMetaFut = dataProducer.send(new ProducerRecord<>(
-                dataTopic, part, entry.getKey(), entry.getValue())
-                , (meta, err) -> {
-                    if (err == null && meta != null) {
-                        trace.trace("flushTx pre offset={}, key={}, val={}",
-                            meta.offset(), entry.getKey(), entry.getValue());
-                    }
-                }
-            );
+                dataTopic, part, entry.getKey(), entry.getValue()));
+
+            futs.put(entry.getKey(), lastDataRecMetaFut);
         }
         dataProducer.sendOffsetsToTransaction(singletonMap(flushPart, flushConsumerOffset), flushConsumerGroupId);
         dataProducer.commitTransaction();
 
         for (Map.Entry<Object,Object> entry : dataBatch.entrySet())
-            trace.trace("flushTx OK key={}, val={}", entry.getKey(), entry.getValue());
+            trace.trace("flushTx {} minOffset={}, maxOffset={}, maxCleanOffset={}, dataOffset={}, key={}, val={}",
+                flushPart, dataBatch.getMinOffset(), dataBatch.getMaxOffset(), dataBatch.getMaxCleanOffset(),
+                futs.get(entry.getKey()).get().offset(), entry.getKey(), entry.getValue());
 
         // We check that the batch is not empty, thus we have to have the last record non-null here.
         // Since ReplicaMap checks preconditions locally before sending anything to Kafka,

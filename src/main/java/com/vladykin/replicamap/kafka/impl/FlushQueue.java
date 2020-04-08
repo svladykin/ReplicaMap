@@ -132,6 +132,9 @@ public class FlushQueue {
     public Batch collect(LongStream maxOffsets) {
         lock.acquireUninterruptibly();
         try {
+            if (queue.isEmpty())
+                return null;
+
             OptionalLong maxOffsetOptional = maxOffsets
                 .filter(offset -> offset <= maxAddOffset)
                 .max();
@@ -140,7 +143,12 @@ public class FlushQueue {
                 return null;
 
             long maxOffset = maxOffsetOptional.getAsLong();
-            Batch dataBatch = new Batch(maxOffset, maxCleanOffset);
+            long minOffset = queue.peek().offset();
+
+            if (minOffset > maxOffset)
+                return null;
+
+            Batch dataBatch = new Batch(minOffset, maxOffset, maxCleanOffset);
 
             for (MiniRecord rec : queue) {
                 if (isOverMaxOffset(rec, maxOffset))
@@ -206,27 +214,39 @@ public class FlushQueue {
     }
 
     public static class Batch extends HashMap<Object,Object> {
+        protected final long minOffset;
         protected final long maxOffset;
-        protected final int collectedAll;
+        protected final long maxCleanOffset;
 
-        public Batch(long maxOffset, long maxCleanOffset) {
+        public Batch(long minOffset, long maxOffset, long maxCleanOffset) {
+            this.minOffset = minOffset;
             this.maxOffset = maxOffset;
-            this.collectedAll = (int)Math.max(0, maxOffset - maxCleanOffset);
+            this.maxCleanOffset = maxCleanOffset;
         }
 
         public int getCollectedAll() {
-            return collectedAll;
+            return (int)Math.max(0, maxOffset - maxCleanOffset);
+        }
+
+        public long getMinOffset() {
+            return minOffset;
         }
 
         public long getMaxOffset() {
             return maxOffset;
         }
 
+        public long getMaxCleanOffset() {
+            return maxCleanOffset;
+        }
+
         @Override
         public String toString() {
             return "Batch{" +
-                "maxOffset=" + maxOffset +
-                ", collectedAll=" + collectedAll +
+                "minOffset=" + minOffset +
+                ", maxOffset=" + maxOffset +
+                ", maxCleanOffset=" + maxCleanOffset +
+                ", collectedAll=" + getCollectedAll() +
                 ", size=" + size() +
                 ", map=" + super.toString() +
                 '}';
