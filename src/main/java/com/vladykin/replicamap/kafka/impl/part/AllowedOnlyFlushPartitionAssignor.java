@@ -63,16 +63,17 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
             allowedPartsBytes = Utils.serializeShortArray(allowedParts).array();
     }
 
-    @Override
+//    @Override 2.3.1
     public Subscription subscription(Set<String> topics) {
+        return new Subscription(new ArrayList<>(topics), subscriptionUserData(topics));
+    }
+
+//    @Override 2.4.1
+    public ByteBuffer subscriptionUserData(Set<String> topics) {
         if (topics.size() != 1 || !topics.contains(flushTopic))
             throw new IllegalStateException("Expected flush topic: " + flushTopic + ", actual: " + topics);
 
-        List<String> topicsList = new ArrayList<>(topics);
-
-        return allowedPartsBytes == null ?
-            new Subscription(topicsList) :
-            new Subscription(topicsList, ByteBuffer.wrap(allowedPartsBytes));
+        return allowedPartsBytes == null ? null : ByteBuffer.wrap(allowedPartsBytes);
     }
 
     @Override
@@ -125,30 +126,6 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
             result.put(member.id, member.assignments);
 
         return result;
-    }
-
-    @Override
-    public void onAssignment(Assignment assignment) {
-        super.onAssignment(assignment);
-
-        List<TopicPartition> parts = assignment.partitions();
-
-        if (parts == null || parts.isEmpty())
-            return;
-
-        for (TopicPartition part : parts) { // check that assigned partitions are valid
-            if (!flushTopic.equals(part.topic()))
-                throw new IllegalStateException("Expected flush topic: " + flushTopic + ", actual: " + part.topic());
-
-            if (allowedParts == null)
-                continue;
-
-            int p = part.partition();
-
-            if (p < 0 || p > Short.MAX_VALUE || !Utils.contains(allowedParts, (short)p))
-                throw new IllegalStateException("Invalid partition " + p + " for flush topic [" + flushTopic +
-                    "] with allowed partitions: " + Arrays.toString(allowedParts));
-        }
     }
 
     static class Member {

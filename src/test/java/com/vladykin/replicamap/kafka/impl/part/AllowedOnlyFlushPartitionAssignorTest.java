@@ -1,5 +1,6 @@
 package com.vladykin.replicamap.kafka.impl.part;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -7,7 +8,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.apache.kafka.clients.consumer.internals.PartitionAssignor;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
@@ -20,7 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AllowedOnlyFlushPartitionAssignorTest {
 
     private static final String TOPIC = "testFlushTopic";
-    private static final Set<String> TOPICS = Collections.singleton(TOPIC);
+    private static final List<String> TOPICS_LIST = Collections.singletonList(TOPIC);
+    private static final Set<String> TOPICS_SET = Collections.singleton(TOPIC);
 
     @Test
     void testAssignor() {
@@ -84,20 +85,21 @@ class AllowedOnlyFlushPartitionAssignorTest {
             assertArrayEquals(exp[i], act[i]);
     }
 
-    static short[][] run(int parts, PartitionAssignor... assignors) {
+    static short[][] run(int parts, AllowedOnlyFlushPartitionAssignor... assignors) {
         return run(parts, parts, assignors);
     }
 
-    static short[][] run(int parts, int expAssignedParts, PartitionAssignor... assignors) {
-        Map<String,PartitionAssignor.Subscription> subs = new HashMap<>();
-        Set<PartitionAssignor> uniqAssignors = new HashSet<>();
+    static short[][] run(int parts, int expAssignedParts, AllowedOnlyFlushPartitionAssignor... assignors) {
+        Map<String,AllowedOnlyFlushPartitionAssignor.Subscription> subs = new HashMap<>();
+        Set<AllowedOnlyFlushPartitionAssignor> uniqAssignors = new HashSet<>();
         String name = assignors[0].name();
 
         for (int i = 0; i < assignors.length; i++) {
-            PartitionAssignor a = assignors[i];
+            AllowedOnlyFlushPartitionAssignor a = assignors[i];
             assertTrue(uniqAssignors.add(a));
             assertEquals(name, a.name());
-            subs.put(String.valueOf(i), a.subscription(TOPICS));
+            subs.put(String.valueOf(i), new AllowedOnlyFlushPartitionAssignor.Subscription(TOPICS_LIST,
+                a.subscriptionUserData(TOPICS_SET)));
         }
 
         List<PartitionInfo> partsInfo = new ArrayList<>();
@@ -107,15 +109,19 @@ class AllowedOnlyFlushPartitionAssignorTest {
         Cluster meta = new Cluster("testCluster", Collections.emptySet(), partsInfo,
             Collections.emptySet(), Collections.emptySet());
 
-        Map<String,PartitionAssignor.Assignment> assigns = assignors[0].assign(meta, subs);
+        Map<String,AllowedOnlyFlushPartitionAssignor.Assignment> assigns = assignors[0].assign(meta, subs);
+//            new AllowedOnlyFlushPartitionAssignor.GroupSubscription(subs)).groupAssignment(); //-- for Kafka 2.4.1
+
         short[][] res = new short[assigns.size()][];
         assertEquals(assignors.length, res.length);
 
         Set<TopicPartition> uniqParts = new HashSet<>();
 
         for (int i = 0; i < res.length; i++) {
-            PartitionAssignor.Assignment assign = assigns.get(String.valueOf(i));
-            assertEquals(0, assign.userData().remaining());
+            AllowedOnlyFlushPartitionAssignor.Assignment assign = assigns.get(String.valueOf(i));
+
+            ByteBuffer userData = assign.userData();
+            assertTrue(userData == null || 0 == userData.remaining());
 
             short[] shortAssign = new short[assign.partitions().size()];
 

@@ -13,13 +13,15 @@ repositories {
     mavenCentral()
 }
 
+val kafkaVersion = "2.3.1"
+
 dependencies {
-    implementation("org.apache.kafka", "kafka-clients", "2.3.1")
+    implementation("org.apache.kafka", "kafka-clients", kafkaVersion)
 
     testImplementation("org.junit.jupiter", "junit-jupiter", "5.4.1")
-    testImplementation("com.salesforce.kafka.test", "kafka-junit5", "3.1.1")
+    testImplementation("com.salesforce.kafka.test", "kafka-junit5", "3.2.1")
 
-    testRuntimeOnly("org.apache.kafka", "kafka_2.12", "2.3.1")
+    testRuntimeOnly("org.apache.kafka", "kafka_2.12", kafkaVersion)
     testRuntimeOnly("org.slf4j", "slf4j-simple", "1.7.26")
 }
 
