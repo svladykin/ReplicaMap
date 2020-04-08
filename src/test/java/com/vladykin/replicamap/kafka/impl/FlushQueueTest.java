@@ -217,4 +217,70 @@ class FlushQueueTest {
             assertTrue(exec.awaitTermination(3, TimeUnit.SECONDS));
         }
     }
+
+    @Test
+    void testCollect() {
+        FlushQueue q = new FlushQueue(null);
+        FlushQueue.Batch batch = q.collect(stream(1000L));
+
+        assertNull(batch);
+
+        q.add(1, 0, 1001, true);
+        q.add(2, 0, 1002, true);
+        q.add(null, null, 1003, true);
+        q.add(3, 0, 1004, true);
+        q.add(4, 0, 1005, true);
+
+        batch = q.collect(stream(1000L));
+
+        assertNull(batch);
+
+        batch = q.collect(stream(1001L));
+
+        assertEquals(1001, batch.getMinOffset());
+        assertEquals(1001, batch.getMaxOffset());
+        assertEquals(1, batch.size());
+        assertTrue(batch.containsKey(1));
+
+        batch = q.collect(stream(1003L));
+
+        assertEquals(1001, batch.getMinOffset());
+        assertEquals(1003, batch.getMaxOffset());
+        assertEquals(2, batch.size());
+        assertTrue(batch.containsKey(1));
+        assertTrue(batch.containsKey(2));
+
+        batch = q.collect(stream(1001, 1003L));
+
+        assertEquals(1001, batch.getMinOffset());
+        assertEquals(1003, batch.getMaxOffset());
+        assertEquals(2, batch.size());
+        assertTrue(batch.containsKey(1));
+        assertTrue(batch.containsKey(2));
+
+
+        batch = q.collect(stream(1004L));
+
+        assertEquals(1001, batch.getMinOffset());
+        assertEquals(1004, batch.getMaxOffset());
+        assertEquals(3, batch.size());
+        assertTrue(batch.containsKey(1));
+        assertTrue(batch.containsKey(2));
+        assertTrue(batch.containsKey(3));
+
+
+        batch = q.collect(stream(1005L));
+
+        assertEquals(1001, batch.getMinOffset());
+        assertEquals(1005, batch.getMaxOffset());
+        assertEquals(4, batch.size());
+        assertTrue(batch.containsKey(1));
+        assertTrue(batch.containsKey(2));
+        assertTrue(batch.containsKey(3));
+        assertTrue(batch.containsKey(4));
+
+        batch = q.collect(stream(1006L));
+
+        assertNull(batch);
+    }
 }
