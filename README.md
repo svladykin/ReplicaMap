@@ -1,6 +1,6 @@
 # ReplicaMap: Key-value Kafka Database
 [![Release](https://jitpack.io/v/com.vladykin/replicamap.svg)](https://jitpack.io/#com.vladykin/replicamap)
-[![License](https://img.shields.io/badge/license-LGPLv3-blue.svg)](https://github.com/svladykin/replicamap/blob/master/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/svladykin/replicamap/blob/master/LICENSE)
 [![Build Status](https://travis-ci.org/svladykin/replicamap.svg?branch=master)](https://travis-ci.org/svladykin/replicamap)
 ![Coverage](https://img.shields.io/badge/coverage-92%25-green)
 
