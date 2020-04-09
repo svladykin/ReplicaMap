@@ -1,5 +1,6 @@
 package com.vladykin.replicamap.kafka;
 
+import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
@@ -19,8 +20,6 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
-
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
 
 /**
  * Convenience tools.
@@ -109,7 +108,7 @@ public class KReplicaMapTools {
         ) {
             for (Map.Entry<TopicPartition,Long> entry : dataOffsets.entrySet()) {
                 producer.send(new ProducerRecord<>(opsTopic, entry.getKey().partition(), null,
-                    new OpMessage(OP_FLUSH_NOTIFICATION, 0L, entry.getValue() - 1, 0, 0L)));
+                    new FlushNotification(0L, entry.getValue() - 1, 0L)));
             }
             producer.flush();
         }

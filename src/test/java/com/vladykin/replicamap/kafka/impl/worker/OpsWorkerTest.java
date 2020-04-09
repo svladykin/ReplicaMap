@@ -1,11 +1,15 @@
 package com.vladykin.replicamap.kafka.impl.worker;
 
 import com.vladykin.replicamap.kafka.impl.FlushQueue;
+import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
+import com.vladykin.replicamap.kafka.impl.msg.MapUpdateMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Queue;
 import java.util.Random;
@@ -27,7 +31,6 @@ import org.apache.kafka.common.serialization.Serializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_REQUEST;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_PUT;
 import static java.util.Arrays.asList;
@@ -56,14 +59,15 @@ class OpsWorkerTest {
     Set<Integer> parts;
     MockConsumer<Object,Object> dataConsumer;
     MockConsumer<Object,OpMessage> opsConsumer;
-    MockProducer<Object,OpMessage> flushProducer;
+    MockProducer<Object,FlushRequest> flushProducer;
     List<FlushQueue> flushQueues;
-    Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
+    Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
     OpsWorker opsWorker;
     TopicPartition dataPart;
     TopicPartition opsPart;
     AtomicInteger appliedUpdates;
 
+    @SuppressWarnings("rawtypes")
     @BeforeEach
     void beforeEachTest() {
         appliedUpdates = new AtomicInteger();
@@ -79,7 +83,7 @@ class OpsWorkerTest {
         opsConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
 
         Serializer<?> longSer = new LongSerializer();
-        flushProducer = new MockProducer<>(true, (Serializer<Object>)longSer,
+        flushProducer = new MockProducer(true, longSer,
             new OpMessageSerializer<>(longSer, null));
 
         opsConsumer.assign(singleton(opsPart));
@@ -109,7 +113,7 @@ class OpsWorkerTest {
     static ConsumerRecord<Object,OpMessage> newPutRecord(long clientId, long offset) {
         Random rnd = ThreadLocalRandom.current();
         return new ConsumerRecord<>(TOPIC_OPS, 0,
-            offset, rnd.nextInt(10), new OpMessage(OP_PUT, clientId, 0, null, rnd.nextInt(10), null));
+            offset, rnd.nextInt(10), new MapUpdateMessage(OP_PUT, clientId, 0, null, rnd.nextInt(10), null));
     }
 
     protected ConsumerRecord<Object,OpMessage> addPutRecord(long clientId, long offset) {
@@ -118,14 +122,14 @@ class OpsWorkerTest {
         return rec;
     }
 
-    static ConsumerRecord<Object,OpMessage> newFlushNotification(long clientId, long flushOffsetData, long flushOffsetOps,  long offset) {
+    static ConsumerRecord<Object,FlushNotification> newFlushNotification(long clientId, long flushOffsetData, long flushOffsetOps,  long offset) {
         return new ConsumerRecord<>(
-            TOPIC_OPS, 0, offset, null, new OpMessage(OP_FLUSH_NOTIFICATION, clientId, flushOffsetData, flushOffsetOps, 0L));
+            TOPIC_OPS, 0, offset, null, new FlushNotification(clientId, flushOffsetData, flushOffsetOps));
     }
 
-    protected ConsumerRecord<Object,OpMessage> addFlushNotification(long flushOffsetData, long flushOffsetOps, long offset) {
-        ConsumerRecord<Object,OpMessage> rec = newFlushNotification(OpsWorkerTest.CLIENT2_ID, flushOffsetData, flushOffsetOps, offset);
-        opsConsumer.addRecord(rec);
+    protected ConsumerRecord<Object,FlushNotification> addFlushNotification(long flushOffsetData, long flushOffsetOps, long offset) {
+        ConsumerRecord<Object,FlushNotification> rec = newFlushNotification(OpsWorkerTest.CLIENT2_ID, flushOffsetData, flushOffsetOps, offset);
+        opsConsumer.addRecord(Utils.cast(rec));
         return rec;
     }
 
@@ -133,16 +137,16 @@ class OpsWorkerTest {
     void testForwardCompatibility() {
         TopicPartition p = new TopicPartition(TOPIC_OPS, 0);
         opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 1L, null,
-            new OpMessage((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
+            new MapUpdateMessage((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
         opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 2L, "key",
-            new OpMessage((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
+            new MapUpdateMessage((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
     }
 
     @Test
     void testTryFindLastFlushRecordEmpty() {
         opsConsumer.updateEndOffsets(singletonMap(opsPart, 0L));
         assertSame(OpsWorker.NOT_EXIST,
-            opsWorker.tryFindLastFlushRecord(opsPart, 0L, Duration.ofMillis(1)));
+            opsWorker.tryFindLastFlushNotification(opsPart, 0L, Duration.ofMillis(1)));
     }
 
     @Test
@@ -161,7 +165,7 @@ class OpsWorkerTest {
 
         opsConsumer.updateEndOffsets(singletonMap(opsPart, offset));
 
-        assertSame(OpsWorker.NOT_FOUND, opsWorker.tryFindLastFlushRecord(opsPart,
+        assertSame(OpsWorker.NOT_FOUND, opsWorker.tryFindLastFlushNotification(opsPart,
             opsConsumer.endOffsets(singleton(opsPart)).get(opsPart), Duration.ofMillis(1)));
     }
 
@@ -174,7 +178,7 @@ class OpsWorkerTest {
         for (int i = 0; i < FLUSH_MAX_OPS; i++)
             addPutRecord(CLIENT1_ID, offset++);
 
-        ConsumerRecord<Object,OpMessage> rec =
+        ConsumerRecord<Object,FlushNotification> rec =
             addFlushNotification(200600, offset - 1, offset++);
 
         for (int i = 0; i < FLUSH_MAX_OPS - 1; i++)
@@ -182,7 +186,7 @@ class OpsWorkerTest {
 
         opsConsumer.updateEndOffsets(singletonMap(opsPart, offset));
 
-        assertSame(rec, opsWorker.tryFindLastFlushRecord(opsPart,
+        assertSame(rec, opsWorker.tryFindLastFlushNotification(opsPart,
             opsConsumer.endOffsets(singleton(opsPart)).get(opsPart), Duration.ofMillis(1)));
     }
 
@@ -190,7 +194,7 @@ class OpsWorkerTest {
     void testFindLastFlushRecordEmpty() {
         opsConsumer.updateEndOffsets(singletonMap(opsPart, 0L));
         assertSame(null,
-            opsWorker.findLastFlushRecord(dataPart, opsPart, Utils.millis(1)));
+            opsWorker.findLastFlushNotification(dataPart, opsPart, Utils.millis(1)));
     }
 
     @Test
@@ -218,7 +222,7 @@ class OpsWorkerTest {
         for (int i = 0; i < 4; i++)
             opsConsumer.schedulePollTask(callback);
 
-        assertEquals(200600L, opsWorker.findLastFlushRecord(dataPart, opsPart, Utils.millis(1))
+        assertEquals(200600L, opsWorker.findLastFlushNotification(dataPart, opsPart, Utils.millis(1))
             .value().getFlushOffsetData());
     }
 
@@ -231,15 +235,15 @@ class OpsWorkerTest {
     @SuppressWarnings("ConstantConditions")
     @Test
     void testApplyOpsTopicRecords() {
-        opsWorker.applyOpsTopicRecords(opsPart, asList(
+        opsWorker.applyOpsTopicRecords(opsPart, Arrays.asList(
             newPutRecord(CLIENT1_ID, 1001),
             newPutRecord(CLIENT2_ID, 1002),
             newPutRecord(CLIENT1_ID, 1003),
-            newFlushNotification(CLIENT1_ID, 100500, 1003, 1004),
+            Utils.cast(newFlushNotification(CLIENT1_ID, 100500, 1003, 1004)),
             newPutRecord(CLIENT1_ID, 1005),
             newPutRecord(CLIENT2_ID, 1006),
             newPutRecord(CLIENT1_ID, 1007),
-            newFlushNotification(CLIENT2_ID, 200700, 1007, 1008),
+            Utils.cast(newFlushNotification(CLIENT2_ID, 200700, 1007, 1008)),
             newPutRecord(CLIENT1_ID, 1009),
             newPutRecord(CLIENT1_ID, 1010)
         ));
@@ -249,7 +253,7 @@ class OpsWorkerTest {
         assertEquals(200700, cleanQueue.poll().value().getFlushOffsetData());
 
         assertEquals(1, flushProducer.history().size());
-        OpMessage flushReq = flushProducer.history().get(0).value();
+        FlushRequest flushReq = flushProducer.history().get(0).value();
         assertEquals(1010, flushReq.getFlushOffsetOps());
 
         assertEquals(200700, opsWorker.lastFlushNotifications.get(opsPart).getFlushOffsetData());
@@ -343,16 +347,16 @@ class OpsWorkerTest {
 
         assertEquals(12, appliedUpdates.get());
 
-        List<ProducerRecord<Object,OpMessage>> flushHistory = flushProducer.history();
+        List<ProducerRecord<Object,FlushRequest>> flushHistory = flushProducer.history();
         assertEquals(1, flushHistory.size());
 
-        ProducerRecord<Object,OpMessage> prepFlushReqRec = flushHistory.get(0);
-        assertNull(prepFlushReqRec.key());
+        ProducerRecord<Object,FlushRequest> prepFlushReq = flushHistory.get(0);
+        assertNull(prepFlushReq.key());
 
-        OpMessage flushReqOp = prepFlushReqRec.value();
-        assertEquals(OP_FLUSH_REQUEST, flushReqOp.getOpType());
-        assertEquals(CLIENT1_ID, flushReqOp.getClientId());
-        assertEquals(60, flushReqOp.getFlushOffsetOps());
+        FlushRequest flushReq = prepFlushReq.value();
+        assertEquals(OP_FLUSH_REQUEST, flushReq.getOpType());
+        assertEquals(CLIENT1_ID, flushReq.getClientId());
+        assertEquals(60, flushReq.getFlushOffsetOps());
     }
 
     @Test

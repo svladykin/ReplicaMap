@@ -2,8 +2,11 @@ package com.vladykin.replicamap.kafka.impl.worker;
 
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.FlushQueue;
+import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
+import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
@@ -23,7 +26,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_REQUEST;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.CLIENT1_ID;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.CLIENT2_ID;
 import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.TOPIC_DATA;
@@ -43,15 +45,15 @@ class FlushWorkerTest {
 
     LazyList<Consumer<Object,Object>> dataConsumers;
     LazyList<Producer<Object,Object>> dataProducers;
-    LazyList<Consumer<Object,OpMessage>> flushConsumers;
+    LazyList<Consumer<Object,FlushRequest>> flushConsumers;
 
     MockConsumer<Object,Object> dataConsumer;
     MockProducer<Object,Object> dataProducer;
     MockProducer<Object,OpMessage> opsProducer;
-    MockConsumer<Object,OpMessage> flushConsumer;
+    MockConsumer<Object,FlushRequest> flushConsumer;
 
     List<FlushQueue> flushQueues;
-    Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
+    Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
 
     CompletableFuture<ReplicaMapManager> opsSteadyFut;
     FlushWorker flushWorker;
@@ -101,7 +103,7 @@ class FlushWorkerTest {
         return dataProducer;
     }
 
-    Consumer<Object,OpMessage> createFlushConsumer() {
+    Consumer<Object,FlushRequest> createFlushConsumer() {
         return flushConsumer;
     }
 
@@ -231,10 +233,10 @@ class FlushWorkerTest {
         List<ProducerRecord<Object,OpMessage>> ops = opsProducer.history();
         assertEquals(1, ops.size());
 
-        ProducerRecord<Object,OpMessage> flushNotifRec = ops.get(0);
+        ProducerRecord<Object,FlushNotification> flushNotifRec = Utils.cast(ops.get(0));
         assertNull(flushNotifRec.key());
 
-        OpMessage flushNotif = flushNotifRec.value();
+        FlushNotification flushNotif = flushNotifRec.value();
         assertEquals(OP_FLUSH_NOTIFICATION, flushNotif.getOpType());
         assertEquals(CLIENT1_ID, flushNotif.getClientId());
         assertEquals(101, flushNotif.getFlushOffsetOps());
@@ -279,14 +281,14 @@ class FlushWorkerTest {
         flushConsumer.seek(flushPart, 770);
 
         flushConsumer.addRecord(new ConsumerRecord<>(TOPIC_FLUSH, 0, 777, null,
-            new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0L, flushOffsetOps - 1, -1L)));
+            new FlushRequest(CLIENT1_ID, flushOffsetOps - 1, -1L)));
         flushConsumer.addRecord(new ConsumerRecord<>(TOPIC_FLUSH, 0, 778, null,
-            new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0L, flushOffsetOps, lastCleanOffsetOps)));
+            new FlushRequest(CLIENT1_ID, flushOffsetOps, lastCleanOffsetOps)));
     }
 
-    private ConsumerRecord<Object,OpMessage> newFlushRequest(long offset, long flushOffsetOps) {
+    private ConsumerRecord<Object,FlushRequest> newFlushRequest(long offset, long flushOffsetOps) {
         return new ConsumerRecord<>(TOPIC_FLUSH, 0, offset, null,
-            new OpMessage(OP_FLUSH_REQUEST, CLIENT1_ID, 0L, flushOffsetOps, 1000));
+            new FlushRequest(CLIENT1_ID, flushOffsetOps, 1000));
     }
 
     @Test
@@ -313,7 +315,7 @@ class FlushWorkerTest {
         flushConsumer.addRecord(newFlushRequest(113, 1019));
 
         flushConsumer.seek(flushPart, 113);
-        OpMessage flush = flushWorker.loadMaxCommittedFlushRequest(flushConsumer, flushPart, 112).value();
+        FlushRequest flush = flushWorker.loadMaxCommittedFlushRequest(flushConsumer, flushPart, 112).value();
         assertEquals(113, flushConsumer.position(flushPart));
 
         assertEquals(1004, flush.getFlushOffsetOps());

@@ -21,6 +21,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
@@ -68,6 +69,18 @@ public final class Utils {
 
     public static <X> X ifNull(X x, Supplier<X> dflt) {
         return x != null ? x : dflt.get();
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static <K,V> ConsumerRecord<K,V> cast(ConsumerRecord<?,?> rec) {
+        ConsumerRecord result = rec;
+        return (ConsumerRecord<K,V>)result;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static <K,V> ProducerRecord<K,V> cast(ProducerRecord<?,?> rec) {
+        ProducerRecord result = rec;
+        return (ProducerRecord<K,V>)result;
     }
 
     public static List<byte[]> getMacAddresses() {

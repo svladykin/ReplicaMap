@@ -4,6 +4,8 @@ import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.UnprocessedFlushRequests;
+import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
@@ -58,15 +60,15 @@ public class FlushWorker extends Worker implements AutoCloseable {
     protected final String flushTopic;
 
     protected final String flushConsumerGroupId;
-    protected final LazyList<Consumer<Object,OpMessage>> flushConsumers;
-    protected final Supplier<Consumer<Object,OpMessage>> flushConsumerFactory;
+    protected final LazyList<Consumer<Object,FlushRequest>> flushConsumers;
+    protected final Supplier<Consumer<Object,FlushRequest>> flushConsumerFactory;
 
     protected final LazyList<Producer<Object,Object>> dataProducers;
     protected final IntFunction<Producer<Object,Object>> dataProducerFactory;
 
     protected final Producer<Object,OpMessage> opsProducer;
 
-    protected final Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
+    protected final Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
     protected final List<FlushQueue> flushQueues;
 
     protected final CompletableFuture<ReplicaMapManager> opsSteadyFut;
@@ -88,7 +90,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         String flushConsumerGroupId,
         Producer<Object,OpMessage> opsProducer,
         List<FlushQueue> flushQueues,
-        Queue<ConsumerRecord<Object,OpMessage>> cleanQueue,
+        Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue,
         CompletableFuture<ReplicaMapManager> opsSteadyFut,
         LongAdder receivedFlushRequests,
         LongAdder successfulFlushes,
@@ -96,8 +98,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
         short[] allowedPartitions,
         LazyList<Producer<Object,Object>> dataProducers,
         IntFunction<Producer<Object,Object>> dataProducerFactory,
-        LazyList<Consumer<Object,OpMessage>> flushConsumers,
-        Supplier<Consumer<Object,OpMessage>> flushConsumerFactory
+        LazyList<Consumer<Object,FlushRequest>> flushConsumers,
+        Supplier<Consumer<Object,FlushRequest>> flushConsumerFactory
     ) {
         super("replicamap-flush-" + dataTopic + "-" +
             Long.toHexString(clientId), workerId);
@@ -151,12 +153,12 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
     protected boolean processCleanRequests() {
         for (int cnt = 0;; cnt++) {
-            ConsumerRecord<Object,OpMessage> cleanRequest = cleanQueue.poll();
+            ConsumerRecord<Object,FlushNotification> cleanRequest = cleanQueue.poll();
 
             if (cleanRequest == null || isInterrupted())
                 return cnt > 0;
 
-            OpMessage op = cleanRequest.value();
+            FlushNotification op = cleanRequest.value();
             assert op.getOpType() == OP_FLUSH_NOTIFICATION && op.getClientId() != clientId: op;
 
             long flushOffsetOps = op.getFlushOffsetOps();
@@ -197,7 +199,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         if (!awaitOpsWorkersSteady(pollTimeoutMs))
             return false;
 
-        Consumer<Object,OpMessage> flushConsumer;
+        Consumer<Object,FlushRequest> flushConsumer;
         try {
             flushConsumer = flushConsumers.get(0, this::newFlushConsumer);
         }
@@ -208,7 +210,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             return false;
         }
 
-        ConsumerRecords<Object,OpMessage> recs;
+        ConsumerRecords<Object,FlushRequest> recs;
         try {
             try {
                 recs = flushConsumer.poll(millis(pollTimeoutMs));
@@ -247,7 +249,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
     }
 
     protected void initFlushConsumerOffset(
-        Consumer<Object,OpMessage> flushConsumer,
+        Consumer<Object,FlushRequest> flushConsumer,
         NoOffsetForPartitionException e
     ) {
         Set<TopicPartition> partitions = e.partitions();
@@ -262,9 +264,9 @@ public class FlushWorker extends Worker implements AutoCloseable {
     }
 
     protected void collectUnprocessedFlushRequests(
-        Consumer<Object,OpMessage> flushConsumer,
+        Consumer<Object,FlushRequest> flushConsumer,
         TopicPartition flushPart,
-        List<ConsumerRecord<Object,OpMessage>> partRecs
+        List<ConsumerRecord<Object,FlushRequest>> partRecs
     ) {
         UnprocessedFlushRequests flushReqs = unprocessedFlushRequests.get(flushPart);
 
@@ -273,7 +275,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             // Load flush history and clean the flushQueue until the max committed historical offset,
             // after that FlushQueue will not accept outdated records.
             long firstRecOffset = partRecs.get(0).offset();
-            ConsumerRecord<Object,OpMessage> maxCommittedFlushReq =
+            ConsumerRecord<Object,FlushRequest> maxCommittedFlushReq =
                 loadMaxCommittedFlushRequest(flushConsumer, flushPart, firstRecOffset);
 
             long maxFlushOffsetOps = -1L;
@@ -293,7 +295,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         flushReqs.addFlushRequests(flushPart, partRecs);
     }
 
-    protected void resetAll(Consumer<Object,OpMessage> flushConsumer) {
+    protected void resetAll(Consumer<Object,FlushRequest> flushConsumer) {
         unprocessedFlushRequests.clear();
 
         for (int part = 0; part < dataProducers.size(); part++)
@@ -320,8 +322,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
         return flushRequests;
     }
 
-    protected ConsumerRecord<Object,OpMessage> loadMaxCommittedFlushRequest(
-        Consumer<Object,OpMessage> flushConsumer,
+    protected ConsumerRecord<Object,FlushRequest> loadMaxCommittedFlushRequest(
+        Consumer<Object,FlushRequest> flushConsumer,
         TopicPartition flushPart,
         long firstFlushReqOffset
     ) {
@@ -334,10 +336,10 @@ public class FlushWorker extends Worker implements AutoCloseable {
         long startOffset = firstFlushReqOffset - 1; // Take the previous record.
         flushConsumer.seek(flushPart, startOffset);
 
-        ConsumerRecord<Object,OpMessage> max = null;
+        ConsumerRecord<Object,FlushRequest> max = null;
 
         do {
-            List<ConsumerRecord<Object,OpMessage>> flushRecs = flushConsumer.poll(seconds(1)).records(flushPart);
+            List<ConsumerRecord<Object,FlushRequest>> flushRecs = flushConsumer.poll(seconds(1)).records(flushPart);
 
             if (flushRecs.isEmpty())
                 continue;
@@ -366,7 +368,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
     }
 
     protected boolean flushPartition(
-        Consumer<Object,OpMessage> flushConsumer,
+        Consumer<Object,FlushRequest> flushConsumer,
         TopicPartition flushPart,
         UnprocessedFlushRequests flushReqs
     ) {
@@ -488,7 +490,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
     protected void sendFlushNotification(TopicPartition dataPart, long flushOffsetData, long flushOffsetOps) {
         ProducerRecord<Object,OpMessage> flushNotification = new ProducerRecord<>(opsTopic, dataPart.partition(), null,
-            newOpMessage(flushOffsetData, flushOffsetOps));
+            newFlushNotification(flushOffsetData, flushOffsetOps));
 
         if (log.isDebugEnabled())
             log.debug("Sending flush notification for partition {}: {}", dataPart, flushNotification);
@@ -502,9 +504,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
         }
     }
 
-    protected OpMessage newOpMessage(long flushOffsetData, long flushOffsetOps) {
-        // lastCleanOffsetOps here is the same as flushOffsetOps
-        return new OpMessage(OP_FLUSH_NOTIFICATION, clientId, flushOffsetData, flushOffsetOps, 0L);
+    protected FlushNotification newFlushNotification(long flushOffsetData, long flushOffsetOps) {
+        return new FlushNotification(clientId, flushOffsetData, flushOffsetOps);
     }
 
     protected Producer<Object,Object> newDataProducer(int part) {
@@ -513,8 +514,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
         return p;
     }
 
-    protected Consumer<Object,OpMessage> newFlushConsumer(int ignore) {
-        Consumer<Object,OpMessage> c = flushConsumerFactory.get();
+    protected Consumer<Object,FlushRequest> newFlushConsumer(int ignore) {
+        Consumer<Object,FlushRequest> c = flushConsumerFactory.get();
         c.subscribe(singleton(flushTopic), new PartitionRebalanceListener());
         return c;
     }

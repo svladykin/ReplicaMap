@@ -1,5 +1,6 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
+import com.vladykin.replicamap.base.ReplicaMapBase;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
@@ -9,11 +10,8 @@ import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.utils.ByteUtils;
 
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_REQUEST;
-
 /**
- *  Operation message serializer.
+ * Operation message serializer.
  *
  * @author Sergi Vladykin http://vladykin.com
  */
@@ -41,14 +39,21 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
         return serialize(topic, null, opMsg);
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public byte[] serialize(String topic, Headers headers, OpMessage opMsg) {
-        byte opType = opMsg.getOpType();
+        switch (opMsg.getOpType()) {
+            case ReplicaMapBase.OP_FLUSH_REQUEST:
+                return serializeFlushRequest((FlushRequest)opMsg);
 
-        if (opType == OP_FLUSH_REQUEST || opType == OP_FLUSH_NOTIFICATION)
-            return serializeFlush(opMsg);
+            case ReplicaMapBase.OP_FLUSH_NOTIFICATION:
+                return serializeFlushNotification((FlushNotification)opMsg);
+        }
 
+        return serializeMapUpdateMessage((MapUpdateMessage)opMsg, topic, headers);
+    }
+
+    @SuppressWarnings("unchecked")
+    protected byte[] serializeMapUpdateMessage(MapUpdateMessage opMsg, String topic, Headers headers) {
         V expVal = (V)opMsg.getExpectedValue();
         byte[] exp = expVal == null ? null : valSer.serialize(topic, headers, expVal);
 
@@ -80,7 +85,7 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
         byte[] result = new byte[resultLen];
         ByteBuffer buf = ByteBuffer.wrap(result);
 
-        buf.put(opType);
+        buf.put(opMsg.getOpType());
         ByteUtils.writeVarlong(opMsg.getClientId(), buf);
         ByteUtils.writeVarlong(opMsg.getOpId(), buf);
         writeByteArray(buf, exp);
@@ -92,22 +97,40 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
         return result;
     }
 
-    private byte[] serializeFlush(OpMessage flushMsg) {
+    protected byte[] serializeFlushRequest(FlushRequest flushMsg) {
+        int opTypeSize = 1;
+        int clientIdSize = ByteUtils.sizeOfVarlong(flushMsg.getClientId());
+        int flushOffsetOpsSize = ByteUtils.sizeOfVarlong(flushMsg.getFlushOffsetOps());
+        int cleanOffsetOpsSize = ByteUtils.sizeOfVarlong(flushMsg.getCleanOffsetOps());
+
+        byte[] result = new byte[opTypeSize + clientIdSize + 1 + flushOffsetOpsSize + cleanOffsetOpsSize];
+        ByteBuffer buf = ByteBuffer.wrap(result);
+
+        buf.put(flushMsg.getOpType());
+        ByteUtils.writeVarlong(flushMsg.getClientId(), buf);
+        ByteUtils.writeVarlong(0L, buf); // Backward compatibility.
+        ByteUtils.writeVarlong(flushMsg.getFlushOffsetOps(), buf);
+        ByteUtils.writeVarlong(flushMsg.getCleanOffsetOps(), buf);
+
+        assert buf.remaining() == 0;
+
+        return result;
+    }
+
+    protected byte[] serializeFlushNotification(FlushNotification flushMsg) {
         int opTypeSize = 1;
         int clientIdSize = ByteUtils.sizeOfVarlong(flushMsg.getClientId());
         int flushOffsetDataSize = ByteUtils.sizeOfVarlong(flushMsg.getFlushOffsetData());
         int flushOffsetOpsSize = ByteUtils.sizeOfVarlong(flushMsg.getFlushOffsetOps());
-        int cleanOffsetOpsSize = ByteUtils.sizeOfVarlong(flushMsg.getCleanOffsetOps());
 
-        byte[] result = new byte[opTypeSize + clientIdSize +
-            flushOffsetDataSize + flushOffsetOpsSize + cleanOffsetOpsSize];
+        byte[] result = new byte[opTypeSize + clientIdSize + flushOffsetDataSize + flushOffsetOpsSize + 1];
         ByteBuffer buf = ByteBuffer.wrap(result);
 
         buf.put(flushMsg.getOpType());
         ByteUtils.writeVarlong(flushMsg.getClientId(), buf);
         ByteUtils.writeVarlong(flushMsg.getFlushOffsetData(), buf);
         ByteUtils.writeVarlong(flushMsg.getFlushOffsetOps(), buf);
-        ByteUtils.writeVarlong(flushMsg.getCleanOffsetOps(), buf);
+        ByteUtils.writeVarlong(0L, buf); // Backward compatibility.
 
         assert buf.remaining() == 0;
 

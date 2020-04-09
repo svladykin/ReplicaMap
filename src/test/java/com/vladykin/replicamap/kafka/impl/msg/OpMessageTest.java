@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class OpMessageTest {
     @SuppressWarnings("PointlessArithmeticExpression")
     @Test
-    void testOperationMessageSerdeProtobuf() {
+    void testMapUpdateMessage() {
         TestStringSerializer tvSer = new TestStringSerializer();
         TestStringDeserializer tvDes = new TestStringDeserializer();
 
@@ -38,17 +38,17 @@ class OpMessageTest {
         String v2 = "qwerty";
         BiFunction<?,?,?> function = new TestFunc(7);
 
-        OpMessage msg = new OpMessage((byte)1, clientId, 1, v1, v2, function);
+        OpMessage msg = new MapUpdateMessage((byte)1, clientId, 1, v1, v2, function);
         byte[] msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 6 + 1 + 1, msgBytes.length);
         assertEquals(msg, des.deserialize(null, msgBytes));
 
-        msg = new OpMessage((byte)1, clientId, 1, null, v2, function);
+        msg = new MapUpdateMessage((byte)1, clientId, 1, null, v2, function);
         msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 0 + 1 + 6 + 1 + 1, msgBytes.length);
         assertEquals(msg, des.deserialize(null, msgBytes));
 
-        msg = new OpMessage((byte)1, clientId, 1, v1, null, null);
+        msg = new MapUpdateMessage((byte)1, clientId, 1, v1, null, null);
         msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 0 + 1 + 0, msgBytes.length);
         assertEquals(msg, des.deserialize(null, msgBytes));
@@ -73,21 +73,19 @@ class OpMessageTest {
 
         long clientId = 5;
         long flushOffsetOps = 7;
-        long flushOffsetData = 4;
         long cleanOffsetOps = 11;
 
-        OpMessage msg = new OpMessage(OP_FLUSH_REQUEST, clientId, flushOffsetData, flushOffsetOps, cleanOffsetOps);
+        FlushRequest msg = new FlushRequest(clientId, flushOffsetOps, cleanOffsetOps);
 
         byte[] msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 1, msgBytes.length);
 
-        OpMessage msgx = des.deserialize(null, msgBytes);
+        FlushRequest msgx = (FlushRequest)des.deserialize(null, msgBytes);
         assertEquals(msg, msgx);
 
         assertEquals(OP_FLUSH_REQUEST, msgx.getOpType());
         assertEquals(clientId, msgx.getClientId());
         assertEquals(flushOffsetOps, msgx.getFlushOffsetOps());
-        assertEquals(flushOffsetData, msgx.getFlushOffsetData());
         assertEquals(cleanOffsetOps, msgx.getCleanOffsetOps());
     }
 
@@ -99,21 +97,19 @@ class OpMessageTest {
         long clientId = 5;
         long flushOffsetOps = 7;
         long flushOffsetData = 9;
-        long lastCleanOffsetOps = 8;
 
-        OpMessage msg = new OpMessage(OP_FLUSH_NOTIFICATION, clientId, flushOffsetData, flushOffsetOps, lastCleanOffsetOps);
+        FlushNotification msg = new FlushNotification(clientId, flushOffsetData, flushOffsetOps);
 
         byte[] msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 1, msgBytes.length);
 
-        OpMessage msgx = des.deserialize(null, msgBytes);
+        FlushNotification msgx = (FlushNotification)des.deserialize(null, msgBytes);
         assertEquals(msg, msgx);
 
         assertEquals(OP_FLUSH_NOTIFICATION, msgx.getOpType());
         assertEquals(clientId, msgx.getClientId());
         assertEquals(flushOffsetOps, msgx.getFlushOffsetOps());
         assertEquals(flushOffsetData, msgx.getFlushOffsetData());
-        assertEquals(lastCleanOffsetOps, msgx.getCleanOffsetOps());
     }
 
     static class ConfigurableCloseable {

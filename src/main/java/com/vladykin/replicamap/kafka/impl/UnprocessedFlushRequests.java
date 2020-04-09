@@ -1,6 +1,6 @@
 package com.vladykin.replicamap.kafka.impl;
 
-import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import java.util.ArrayDeque;
 import java.util.List;
 import java.util.stream.LongStream;
@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory;
 public class UnprocessedFlushRequests {
     private static final Logger log = LoggerFactory.getLogger(UnprocessedFlushRequests.class);
 
-    protected final ArrayDeque<ConsumerRecord<Object,OpMessage>> flushReqs = new ArrayDeque<>();
+    protected final ArrayDeque<ConsumerRecord<Object,FlushRequest>> flushReqs = new ArrayDeque<>();
     protected long maxFlushOffsetOps;
     protected long maxFlushReqOffset;
 
@@ -36,8 +36,8 @@ public class UnprocessedFlushRequests {
             '}';
     }
 
-    public void addFlushRequests(TopicPartition flushPart, List<ConsumerRecord<Object,OpMessage>> partRecs) {
-        for (ConsumerRecord<Object,OpMessage> flushReq : partRecs) {
+    public void addFlushRequests(TopicPartition flushPart, List<ConsumerRecord<Object,FlushRequest>> partRecs) {
+        for (ConsumerRecord<Object,FlushRequest> flushReq : partRecs) {
             if (flushReq.offset() <= maxFlushReqOffset) {
                 throw new IllegalStateException("Offset of the record must be higher than " + maxFlushReqOffset +
                     " : " + flushReq);
@@ -65,7 +65,7 @@ public class UnprocessedFlushRequests {
 
         long flushConsumerOffset = -1L;
 
-        for (ConsumerRecord<Object,OpMessage> flushReq : flushReqs) {
+        for (ConsumerRecord<Object,FlushRequest> flushReq : flushReqs) {
             if (flushReq.value().getFlushOffsetOps() > maxOffset)
                 break;
 
@@ -91,7 +91,7 @@ public class UnprocessedFlushRequests {
         int cleared = 0;
 
         for(;;) {
-            ConsumerRecord<Object,OpMessage> flushReq = flushReqs.peek();
+            ConsumerRecord<Object,FlushRequest> flushReq = flushReqs.peek();
 
             if (flushReq == null || flushReq.value().getFlushOffsetOps() > maxOffset)
                 break;

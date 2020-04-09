@@ -8,6 +8,9 @@ import com.vladykin.replicamap.holder.MapsHolder;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import com.vladykin.replicamap.kafka.impl.FlushQueue;
+import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
+import com.vladykin.replicamap.kafka.impl.msg.MapUpdateMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageDeserializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
@@ -127,9 +130,9 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected ComputeSerializer computeSerializer;
     protected final Producer<Object,OpMessage> opsProducer;
-    protected final Producer<Object,OpMessage> flushProducer;
+    protected final Producer<Object,FlushRequest> flushProducer;
 
-    protected final Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
+    protected final Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
     protected final List<FlushQueue> flushQueues;
 
     protected final LongAdder receivedFlushRequests = new LongAdder();
@@ -312,7 +315,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new LazyList<>(size);
     }
 
-    protected Queue<ConsumerRecord<Object,OpMessage>> newCleanQueue() {
+    protected Queue<ConsumerRecord<Object,FlushNotification>> newCleanQueue() {
         return new ConcurrentLinkedQueue<>();
     }
 
@@ -539,7 +542,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
                     newComputeSerializer(proCfg))));
     }
 
-    protected Producer<Object,OpMessage> newKafkaProducerFlush() {
+    protected Producer<Object,FlushRequest> newKafkaProducerFlush() {
         Map<String, Object> proCfg = new TreeMap<>();
 
         configureAll(proCfg);
@@ -584,7 +587,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
                 newComputeDeserializer(conCfg)));
     }
 
-    protected Consumer<Object,OpMessage> newKafkaConsumerFlush() {
+    protected Consumer<Object,FlushRequest> newKafkaConsumerFlush() {
         Map<String, Object> conCfg = new TreeMap<>();
 
         configureAll(conCfg);
@@ -646,12 +649,14 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return d;
     }
 
-    protected <V> Deserializer<OpMessage> newOpMessageDeserializer(Deserializer<V> v, ComputeDeserializer c) {
-        return new OpMessageDeserializer<>(v, c);
+    @SuppressWarnings("unchecked")
+    protected <V, M extends OpMessage> Deserializer<M> newOpMessageDeserializer(Deserializer<V> v, ComputeDeserializer c) {
+        return (Deserializer<M>)new OpMessageDeserializer<>(v, c);
     }
 
-    protected <V> Serializer<OpMessage> newOpMessageSerializer(Serializer<V> v, ComputeSerializer c) {
-        return new OpMessageSerializer<>(v, c);
+    @SuppressWarnings("unchecked")
+    protected <V, M extends OpMessage> Serializer<M> newOpMessageSerializer(Serializer<V> v, ComputeSerializer c) {
+        return (Serializer<M>)new OpMessageSerializer<>(v, c);
     }
 
     @Override
@@ -762,7 +767,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
                 opsSemaphore, mapsCheckPrecondition, opsSendTimeout, TimeUnit.MILLISECONDS);
     }
 
-    protected <K,V> ProducerRecord<Object,OpMessage> newOpRecord(
+    protected <K,V> ProducerRecord<Object,OpMessage> newMapUpdateRecord(
         @SuppressWarnings("unused") KReplicaMap<K,V> map,
         long opId,
         byte updateType,
@@ -772,7 +777,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         BiFunction<?,?,?> function
     ) {
         return new ProducerRecord<>(opsTopic, key,
-            new OpMessage(updateType, clientId, opId, exp, upd, function));
+            new MapUpdateMessage(updateType, clientId, opId, exp, upd, function));
     }
 
     protected <K,V> void sendUpdate(
@@ -792,7 +797,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
                 (char)updateType, maps.getMapId(key), opsTopic, key, exp, upd);
         }
 
-        opsProducer.send(newOpRecord(map, opId, updateType, key, exp, upd, function), onSendFailed);
+        opsProducer.send(newMapUpdateRecord(map, opId, updateType, key, exp, upd, function), onSendFailed);
 //            (meta, err) -> {
 //            if (err == null && meta != null)
 //                trace.trace("sendUpdate {} offset={}, key={}, val={}", clientIdHex, meta.offset(), key, upd);

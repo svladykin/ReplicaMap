@@ -1,6 +1,7 @@
 package com.vladykin.replicamap.kafka;
 
 import com.vladykin.replicamap.ReplicaMapException;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -171,7 +172,7 @@ class KReplicaMapManagerLeaksTest {
         }
 
         @Override
-        protected Consumer<Object,OpMessage> newKafkaConsumerFlush() {
+        protected Consumer<Object,FlushRequest> newKafkaConsumerFlush() {
             return new CollectingMockConsumer<>();
         }
 
@@ -181,7 +182,7 @@ class KReplicaMapManagerLeaksTest {
         }
 
         @Override
-        protected Producer<Object,OpMessage> newKafkaProducerFlush() {
+        protected Producer<Object,FlushRequest> newKafkaProducerFlush() {
             return new CollectingMockProducer<>();
         }
 

@@ -2,6 +2,9 @@ package com.vladykin.replicamap.kafka.impl.worker;
 
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.FlushQueue;
+import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
+import com.vladykin.replicamap.kafka.impl.msg.MapUpdateMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
@@ -25,7 +28,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_REQUEST;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_PUT;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_REMOVE_ANY;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
@@ -41,8 +43,11 @@ import static java.util.Collections.singleton;
 public class OpsWorker extends Worker implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(OpsWorker.class);
 
-    protected static final ConsumerRecord<Object,OpMessage> NOT_FOUND = new ConsumerRecord<>("NOT_FOUND", 0, 0, null, null);
-    protected static final ConsumerRecord<Object,OpMessage> NOT_EXIST = new ConsumerRecord<>("NOT_EXIST", 0, 0, null, null);
+    protected static final ConsumerRecord<Object,FlushNotification> NOT_FOUND =
+        new ConsumerRecord<>("NOT_FOUND", 0, 0, null, null);
+
+    protected static final ConsumerRecord<Object,FlushNotification> NOT_EXIST =
+        new ConsumerRecord<>("NOT_EXIST", 0, 0, null, null);
 
     protected final long clientId;
 
@@ -54,11 +59,11 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
     protected final Consumer<Object,Object> dataConsumer;
     protected final Consumer<Object,OpMessage> opsConsumer;
-    protected final Producer<Object,OpMessage> flushProducer;
+    protected final Producer<Object,FlushRequest> flushProducer;
 
     protected final int flushPeriodOps;
     protected final List<FlushQueue> flushQueues;
-    protected final Queue<ConsumerRecord<Object,OpMessage>> cleanQueue;
+    protected final Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
 
     protected final OpsUpdateHandler updateHandler;
 
@@ -66,7 +71,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
     protected Map<TopicPartition,Long> endOffsetsOps;
     protected int maxAllowedSteadyLag;
 
-    protected final Map<TopicPartition,OpMessage> lastFlushNotifications = new HashMap<>();
+    protected final Map<TopicPartition,FlushNotification> lastFlushNotifications = new HashMap<>();
 
     public OpsWorker(
         long clientId,
@@ -77,10 +82,10 @@ public class OpsWorker extends Worker implements AutoCloseable {
         Set<Integer> assignedParts,
         Consumer<Object,Object> dataConsumer,
         Consumer<Object,OpMessage> opsConsumer,
-        Producer<Object,OpMessage> flushProducer,
+        Producer<Object,FlushRequest> flushProducer,
         int flushPeriodOps,
         List<FlushQueue> flushQueues,
-        Queue<ConsumerRecord<Object,OpMessage>> cleanQueue,
+        Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue,
         OpsUpdateHandler updateHandler
     ) {
         super("replicamap-ops-" + dataTopic + "-" +
@@ -112,12 +117,12 @@ public class OpsWorker extends Worker implements AutoCloseable {
                 log.debug("Loading data for partition {}", dataPart);
 
                 TopicPartition opsPart = new TopicPartition(opsTopic, dataPart.partition());
-                ConsumerRecord<Object,OpMessage> lastFlushRec = findLastFlushRecord(dataPart, opsPart, pollTimeout);
+                ConsumerRecord<Object,FlushNotification> lastFlushRec = findLastFlushNotification(dataPart, opsPart, pollTimeout);
 
                 long flushOffsetOps = 0L;
 
                 if (lastFlushRec != null) {
-                    OpMessage op = lastFlushRec.value();
+                    FlushNotification op = lastFlushRec.value();
                     flushOffsetOps = op.getFlushOffsetOps() + 1; // + 1 because we need the first unflushed ops offset
                     long flushOffsetData = op.getFlushOffsetData();
 
@@ -248,12 +253,13 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
             if (key == null) {
                 if (opType == OP_FLUSH_NOTIFICATION) {
-                    OpMessage old = lastFlushNotifications.get(opsPart);
+                    FlushNotification flush = (FlushNotification)op;
+                    FlushNotification old = lastFlushNotifications.get(opsPart);
                     // Notifications can arrive out of order, just ignore the outdated ones.
-                    if (old == null || old.getFlushOffsetOps() < op.getFlushOffsetOps()) {
+                    if (old == null || old.getFlushOffsetOps() < flush.getFlushOffsetOps()) {
                         // If someone else has successfully flushed the data, we need to cleanup our flush queue.
                         needClean = opClientId != clientId;
-                        lastFlushNotifications.put(opsPart, op);
+                        lastFlushNotifications.put(opsPart, flush);
                         log.debug("Received flush notification for partition {}: {}", opsPart, rec);
                     }
                 }
@@ -261,17 +267,19 @@ public class OpsWorker extends Worker implements AutoCloseable {
                     log.warn("Unexpected op type: {}", (char)op.getOpType());
             }
             else {
+                MapUpdateMessage updateOp = (MapUpdateMessage)op;
+
                 updated = updateHandler.applyReceivedUpdate(
                     rec.topic(),
                     rec.partition(),
                     rec.offset(),
                     opClientId,
-                    op.getOpId(),
+                    updateOp.getOpId(),
                     opType,
                     key,
-                    op.getExpectedValue(),
-                    op.getUpdatedValue(),
-                    op.getFunction(),
+                    updateOp.getExpectedValue(),
+                    updateOp.getUpdatedValue(),
+                    updateOp.getFunction(),
                     updatedValueBox);
 
 //                trace.trace("applyOpsTopicRecords updated={}, needFlush={}, key={}, val={}",
@@ -285,32 +293,32 @@ public class OpsWorker extends Worker implements AutoCloseable {
                 needClean || needFlush || i == lastIndex);
 
             if (needFlush) {
-                OpMessage lastFlush = lastFlushNotifications.get(opsPart);
+                FlushNotification lastFlush = lastFlushNotifications.get(opsPart);
                 long lastCleanOffsetOps = lastFlush == null ? -1L : lastFlush.getFlushOffsetOps();
                 sendFlushRequest(opsPart, rec.offset(), lastCleanOffsetOps);
             }
             else if (needClean)
-                sendCleanRequest(opsPart, rec);
+                sendCleanRequest(opsPart, Utils.cast(rec));
         }
     }
 
-    protected void sendCleanRequest(TopicPartition opsPart, ConsumerRecord<Object,OpMessage> rec) {
+    protected void sendCleanRequest(TopicPartition opsPart, ConsumerRecord<Object,FlushNotification> rec) {
         log.debug("Sending clean request for partition {}: {}", opsPart, rec);
         cleanQueue.add(rec);
     }
 
     protected void sendFlushRequest(TopicPartition opsPart, long flushOffsetOps, long lastCleanOffsetOps) {
-        ProducerRecord<Object,OpMessage> rec = new ProducerRecord<>(flushTopic, opsPart.partition(),
-            null, newFlushRequestOpMessage(flushOffsetOps, lastCleanOffsetOps));
+        ProducerRecord<Object,FlushRequest> rec = new ProducerRecord<>(flushTopic, opsPart.partition(),
+            null, newFlushRequest(flushOffsetOps, lastCleanOffsetOps));
         log.debug("Sending flush request for partition {}: {}", opsPart, rec);
         flushProducer.send(rec);
     }
 
-    protected OpMessage newFlushRequestOpMessage(long flushOffsetOps, long lastCleanOffsetOps) {
-        return new OpMessage(OP_FLUSH_REQUEST, clientId, 0L, flushOffsetOps, lastCleanOffsetOps);
+    protected FlushRequest newFlushRequest(long flushOffsetOps, long lastCleanOffsetOps) {
+        return new FlushRequest(clientId, flushOffsetOps, lastCleanOffsetOps);
     }
 
-    protected ConsumerRecord<Object,OpMessage> findLastFlushRecord(
+    protected ConsumerRecord<Object,FlushNotification> findLastFlushNotification(
         TopicPartition dataPart,
         TopicPartition opsPart,
         Duration pollTimeout
@@ -319,20 +327,23 @@ public class OpsWorker extends Worker implements AutoCloseable {
         long maxOffset = Utils.endOffset(opsConsumer, opsPart);
 
         for (;;) {
-            ConsumerRecord<Object,OpMessage> lastFlushRec =
-                tryFindLastFlushRecord(opsPart, maxOffset, pollTimeout);
+            ConsumerRecord<Object,FlushNotification> lastFlushRec =
+                tryFindLastFlushNotification(opsPart, maxOffset, pollTimeout);
 
             if (lastFlushRec == NOT_EXIST)
                 return null;
 
-            if (lastFlushRec != NOT_FOUND && isValidFlushRecord(dataPart, lastFlushRec))
+            if (lastFlushRec != NOT_FOUND && isValidFlushNotification(dataPart, lastFlushRec))
                 return lastFlushRec;
 
             maxOffset -= flushPeriodOps;
         }
     }
 
-    protected boolean isValidFlushRecord(TopicPartition dataPart, ConsumerRecord<Object,OpMessage> lastFlushRec) {
+    protected boolean isValidFlushNotification(
+        TopicPartition dataPart,
+        ConsumerRecord<Object,FlushNotification> lastFlushRec
+    ) {
         // Sometimes Kafka provides smaller offset than actually is known to be committed.
         // In that case we have to find earlier flush record to be able to load the data.
         long endOffsetData = Utils.endOffset(dataConsumer, dataPart);
@@ -345,7 +356,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         return false;
     }
 
-    protected ConsumerRecord<Object,OpMessage> tryFindLastFlushRecord(
+    protected ConsumerRecord<Object,FlushNotification> tryFindLastFlushNotification(
         TopicPartition opsPart,
         long maxOffset,
         Duration pollTimeout
@@ -362,7 +373,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         opsConsumer.seek(opsPart, offset);
 
         int processedRecs = 0;
-        ConsumerRecord<Object,OpMessage> lastFlushRec = null;
+        ConsumerRecord<Object,FlushNotification> lastFlush = null;
 
         outer: for (;;) {
             ConsumerRecords<Object,OpMessage> recs = opsConsumer.poll(pollTimeout);
@@ -381,7 +392,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
                     log.trace("Searching through record: {}", rec);
 
                 if (rec.value().getOpType() == OP_FLUSH_NOTIFICATION) {
-                    lastFlushRec = rec;
+                    lastFlush = Utils.cast(rec);
                     break outer;
                 }
 
@@ -392,11 +403,11 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
         if (log.isDebugEnabled()) {
             log.debug("Searched through {} records in partition {}, last flush notification record: {}",
-                processedRecs, opsPart, lastFlushRec);
+                processedRecs, opsPart, lastFlush);
         }
 
-        if (lastFlushRec != null)
-            return lastFlushRec;
+        if (lastFlush != null)
+            return lastFlush;
 
         return offset == 0 ? NOT_EXIST : NOT_FOUND;
     }
