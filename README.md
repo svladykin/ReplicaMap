@@ -24,6 +24,8 @@ Think of it as a Java `ConcurrentMap<K,V>` that replicates all the updates over 
 + Optimized Compute: instead of heavy retry loops just send one-shot serializable closures using `compute` or `merge` methods.
   This is also useful when you apply a small update to a huge value to avoid sending the whole value over the network. 
 
++ Sharding: configure list of allowed Kafka partitions for each instance.
+
 + Kafka `Log Compaction` provides persistent backup of the replicated map contents.
 
 + It is possible to wrap any thread-safe implementations of `Map<K,V>` with ReplicaMap. The most obvious choice is `ConcurrentHashMap<K,V>` 
