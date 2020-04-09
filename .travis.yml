@@ -15,4 +15,6 @@ cache:
     - $HOME/.gradle/wrapper/
 
 addons:
-  artifacts: true
+  artifacts:
+    paths:
+      - ./log.txt
