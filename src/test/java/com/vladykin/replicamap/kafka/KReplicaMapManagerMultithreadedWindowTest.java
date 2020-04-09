@@ -205,19 +205,10 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                 }
 
                 System.out.println("minMapSize: " + minMapSize + ", maxMapSize: " + maxMapSize);
-                assertTrue(maxMapSize <= threadsCnt, () -> { // MAPS_CHECK_PRECONDITION is set to false for that
-                    StringBuilder sb = new StringBuilder("\n");
 
-                    for (KReplicaMap<Long,Long> m : maps) {
-                        sb.append("\n")
-                          .append(Long.toHexString(m.getManager().clientId))
-                          .append("  ")
-                          .append(m.unwrap().toString());
-                    }
-
-                    sb.append("\n\n");
-                    return sb.toString();
-                });
+                // The following assertion is wrong because replication works in multiple threads and
+                // "add" operation may be replicated before "remove" if they happen to be in different partitions.
+//                assertTrue(maxMapSize <= threadsCnt);
 
                 awaitEqual(maps, (m1, m2) -> {
                     Iterator<Long> it1 = m1.keySet().iterator();
@@ -269,7 +260,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         @SuppressWarnings("SortedCollectionWithNonComparableKeys")
         @Override
         protected <K, V> Map<K,V> createInnerMap() {
-            // Need atomic size calculation to guarantee the correct results.
+            // Atomic size calculation to avoid scanning the map contents.
             Map<K,V> map = new ConcurrentSkipListMap<>();
             AtomicInteger size = new AtomicInteger();
 
