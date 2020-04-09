@@ -2,10 +2,12 @@ package com.vladykin.replicamap.kafka;
 
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.ReplicaMapException;
+import com.vladykin.replicamap.holder.MapsHolderSingle;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -15,6 +17,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -75,7 +78,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         cfg.put(OPS_WORKERS, 3);
         cfg.put(FLUSH_WORKERS, 2);
 
-        cfg.put(MAPS_HOLDER, KReplicaMapManagerMultithreadedIncrementSimpleTest.SkipListMapHolder.class);
+        cfg.put(MAPS_HOLDER, AtomicSizeSkipListMapHolder.class);
 
         cfg.put(KEY_SERIALIZER_CLASS, LongSerializer.class);
         cfg.put(KEY_DESERIALIZER_CLASS, LongDeserializer.class);
@@ -154,7 +157,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                                 managers.reset(mgrId, m);
                                 continue;
                             }
-                            KReplicaNavigableMap<Long,Long> map = (KReplicaNavigableMap<Long,Long>)m.<Long,Long>getMap();
+                            KReplicaMap<Long,Long> map = m.getMap();
 
                             long delKey = lastAddedKey[threadId].get();
                             long addKey = delKey + threadsCnt;
@@ -163,7 +166,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                             if (delVal != null)
                                 assertEquals(1L, delVal);
 
-                            map.putIfAbsent(addKey, 1L);
+                            map.put(addKey, 1L);
 
                             assertTrue(lastAddedKey[threadId].compareAndSet(delKey, addKey));
 
@@ -262,4 +265,90 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         }
     }
 
+    public static class AtomicSizeSkipListMapHolder extends MapsHolderSingle {
+        @SuppressWarnings("SortedCollectionWithNonComparableKeys")
+        @Override
+        protected <K, V> Map<K,V> createInnerMap() {
+            // Need atomic size calculation to guarantee the correct results.
+            Map<K,V> map = new ConcurrentSkipListMap<>();
+            AtomicInteger size = new AtomicInteger();
+
+            return new Map<K,V>() {
+                @Override
+                public V get(Object key) {
+                    return map.get(key);
+                }
+
+                @Override
+                public V put(K key, V value) {
+                    V old = map.put(key, value);
+
+                    if (old == null)
+                        size.incrementAndGet();
+
+                    return old;
+                }
+
+                @Override
+                public V remove(Object key) {
+                    V old = map.remove(key);
+
+                    if (old != null)
+                        size.decrementAndGet();
+
+                    return old;
+                }
+
+                @Override
+                public int size() {
+                    return size.get();
+                }
+
+                @Override
+                public boolean isEmpty() {
+                    return size() == 0;
+                }
+
+                @Override
+                public boolean containsKey(Object key) {
+                    return map.containsKey(key);
+                }
+
+                @Override
+                public boolean containsValue(Object value) {
+                    return map.containsValue(value);
+                }
+
+                @Override
+                public void putAll(Map<? extends K,? extends V> m) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public void clear() {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public Set<K> keySet() {
+                    return map.keySet();
+                }
+
+                @Override
+                public Collection<V> values() {
+                    return map.values();
+                }
+
+                @Override
+                public Set<Entry<K,V>> entrySet() {
+                    return map.entrySet();
+                }
+
+                @Override
+                public String toString() {
+                    return "[size=" + size + "]" + map.toString();
+                }
+            };
+        }
+    }
 }
