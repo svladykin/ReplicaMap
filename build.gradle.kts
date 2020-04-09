@@ -64,10 +64,10 @@ tasks.named<Test>("test") {
         events(STARTED, PASSED, FAILED, SKIPPED, STANDARD_OUT, STANDARD_ERROR)
         exceptionFormat = FULL
     }
-    filter {
-        includeTest(
-                "com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedWindowTest",
-                "testMultithreadedSlidingWindowWithRestart"
-        )
-    }
+//    filter {
+//        includeTest(
+//                "com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedWindowTest",
+//                "testMultithreadedSlidingWindowWithRestart"
+//        )
+//    }
 }

@@ -10,7 +10,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 
 /**
  * The queue that collects all the updated keys and values to be flushed.
@@ -176,8 +175,8 @@ public class FlushQueue {
             if (maxCleanOffset >= maxOffset)
                 return 0;
 
-            trace.trace("clean {} {} maxOffset={}, maxCleanOffset={}, maxAddOffset={}",
-                reason, dataPart, maxOffset, maxCleanOffset, maxAddOffset);
+//            trace.trace("clean {} {} maxOffset={}, maxCleanOffset={}, maxAddOffset={}",
+//                reason, dataPart, maxOffset, maxCleanOffset, maxAddOffset);
 
             for (;;) {
                 MiniRecord rec = queue.peek();
@@ -236,6 +235,7 @@ public class FlushQueue {
             return maxOffset;
         }
 
+        @SuppressWarnings("unused")
         public long getMaxCleanOffset() {
             return maxCleanOffset;
         }

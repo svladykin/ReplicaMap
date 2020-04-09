@@ -38,7 +38,6 @@ import org.slf4j.LoggerFactory;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
@@ -279,8 +278,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
             long maxFlushOffsetOps = -1L;
             if (maxCommittedFlushReq != null) {
-                trace.trace("{} firstRecOffset={}, maxCommittedFlushReq={}",
-                    flushPart, firstRecOffset, maxCommittedFlushReq);
+//                trace.trace("{} firstRecOffset={}, maxCommittedFlushReq={}",
+//                    flushPart, firstRecOffset, maxCommittedFlushReq);
 
                 maxFlushOffsetOps = maxCommittedFlushReq.value().getFlushOffsetOps();
                 flushQueues.get(flushPart.partition()).clean(maxFlushOffsetOps, "maxHistory");
@@ -462,22 +461,22 @@ public class FlushWorker extends Worker implements AutoCloseable {
         int part = flushPart.partition();
         Future<RecordMetadata> lastDataRecMetaFut = null;
 
-        Map<Object,Future<RecordMetadata>> futs = new HashMap<>();
+//        Map<Object,Future<RecordMetadata>> futs = new HashMap<>();
 
         dataProducer.beginTransaction();
         for (Map.Entry<Object,Object> entry : dataBatch.entrySet()) {
             lastDataRecMetaFut = dataProducer.send(new ProducerRecord<>(
                 dataTopic, part, entry.getKey(), entry.getValue()));
 
-            futs.put(entry.getKey(), lastDataRecMetaFut);
+//            futs.put(entry.getKey(), lastDataRecMetaFut);
         }
         dataProducer.sendOffsetsToTransaction(singletonMap(flushPart, flushConsumerOffset), flushConsumerGroupId);
         dataProducer.commitTransaction();
 
-        for (Map.Entry<Object,Object> entry : dataBatch.entrySet())
-            trace.trace("flushTx {} minOffset={}, maxOffset={}, maxCleanOffset={}, dataOffset={}, key={}, val={}",
-                flushPart, dataBatch.getMinOffset(), dataBatch.getMaxOffset(), dataBatch.getMaxCleanOffset(),
-                futs.get(entry.getKey()).get().offset(), entry.getKey(), entry.getValue());
+//        for (Map.Entry<Object,Object> entry : dataBatch.entrySet())
+//            trace.trace("flushTx {} minOffset={}, maxOffset={}, maxCleanOffset={}, dataOffset={}, key={}, val={}",
+//                flushPart, dataBatch.getMinOffset(), dataBatch.getMaxOffset(), dataBatch.getMaxCleanOffset(),
+//                futs.get(entry.getKey()).get().offset(), entry.getKey(), entry.getValue());
 
         // We check that the batch is not empty, thus we have to have the last record non-null here.
         // Since ReplicaMap checks preconditions locally before sending anything to Kafka,
