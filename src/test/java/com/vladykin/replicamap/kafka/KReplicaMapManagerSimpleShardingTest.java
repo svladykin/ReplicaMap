@@ -2,6 +2,7 @@ package com.vladykin.replicamap.kafka;
 
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.ReplicaMapException;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -90,7 +91,7 @@ class KReplicaMapManagerSimpleShardingTest {
 
         KReplicaMapManager all = new KReplicaMapManager(getShardedConfig(null, false));
 
-        all.start(START_TIMEOUT, TimeUnit.SECONDS);
+        all.start(Duration.ofSeconds(START_TIMEOUT));
 
         for (int i = 0; i < 12; i++)
             all.getMap().put(i, 0);
