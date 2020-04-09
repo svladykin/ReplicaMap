@@ -2,6 +2,7 @@ package com.vladykin.replicamap;
 
 import com.vladykin.replicamap.holder.MapsHolder;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -32,8 +33,17 @@ public interface ReplicaMapManager extends AutoCloseable {
             start().get(timeout, unit);
         }
         catch (Exception e) {
-            throw new ReplicaMapException("Failed to start replica map manager.", e);
+            throw new ReplicaMapException("Failed to start manager.", e);
         }
+    }
+
+    /**
+     * Synchronously start the manager and wait until it will be started or for the specified timeout.
+     *
+     * @param timeout Timeout.
+     */
+    default void start(Duration timeout) {
+        start(timeout.toNanos(), TimeUnit.NANOSECONDS);
     }
 
     /**
