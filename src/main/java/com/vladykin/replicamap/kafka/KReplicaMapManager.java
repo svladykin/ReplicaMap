@@ -91,6 +91,7 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.generateUniqueNodeId
 import static com.vladykin.replicamap.kafka.impl.util.Utils.getMacAddresses;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.parseIntSet;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -815,8 +816,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         BiFunction<?,?,?> function,
         Box<V> updatedValueBox
     ) {
-//        trace.trace("applyReceivedUpdate {} offset={}, key={}, val={}",
-//            new TopicPartition(topic, part), offset, key, upd);
+        trace.trace("applyReceivedUpdate {} offset={}, key={}, val={}",
+            new TopicPartition(topic, part), offset, key, upd);
 
         Object mapId = maps.getMapId(key);
 
