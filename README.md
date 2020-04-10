@@ -103,10 +103,10 @@ All the keys and values must correctly implement `hashCode` and `equals` because
 heavily relies on that. The same for the map identifiers returned by `MapsHolder.getMapId(K key)`.
 
 All the equal keys (where `equals` returns `true`) must always get to the same Kafka partition.
-For example, by default Kafka partitions the keys by hashing their bytes produced by the `Serializer`,
+For example, by default Kafka partitions keys by hashing their bytes produced by the `Serializer`,
 if you have some extra fields in the key and these fields do not participate in `equals` but participate 
-in serialization, then the equal keys may be placed to different partitions. The sequence of updates 
-for the key looses linearizability and the state may become inconsistent across the clients.
+in serialization, then the equal keys may be placed to different partitions. In that case the sequence 
+of updates for the key looses linearizability and the state may become inconsistent across the clients.
 
 ReplicaMap is eventually consistent: beware of possible lags, it is hard to predict when all the 
 replicas will receive a given update.
@@ -119,10 +119,10 @@ preserved then make sure you either have only 1 partition per topic or have coll
 to the same partition.
 
 When using Optimized Compute you must never update values inplace, always create a modified copy of the value instead.
-Otherwise incorrect state may flushed and data will be broken. For the same reason you must never modify
+Otherwise incorrect state may be flushed and data will be broken. For the same reason you must never modify
 keys and values in a listener.
 
-## Protocol
+## Protocol and architecture
 
 There are 3 Kafka topics participate in the protocol (see below about their configuration): 
  - `data` topic, a compacted topic where plain key-value records are stored (an existing topic can be used)
@@ -138,7 +138,7 @@ to the underlying map. Since all the updates arrive in the same order for the sa
 the same partition to be exact) we have eventually consistent state across all the replicas.
 
 Optimized Compute feature relies on this per-partition update linearizability. Instead of 
-a loop that retries calling `ConcurrentMap.reaplce(K,V,V)` and sending `ops` messages over 
+a loop that retries calling `ConcurrentMap.replace(K,V,V)` and sending `ops` messages over 
 and over again for each attempt, we can serialize the function passed to the `compute` method, 
 the function will be sent to all the replicas and it will be executed on each replica only once.
 This may be much more efficient for operations like incrementing heavily contended counters 
