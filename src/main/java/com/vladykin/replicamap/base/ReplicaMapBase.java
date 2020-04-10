@@ -24,6 +24,15 @@ import org.slf4j.LoggerFactory;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OpState.FINISHED;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OpState.SENDING;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OpState.STARTING;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_COMPUTE;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_COMPUTE_IF_PRESENT;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_MERGE;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT_IF_ABSENT;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REMOVE_ANY;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REMOVE_EXACT;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REPLACE_ANY;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REPLACE_EXACT;
 
 /**
  * Base class for implementing {@link ReplicaMap} with abstract communication.
@@ -36,23 +45,6 @@ import static com.vladykin.replicamap.base.ReplicaMapBase.OpState.STARTING;
  */
 public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
     private static final Logger log = LoggerFactory.getLogger(ReplicaMapBase.class);
-
-    public static final byte OP_PUT = 'p';
-    public static final byte OP_PUT_IF_ABSENT = 'P';
-
-    public static final byte OP_REPLACE_ANY = 'c';
-    public static final byte OP_REPLACE_EXACT = 'C';
-
-    public static final byte OP_REMOVE_ANY = 'r';
-    public static final byte OP_REMOVE_EXACT = 'R';
-
-    public static final byte OP_COMPUTE = 'x';
-    public static final byte OP_COMPUTE_IF_PRESENT = 'X';
-
-    public static final byte OP_MERGE = 'm';
-
-    public static final byte OP_FLUSH_REQUEST = 'f';
-    public static final byte OP_FLUSH_NOTIFICATION = 'F';
 
     @SuppressWarnings("rawtypes")
     protected static final AtomicReferenceFieldUpdater<ReplicaMapBase, ReplicaMapListener> LISTENER =

@@ -9,8 +9,8 @@ import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.utils.ByteUtils;
 
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_REQUEST;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_REQUEST;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer.NULL_ARRAY_LENGTH;
 
 /**

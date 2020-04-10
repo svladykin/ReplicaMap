@@ -1,7 +1,5 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
-import com.vladykin.replicamap.base.ReplicaMapBase;
-
 /**
  * Notification about successful flush.
  *
@@ -13,7 +11,7 @@ public class FlushNotification extends OpMessage {
     protected final long flushOffsetOps;
 
     public FlushNotification(long clientId, long flushOffsetData, long flushOffsetOps) {
-        super(ReplicaMapBase.OP_FLUSH_NOTIFICATION, clientId);
+        super(OP_FLUSH_NOTIFICATION, clientId);
 
         this.flushOffsetData = flushOffsetData;
         this.flushOffsetOps = flushOffsetOps;

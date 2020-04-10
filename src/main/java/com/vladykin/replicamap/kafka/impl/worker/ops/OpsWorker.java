@@ -1,7 +1,6 @@
 package com.vladykin.replicamap.kafka.impl.worker.ops;
 
 import com.vladykin.replicamap.ReplicaMapException;
-import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.MapUpdateMessage;
@@ -9,6 +8,7 @@ import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import com.vladykin.replicamap.kafka.impl.worker.Worker;
+import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -28,9 +28,9 @@ import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_PUT;
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_REMOVE_ANY;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REMOVE_ANY;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static java.util.Collections.singleton;

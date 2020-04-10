@@ -1,7 +1,5 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
-import com.vladykin.replicamap.base.ReplicaMapBase;
-
 /**
  * Flush request.
  *
@@ -13,7 +11,7 @@ public class FlushRequest extends OpMessage {
     protected final long cleanOffsetOps;
 
     public FlushRequest(long clientId, long flushOffsetOps, long cleanOffsetOps) {
-        super(ReplicaMapBase.OP_FLUSH_REQUEST, clientId);
+        super(OP_FLUSH_REQUEST, clientId);
 
         this.flushOffsetOps = flushOffsetOps;
         this.cleanOffsetOps = cleanOffsetOps;

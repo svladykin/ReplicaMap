@@ -1,6 +1,5 @@
 package com.vladykin.replicamap.kafka.impl.worker.ops;
 
-import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.MapUpdateMessage;
@@ -8,6 +7,7 @@ import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
@@ -31,8 +31,8 @@ import org.apache.kafka.common.serialization.Serializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_REQUEST;
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_PUT;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_REQUEST;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singleton;

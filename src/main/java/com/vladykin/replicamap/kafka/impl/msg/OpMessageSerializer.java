@@ -1,6 +1,5 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
-import com.vladykin.replicamap.base.ReplicaMapBase;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
@@ -9,6 +8,9 @@ import java.util.function.BiFunction;
 import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.utils.ByteUtils;
+
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_REQUEST;
 
 /**
  * Operation message serializer.
@@ -42,10 +44,10 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
     @Override
     public byte[] serialize(String topic, Headers headers, OpMessage opMsg) {
         switch (opMsg.getOpType()) {
-            case ReplicaMapBase.OP_FLUSH_REQUEST:
+            case OP_FLUSH_REQUEST:
                 return serializeFlushRequest((FlushRequest)opMsg);
 
-            case ReplicaMapBase.OP_FLUSH_NOTIFICATION:
+            case OP_FLUSH_NOTIFICATION:
                 return serializeFlushNotification((FlushNotification)opMsg);
         }
 

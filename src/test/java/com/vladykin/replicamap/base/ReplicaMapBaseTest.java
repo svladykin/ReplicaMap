@@ -17,6 +17,7 @@ import java.util.function.BiFunction;
 import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.interruptRunningOps;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
@@ -501,7 +502,7 @@ class ReplicaMapBaseTest {
             assertEquals("5", newVal);
             cnt.incrementAndGet();
         });
-        rmap.onReceiveUpdate(false, 7, ReplicaMapBase.OP_PUT, 5, null, "5", null, null);
+        rmap.onReceiveUpdate(false, 7, OP_PUT, 5, null, "5", null, null);
         assertEquals(4, cnt.get());
 
         rmap.setListener((map, myUp, key, oldVal, newVal) -> {

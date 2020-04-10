@@ -36,7 +36,7 @@ import org.apache.kafka.common.errors.ProducerFencedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
 import static java.util.Collections.singleton;

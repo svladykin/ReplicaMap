@@ -24,7 +24,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
+import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorkerTest.CLIENT1_ID;
 import static com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorkerTest.CLIENT2_ID;
 import static com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorkerTest.TOPIC_DATA;
