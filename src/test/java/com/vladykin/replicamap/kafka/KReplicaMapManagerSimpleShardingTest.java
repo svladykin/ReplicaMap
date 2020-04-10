@@ -43,6 +43,7 @@ import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class KReplicaMapManagerSimpleShardingTest {
     static final int START_TIMEOUT = 60;
@@ -97,7 +98,8 @@ class KReplicaMapManagerSimpleShardingTest {
         for (int i = 0; i < 12; i++)
             all.getMap().put(i, 0);
 
-        awaitForFlush(all);
+        awaitFor(4, KReplicaMapManager::getSuccessfulFlushes, all);
+        awaitFor(4, KReplicaMapManager::getAssignedFlushPartitions, all);
 
         KReplicaMapManager shard1 = new KReplicaMapManager(getShardedConfig("0,3", false));
         KReplicaMapManager shard2 = new KReplicaMapManager(getShardedConfig("1,2", true));
@@ -127,6 +129,15 @@ class KReplicaMapManagerSimpleShardingTest {
 
         all.stop(); // To make sure that only shards actually flush the data.
 
+        awaitFor(4, KReplicaMapManager::getAssignedFlushPartitions, shard1, shard2, shard3, shard4);
+
+        Set<Integer> parts = new HashSet<>();
+        for (KReplicaMapManager m : asList(shard1, shard2, shard3, shard4)) {
+            for (int part : m.getAssignedFlushPartitionsArray())
+                assertTrue(parts.add(part));
+        }
+        assertEquals(4, parts.size());
+
         assertEquals(0, shard1.getMap().put(3, 1));
         assertThrows(ReplicaMapException.class, () -> shard1.getMap().put(1, 1));
         assertEquals(0, shard2.getMap().put(2, 1));
@@ -143,10 +154,9 @@ class KReplicaMapManagerSimpleShardingTest {
         }
 
         awaitFor(4, KReplicaMapManager::getReceivedFlushRequests, shard1, shard2, shard3, shard4);
-        awaitForFlush(shard1, shard2, shard3, shard4);
+        awaitFor(4, KReplicaMapManager::getSuccessfulFlushes, shard1, shard2, shard3, shard4);
     }
 
-    @SuppressWarnings("SameParameterValue")
     void awaitFor(long exp, ToLongFunction<KReplicaMapManager> metric, KReplicaMapManager... ms)
         throws InterruptedException, TimeoutException {
         long start = System.nanoTime();
@@ -158,25 +168,6 @@ class KReplicaMapManagerSimpleShardingTest {
                 total += metric.applyAsLong(m);
 
             if (exp == total)
-                break;
-
-            Thread.sleep(20);
-
-            if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(30))
-                throw new TimeoutException();
-        }
-    }
-
-    void awaitForFlush(KReplicaMapManager... ms) throws InterruptedException, TimeoutException {
-        long start = System.nanoTime();
-
-        for (;;) {
-            int total = 0;
-
-            for (KReplicaMapManager m : ms)
-                total += m.getSuccessfulFlushes();
-
-            if (total > 0)
                 break;
 
             Thread.sleep(20);

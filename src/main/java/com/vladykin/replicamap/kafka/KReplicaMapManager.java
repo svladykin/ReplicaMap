@@ -26,6 +26,7 @@ import com.vladykin.replicamap.kafka.impl.worker.Worker;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -438,6 +439,37 @@ public class KReplicaMapManager implements ReplicaMapManager {
      */
     public long getSuccessfulFlushes() {
         return successfulFlushes.sum();
+    }
+
+    /**
+     * @return Array of currently assigned flush partitions.
+     */
+    public int[] getAssignedFlushPartitionsArray() {
+        Set<TopicPartition> parts = new HashSet<>();
+
+        for (FlushWorker worker : flushWorkers)
+            parts.addAll(worker.getAssignedPartitions());
+
+        int[] result = new int[parts.size()];
+        int i = 0;
+
+        for (TopicPartition part : parts)
+            result[i++] = part.partition();
+
+        Arrays.sort(result);
+        return result;
+    }
+
+    /**
+     * @return Number of currently assigned flush partitions.
+     */
+    public int getAssignedFlushPartitions() {
+        Set<TopicPartition> parts = new HashSet<>();
+
+        for (FlushWorker worker : flushWorkers)
+            parts.addAll(worker.getAssignedPartitions());
+
+        return parts.size();
     }
 
     /**

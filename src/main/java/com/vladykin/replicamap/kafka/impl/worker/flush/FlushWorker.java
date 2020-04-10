@@ -9,12 +9,14 @@ import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import com.vladykin.replicamap.kafka.impl.worker.Worker;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -76,6 +78,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
     protected final Map<TopicPartition,UnprocessedFlushRequests> unprocessedFlushRequests = new HashMap<>();
     protected final short[] allowedPartitions;
+    protected final Set<TopicPartition> assignedPartitions = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     protected final LongAdder receivedFlushRequests;
     protected final LongAdder successfulFlushes;
@@ -295,6 +298,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
     }
 
     protected void resetAll(Consumer<Object,FlushRequest> flushConsumer) {
+        assignedPartitions.clear();
         unprocessedFlushRequests.clear();
 
         for (int part = 0; part < dataProducers.size(); part++)
@@ -541,6 +545,10 @@ public class FlushWorker extends Worker implements AutoCloseable {
         }
     }
 
+    public Set<TopicPartition> getAssignedPartitions() {
+        return assignedPartitions;
+    }
+
     protected List<TopicPartition> convert(Collection<TopicPartition> partitions, String topic) {
         return partitions.stream()
             .map(p -> new TopicPartition(topic, p.partition()))
@@ -578,6 +586,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             log.debug("Flush partitions assigned: {}", partitions);
             clearUnprocessedFlushRequests(partitions);
             initDataProducers(partitions);
+            assignedPartitions.addAll(partitions);
         }
 
         @Override
@@ -588,6 +597,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             log.debug("Flush partitions revoked: {}", partitions);
             clearUnprocessedFlushRequests(partitions);
             resetDataProducers(partitions);
+            assignedPartitions.removeAll(partitions);
         }
     }
 }
