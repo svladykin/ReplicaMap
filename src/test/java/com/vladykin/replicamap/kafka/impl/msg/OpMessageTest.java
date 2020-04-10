@@ -41,21 +41,21 @@ class OpMessageTest {
         OpMessage msg = new MapUpdateMessage((byte)1, clientId, 1, v1, v2, function);
         byte[] msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 6 + 1 + 1, msgBytes.length);
-        assertEquals(msg, des.deserialize(null, msgBytes));
+        assertEqualsFull(msg, des.deserialize(null, msgBytes));
 
         msg = new MapUpdateMessage((byte)1, clientId, 1, null, v2, function);
         msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 0 + 1 + 6 + 1 + 1, msgBytes.length);
-        assertEquals(msg, des.deserialize(null, msgBytes));
+        assertEqualsFull(msg, des.deserialize(null, msgBytes));
 
         msg = new MapUpdateMessage((byte)1, clientId, 1, v1, null, null);
         msgBytes = ser.serialize(null, msg);
         assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 0 + 1 + 0, msgBytes.length);
-        assertEquals(msg, des.deserialize(null, msgBytes));
+        assertEqualsFull(msg, des.deserialize(null, msgBytes));
 
         // compatibility
         msgBytes = Arrays.copyOf(msgBytes, msgBytes.length - 1);
-        assertEquals(msg, des.deserialize(null, msgBytes));
+        assertEqualsFull(msg, des.deserialize(null, msgBytes));
 
         ser.close();
         des.close();
@@ -64,6 +64,15 @@ class OpMessageTest {
         assertTrue(tvDes.closed);
         assertTrue(funSer.closed);
         assertTrue(funDes.closed);
+    }
+
+    static void assertEqualsFull(OpMessage m1, OpMessage m2) {
+        assertEquals(m1, m2);
+
+        if (m1 != null) {
+            assertEquals(m1.hashCode(), m2.hashCode());
+            assertEquals(m1.toString(), m2.toString());
+        }
     }
 
     @Test
@@ -81,7 +90,7 @@ class OpMessageTest {
         assertEquals(1 + 1 + 1 + 1 + 1, msgBytes.length);
 
         FlushRequest msgx = (FlushRequest)des.deserialize(null, msgBytes);
-        assertEquals(msg, msgx);
+        assertEqualsFull(msg, msgx);
 
         assertEquals(OP_FLUSH_REQUEST, msgx.getOpType());
         assertEquals(clientId, msgx.getClientId());
@@ -104,7 +113,7 @@ class OpMessageTest {
         assertEquals(1 + 1 + 1 + 1 + 1, msgBytes.length);
 
         FlushNotification msgx = (FlushNotification)des.deserialize(null, msgBytes);
-        assertEquals(msg, msgx);
+        assertEqualsFull(msg, msgx);
 
         assertEquals(OP_FLUSH_NOTIFICATION, msgx.getOpType());
         assertEquals(clientId, msgx.getClientId());
