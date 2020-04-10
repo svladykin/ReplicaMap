@@ -51,11 +51,11 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
                 return serializeFlushNotification((FlushNotification)opMsg);
         }
 
-        return serializeMapUpdateMessage((MapUpdateMessage)opMsg, topic, headers);
+        return serializeMapUpdateMessage((MapUpdate)opMsg, topic, headers);
     }
 
     @SuppressWarnings("unchecked")
-    protected byte[] serializeMapUpdateMessage(MapUpdateMessage opMsg, String topic, Headers headers) {
+    protected byte[] serializeMapUpdateMessage(MapUpdate opMsg, String topic, Headers headers) {
         V expVal = (V)opMsg.getExpectedValue();
         byte[] exp = expVal == null ? null : valSer.serialize(topic, headers, expVal);
 

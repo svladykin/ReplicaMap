@@ -8,14 +8,14 @@ import java.util.function.BiFunction;
  *
  * @author Sergi Vladykin http://vladykin.com
  */
-public class MapUpdateMessage extends OpMessage {
+public class MapUpdate extends OpMessage {
 
     protected final long opId;
     protected final Object expValue;
     protected final Object updValue;
     protected final BiFunction<?,?,?> function;
 
-    public MapUpdateMessage(
+    public MapUpdate(
         byte opType,
         long clientId,
         long opId,
@@ -52,7 +52,7 @@ public class MapUpdateMessage extends OpMessage {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
 
-        MapUpdateMessage that = (MapUpdateMessage)o;
+        MapUpdate that = (MapUpdate)o;
 
         if (opId != that.opId) return false;
         if (!Objects.equals(expValue, that.expValue)) return false;

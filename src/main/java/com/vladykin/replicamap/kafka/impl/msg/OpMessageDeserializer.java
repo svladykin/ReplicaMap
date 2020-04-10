@@ -98,7 +98,7 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
                 ByteUtils.readVarlong(buf));
         }
 
-        return new MapUpdateMessage(
+        return new MapUpdate(
             opType,
             ByteUtils.readVarlong(buf),
             ByteUtils.readVarlong(buf),

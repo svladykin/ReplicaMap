@@ -10,7 +10,7 @@ import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
-import com.vladykin.replicamap.kafka.impl.msg.MapUpdateMessage;
+import com.vladykin.replicamap.kafka.impl.msg.MapUpdate;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageDeserializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
@@ -777,7 +777,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         BiFunction<?,?,?> function
     ) {
         return new ProducerRecord<>(opsTopic, key,
-            new MapUpdateMessage(updateType, clientId, opId, exp, upd, function));
+            new MapUpdate(updateType, clientId, opId, exp, upd, function));
     }
 
     protected <K,V> void sendUpdate(

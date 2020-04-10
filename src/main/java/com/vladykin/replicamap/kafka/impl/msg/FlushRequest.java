@@ -1,7 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
 /**
- * Flush request.
+ * Flush request message.
  *
  * @author Sergi Vladykin http://vladykin.com
  */

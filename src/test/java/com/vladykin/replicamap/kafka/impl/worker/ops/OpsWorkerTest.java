@@ -2,7 +2,7 @@ package com.vladykin.replicamap.kafka.impl.worker.ops;
 
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
-import com.vladykin.replicamap.kafka.impl.msg.MapUpdateMessage;
+import com.vladykin.replicamap.kafka.impl.msg.MapUpdate;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Box;
@@ -113,7 +113,7 @@ public class OpsWorkerTest {
     static ConsumerRecord<Object,OpMessage> newPutRecord(long clientId, long offset) {
         Random rnd = ThreadLocalRandom.current();
         return new ConsumerRecord<>(TOPIC_OPS, 0,
-            offset, rnd.nextInt(10), new MapUpdateMessage(OP_PUT, clientId, 0, null, rnd.nextInt(10), null));
+            offset, rnd.nextInt(10), new MapUpdate(OP_PUT, clientId, 0, null, rnd.nextInt(10), null));
     }
 
     protected ConsumerRecord<Object,OpMessage> addPutRecord(long clientId, long offset) {
@@ -137,9 +137,9 @@ public class OpsWorkerTest {
     void testForwardCompatibility() {
         TopicPartition p = new TopicPartition(TOPIC_OPS, 0);
         opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 1L, null,
-            new MapUpdateMessage((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
+            new MapUpdate((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
         opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 2L, "key",
-            new MapUpdateMessage((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
+            new MapUpdate((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
     }
 
     @Test

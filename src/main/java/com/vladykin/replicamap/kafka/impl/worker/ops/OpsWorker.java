@@ -3,7 +3,7 @@ package com.vladykin.replicamap.kafka.impl.worker.ops;
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
-import com.vladykin.replicamap.kafka.impl.msg.MapUpdateMessage;
+import com.vladykin.replicamap.kafka.impl.msg.MapUpdate;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
@@ -268,7 +268,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
                     log.warn("Unexpected op type: {}", (char)op.getOpType());
             }
             else {
-                MapUpdateMessage updateOp = (MapUpdateMessage)op;
+                MapUpdate updateOp = (MapUpdate)op;
 
                 updated = updateHandler.applyReceivedUpdate(
                     rec.topic(),

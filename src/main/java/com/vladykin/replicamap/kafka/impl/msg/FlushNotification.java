@@ -1,7 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
 /**
- * Notification about successful flush.
+ * Notification message about successful flush.
  *
  * @author Sergi Vladykin http://vladykin.com
  */
