@@ -334,7 +334,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         log.debug("Sending flush request for partition {}: {}", opsPart, rec);
 
         flushProducer.send(rec, (meta, err) -> {
-            if (err == null)
+            if (err == null && meta != null)
                 sentFlushRequests.increment();
         });
     }
