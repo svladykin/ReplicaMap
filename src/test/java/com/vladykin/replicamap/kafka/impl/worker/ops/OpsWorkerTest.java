@@ -18,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BiFunction;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -99,7 +100,11 @@ public class OpsWorkerTest {
             FLUSH_MAX_OPS,
             flushQueues,
             cleanQueue,
-            this::applyReceivedUpdate
+            this::applyReceivedUpdate,
+            new LongAdder(),
+            new LongAdder(),
+            new LongAdder(),
+            new LongAdder()
         );
     }
 

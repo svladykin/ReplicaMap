@@ -135,9 +135,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
     protected final List<FlushQueue> flushQueues;
 
-    protected final LongAdder receivedFlushRequests = new LongAdder();
-    protected final LongAdder successfulFlushes = new LongAdder();
-
     protected final List<FlushWorker> flushWorkers;
     protected final List<OpsWorker> opsWorkers;
 
@@ -147,6 +144,14 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final short[] allowedPartitions;
 
     protected volatile State state = NEW;
+
+    protected final LongAdder sentUpdates = new LongAdder();
+    protected final LongAdder receivedUpdates = new LongAdder();
+    protected final LongAdder receivedDataRecords = new LongAdder();
+    protected final LongAdder sentFlushRequests = new LongAdder();
+    protected final LongAdder receivedFlushRequests = new LongAdder();
+    protected final LongAdder successfulFlushes = new LongAdder();
+    protected final LongAdder receivedFlushNotifications = new LongAdder();
 
     /**
      * Constructor with provided config.
@@ -366,7 +371,11 @@ public class KReplicaMapManager implements ReplicaMapManager {
             flushPeriodOps,
             flushQueues,
             cleanQueue,
-            this::applyReceivedUpdate
+            this::applyReceivedUpdate,
+            sentFlushRequests,
+            receivedUpdates,
+            receivedDataRecords,
+            receivedFlushNotifications
         );
     }
 
@@ -380,6 +389,41 @@ public class KReplicaMapManager implements ReplicaMapManager {
             getMacAddresses(),
             new SecureRandom()
         );
+    }
+
+    /**
+     * @return Number of sent updates.
+     */
+    public long getSentUpdates() {
+        return sentUpdates.sum();
+    }
+
+    /**
+     * @return Number of received updates.
+     */
+    public long getReceivedUpdates() {
+        return receivedUpdates.sum();
+    }
+
+    /**
+     * @return Number of received data records.
+     */
+    public long getReceivedDataRecords() {
+        return receivedDataRecords.sum();
+    }
+
+    /**
+     * @return Number of sent flush requests.
+     */
+    public long getSentFlushRequests() {
+        return sentFlushRequests.sum();
+    }
+
+    /**
+     * @return Number of received flush notifications.
+     */
+    public long getReceivedFlushNotifications() {
+        return receivedFlushNotifications.sum();
     }
 
     /**
@@ -797,13 +841,15 @@ public class KReplicaMapManager implements ReplicaMapManager {
                 (char)updateType, maps.getMapId(key), opsTopic, key, exp, upd);
         }
 
-        opsProducer.send(newMapUpdateRecord(map, opId, updateType, key, exp, upd, function), onSendFailed);
-//            (meta, err) -> {
-//            if (err == null && meta != null)
-//                trace.trace("sendUpdate {} offset={}, key={}, val={}", clientIdHex, meta.offset(), key, upd);
-//
-//            onSendFailed.onCompletion(meta, err);
-//        });
+        opsProducer.send(newMapUpdateRecord(map, opId, updateType, key, exp, upd, function),
+            (meta, err) -> {
+                if (err == null && meta != null) {
+                    sentUpdates.increment();
+//                    trace.trace("sendUpdate {} offset={}, key={}, val={}", clientIdHex, meta.offset(), key, upd);
+                }
+
+                onSendFailed.onCompletion(meta, err);
+            });
     }
 
     @SuppressWarnings("unused")

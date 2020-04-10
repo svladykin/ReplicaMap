@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -74,6 +75,11 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
     protected final Map<TopicPartition,FlushNotification> lastFlushNotifications = new HashMap<>();
 
+    protected final LongAdder sentFlushRequests;
+    protected final LongAdder receivedUpdates;
+    protected final LongAdder receivedDataRecords;
+    protected final LongAdder receivedFlushNotifications;
+
     public OpsWorker(
         long clientId,
         String dataTopic,
@@ -87,7 +93,11 @@ public class OpsWorker extends Worker implements AutoCloseable {
         int flushPeriodOps,
         List<FlushQueue> flushQueues,
         Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue,
-        OpsUpdateHandler updateHandler
+        OpsUpdateHandler updateHandler,
+        LongAdder sentFlushRequests,
+        LongAdder receivedUpdates,
+        LongAdder receivedDataRecords,
+        LongAdder receivedFlushNotifications
     ) {
         super("replicamap-ops-" + dataTopic + "-" +
             Long.toHexString(clientId), workerId);
@@ -107,6 +117,10 @@ public class OpsWorker extends Worker implements AutoCloseable {
         this.flushQueues = flushQueues;
         this.cleanQueue = cleanQueue;
         this.updateHandler = updateHandler;
+        this.sentFlushRequests = sentFlushRequests;
+        this.receivedUpdates = receivedUpdates;
+        this.receivedDataRecords = receivedDataRecords;
+        this.receivedFlushNotifications = receivedFlushNotifications;
     }
 
     protected Map<TopicPartition, Long> loadData() {
@@ -226,6 +240,8 @@ public class OpsWorker extends Worker implements AutoCloseable {
         Object val = dataRec.value();
         byte opType = val == null ? OP_REMOVE_ANY : OP_PUT;
 
+        receivedDataRecords.increment();
+
         updateHandler.applyReceivedUpdate(dataRec.topic(), dataRec.partition(), dataRec.offset(),
             0L, 0L, opType, key, null, val, null, null);
     }
@@ -255,6 +271,8 @@ public class OpsWorker extends Worker implements AutoCloseable {
             if (key == null) {
                 if (opType == OP_FLUSH_NOTIFICATION) {
                     FlushNotification flush = (FlushNotification)op;
+                    receivedFlushNotifications.increment();
+
                     FlushNotification old = lastFlushNotifications.get(opsPart);
                     // Notifications can arrive out of order, just ignore the outdated ones.
                     if (old == null || old.getFlushOffsetOps() < flush.getFlushOffsetOps()) {
@@ -269,6 +287,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
             }
             else {
                 MapUpdate updateOp = (MapUpdate)op;
+                receivedUpdates.increment();
 
                 updated = updateHandler.applyReceivedUpdate(
                     rec.topic(),
@@ -311,8 +330,13 @@ public class OpsWorker extends Worker implements AutoCloseable {
     protected void sendFlushRequest(TopicPartition opsPart, long flushOffsetOps, long lastCleanOffsetOps) {
         ProducerRecord<Object,FlushRequest> rec = new ProducerRecord<>(flushTopic, opsPart.partition(),
             null, newFlushRequest(flushOffsetOps, lastCleanOffsetOps));
+
         log.debug("Sending flush request for partition {}: {}", opsPart, rec);
-        flushProducer.send(rec);
+
+        flushProducer.send(rec, (meta, err) -> {
+            if (err == null)
+                sentFlushRequests.increment();
+        });
     }
 
     protected FlushRequest newFlushRequest(long flushOffsetOps, long lastCleanOffsetOps) {

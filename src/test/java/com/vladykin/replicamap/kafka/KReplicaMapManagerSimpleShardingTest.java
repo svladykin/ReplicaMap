@@ -3,7 +3,6 @@ package com.vladykin.replicamap.kafka;
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.ReplicaMapException;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -14,6 +13,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.common.Cluster;
@@ -38,6 +38,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESER
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.createTopics;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.kafkaClusterWith3Brokers;
+import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -78,7 +79,7 @@ class KReplicaMapManagerSimpleShardingTest {
     }
 
     static List<String> parseAllowedParts(String allowedParts) {
-        return Arrays.asList(allowedParts.split(","));
+        return asList(allowedParts.split(","));
     }
 
     @Test
@@ -112,11 +113,17 @@ class KReplicaMapManagerSimpleShardingTest {
 
         assertEquals(2, AllowedPartsResolver.cnt.get());
 
-        assertEquals(new HashSet<>(Arrays.asList(0,4,8,3,7,11)), shard1.getMap().keySet());
-        assertEquals(new HashSet<>(Arrays.asList(1,5,9,2,6,10)), shard2.getMap().keySet());
-        assertEquals(new HashSet<>(Arrays.asList(1,5,9,3,7,11)), shard3.getMap().keySet());
-        assertEquals(new HashSet<>(Arrays.asList(0,4,8,2,6,10)), shard4.getMap().keySet());
-        assertEquals(new HashSet<>(Arrays.asList(0,1,2,3,4,5,6,7,8,9,10,11)), all.getMap().keySet());
+        for (KReplicaMapManager m : asList(shard1, shard2, shard3, shard4)) {
+            assertEquals(6, m.getReceivedDataRecords());
+            assertEquals(0, m.getReceivedUpdates());
+            assertEquals(2, m.getReceivedFlushNotifications());
+        }
+
+        assertEquals(new HashSet<>(asList(0,4,8,3,7,11)), shard1.getMap().keySet());
+        assertEquals(new HashSet<>(asList(1,5,9,2,6,10)), shard2.getMap().keySet());
+        assertEquals(new HashSet<>(asList(1,5,9,3,7,11)), shard3.getMap().keySet());
+        assertEquals(new HashSet<>(asList(0,4,8,2,6,10)), shard4.getMap().keySet());
+        assertEquals(new HashSet<>(asList(0,1,2,3,4,5,6,7,8,9,10,11)), all.getMap().keySet());
 
         all.stop(); // To make sure that only shards actually flush the data.
 
@@ -129,21 +136,28 @@ class KReplicaMapManagerSimpleShardingTest {
         assertEquals(0, shard4.getMap().put(0, 1));
         assertThrows(ReplicaMapException.class, () -> shard4.getMap().put(5, 1));
 
-        awaitForFlushRequests(4, shard1, shard2, shard3, shard4);
+        for (KReplicaMapManager m : asList(shard1, shard2, shard3, shard4)) {
+            assertEquals(1, m.getSentUpdates());
+            awaitFor(2, KReplicaMapManager::getReceivedUpdates, m);
+            awaitFor(1, KReplicaMapManager::getSentFlushRequests, m);
+        }
+
+        awaitFor(4, KReplicaMapManager::getReceivedFlushRequests, shard1, shard2, shard3, shard4);
         awaitForFlush(shard1, shard2, shard3, shard4);
     }
 
     @SuppressWarnings("SameParameterValue")
-    void awaitForFlushRequests(long flushReqs, KReplicaMapManager... ms) throws InterruptedException, TimeoutException {
+    void awaitFor(long exp, ToLongFunction<KReplicaMapManager> metric, KReplicaMapManager... ms)
+        throws InterruptedException, TimeoutException {
         long start = System.nanoTime();
 
         for (;;) {
-            int total = 0;
+            long total = 0;
 
             for (KReplicaMapManager m : ms)
-                total += m.getReceivedFlushRequests();
+                total += metric.applyAsLong(m);
 
-            if (flushReqs == total)
+            if (exp == total)
                 break;
 
             Thread.sleep(20);
