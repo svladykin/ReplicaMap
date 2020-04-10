@@ -119,6 +119,7 @@ class KReplicaMapManagerSimpleShardingTest {
             assertEquals(6, m.getReceivedDataRecords());
             assertEquals(0, m.getReceivedUpdates());
             assertEquals(2, m.getReceivedFlushNotifications());
+            assertEquals(0, m.getReceivedFlushRequests());
         }
 
         assertEquals(new HashSet<>(asList(0,4,8,3,7,11)), shard1.getMap().keySet());
@@ -133,6 +134,7 @@ class KReplicaMapManagerSimpleShardingTest {
 
         Set<Integer> parts = new HashSet<>();
         for (KReplicaMapManager m : asList(shard1, shard2, shard3, shard4)) {
+            assertEquals(0, m.getReceivedFlushRequests());
             for (int part : m.getAssignedFlushPartitionsArray())
                 assertTrue(parts.add(part));
         }
@@ -157,6 +159,7 @@ class KReplicaMapManagerSimpleShardingTest {
         awaitFor(4, KReplicaMapManager::getSuccessfulFlushes, shard1, shard2, shard3, shard4);
     }
 
+    @SuppressWarnings("BusyWait")
     void awaitFor(long exp, ToLongFunction<KReplicaMapManager> metric, KReplicaMapManager... ms)
         throws InterruptedException, TimeoutException {
         long start = System.nanoTime();
@@ -173,7 +176,7 @@ class KReplicaMapManagerSimpleShardingTest {
             Thread.sleep(20);
 
             if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(30))
-                throw new TimeoutException();
+                throw new TimeoutException("Expected: " + exp + ", actual: " + total);
         }
     }
 
