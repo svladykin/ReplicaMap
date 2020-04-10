@@ -291,7 +291,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         }
 
         receivedFlushRequests.add(partRecs.size());
-        flushReqs.addFlushRequests(flushPart, partRecs);
+        flushReqs.addFlushRequests(partRecs);
     }
 
     protected void resetAll(Consumer<Object,FlushRequest> flushConsumer) {
@@ -313,7 +313,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
                 flushPart, maxFlushReqOffset, maxFlushOffsetOps);
         }
 
-        UnprocessedFlushRequests flushRequests = new UnprocessedFlushRequests(maxFlushReqOffset, maxFlushOffsetOps);
+        UnprocessedFlushRequests flushRequests = new UnprocessedFlushRequests(
+            flushPart, maxFlushReqOffset, maxFlushOffsetOps);
 
         if (unprocessedFlushRequests.put(flushPart, flushRequests) != null)
             throw new IllegalStateException("Unprocessed flush requests already initialized for partition: " + flushPart);
