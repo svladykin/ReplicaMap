@@ -1,7 +1,6 @@
-package com.vladykin.replicamap.kafka.impl.worker;
+package com.vladykin.replicamap.kafka.impl.worker.flush;
 
 import com.vladykin.replicamap.ReplicaMapManager;
-import com.vladykin.replicamap.kafka.impl.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
@@ -26,12 +25,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.OP_FLUSH_NOTIFICATION;
-import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.CLIENT1_ID;
-import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.CLIENT2_ID;
-import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.TOPIC_DATA;
-import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.TOPIC_FLUSH;
-import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.TOPIC_OPS;
-import static com.vladykin.replicamap.kafka.impl.worker.OpsWorkerTest.newFlushNotification;
+import static com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorkerTest.CLIENT1_ID;
+import static com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorkerTest.CLIENT2_ID;
+import static com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorkerTest.TOPIC_DATA;
+import static com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorkerTest.TOPIC_FLUSH;
+import static com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorkerTest.TOPIC_OPS;
+import static com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorkerTest.newFlushNotification;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertEquals;

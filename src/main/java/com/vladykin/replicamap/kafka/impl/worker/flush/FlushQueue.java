@@ -1,4 +1,4 @@
-package com.vladykin.replicamap.kafka.impl;
+package com.vladykin.replicamap.kafka.impl.worker.flush;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -8,8 +8,6 @@ import java.util.stream.LongStream;
 import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
 
 /**
  * The queue that collects all the updated keys and values to be flushed.
@@ -150,7 +148,7 @@ public class FlushQueue {
             Batch dataBatch = new Batch(minOffset, maxOffset, maxCleanOffset);
 
             for (MiniRecord rec : queue) {
-                if (isOverMaxOffset(rec, maxOffset))
+                if (rec.offset() > maxOffset)
                     break;
 
                 dataBatch.put(rec.key(), rec.value());
@@ -181,7 +179,7 @@ public class FlushQueue {
             for (;;) {
                 MiniRecord rec = queue.peek();
 
-                if (rec == null || isOverMaxOffset(rec, maxOffset))
+                if (rec == null || rec.offset() > maxOffset)
                     break;
 
                 queue.poll();
@@ -249,6 +247,39 @@ public class FlushQueue {
                 ", collectedAll=" + getCollectedAll() +
                 ", size=" + size() +
                 ", map=" + super.toString() +
+                '}';
+        }
+    }
+
+    protected static class MiniRecord {
+        protected final Object key;
+        protected final Object value;
+        protected final long offset;
+
+        public MiniRecord(Object key, Object value, long offset) {
+            this.key = key;
+            this.value = value;
+            this.offset = offset;
+        }
+
+        public Object key() {
+            return key;
+        }
+
+        public Object value() {
+            return value;
+        }
+
+        public long offset() {
+            return offset;
+        }
+
+        @Override
+        public String toString() {
+            return "MiniRecord{" +
+                "key=" + key +
+                ", value=" + value +
+                ", offset=" + offset +
                 '}';
         }
     }

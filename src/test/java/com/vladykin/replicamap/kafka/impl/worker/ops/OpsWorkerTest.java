@@ -1,6 +1,6 @@
-package com.vladykin.replicamap.kafka.impl.worker;
+package com.vladykin.replicamap.kafka.impl.worker.ops;
 
-import com.vladykin.replicamap.kafka.impl.FlushQueue;
+import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.MapUpdateMessage;
@@ -46,13 +46,13 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SuppressWarnings({"unchecked", "ArraysAsListWithZeroOrOneArgument", "FieldCanBeLocal", "UnusedReturnValue"})
-class OpsWorkerTest {
-    static final long CLIENT1_ID = 111;
-    static final long CLIENT2_ID = 222;
+public class OpsWorkerTest {
+    public static final long CLIENT1_ID = 111;
+    public static final long CLIENT2_ID = 222;
 
-    static final String TOPIC_DATA = "data";
-    static final String TOPIC_OPS = "ops";
-    static final String TOPIC_FLUSH = "flush";
+    public static final String TOPIC_DATA = "data";
+    public static final String TOPIC_OPS = "ops";
+    public static final String TOPIC_FLUSH = "flush";
 
     static int FLUSH_MAX_OPS = 10;
 
@@ -122,7 +122,7 @@ class OpsWorkerTest {
         return rec;
     }
 
-    static ConsumerRecord<Object,FlushNotification> newFlushNotification(long clientId, long flushOffsetData, long flushOffsetOps,  long offset) {
+    public static ConsumerRecord<Object,FlushNotification> newFlushNotification(long clientId, long flushOffsetData, long flushOffsetOps,  long offset) {
         return new ConsumerRecord<>(
             TOPIC_OPS, 0, offset, null, new FlushNotification(clientId, flushOffsetData, flushOffsetOps));
     }

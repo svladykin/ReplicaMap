@@ -1,4 +1,4 @@
-package com.vladykin.replicamap.kafka.impl.worker;
+package com.vladykin.replicamap.kafka.impl.worker.ops;
 
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import java.util.function.BiFunction;

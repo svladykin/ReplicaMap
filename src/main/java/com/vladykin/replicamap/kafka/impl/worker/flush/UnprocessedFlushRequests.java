@@ -1,4 +1,4 @@
-package com.vladykin.replicamap.kafka.impl;
+package com.vladykin.replicamap.kafka.impl.worker.flush;
 
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import java.util.ArrayDeque;

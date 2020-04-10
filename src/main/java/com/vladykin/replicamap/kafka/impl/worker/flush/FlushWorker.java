@@ -1,14 +1,13 @@
-package com.vladykin.replicamap.kafka.impl.worker;
+package com.vladykin.replicamap.kafka.impl.worker.flush;
 
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
-import com.vladykin.replicamap.kafka.impl.FlushQueue;
-import com.vladykin.replicamap.kafka.impl.UnprocessedFlushRequests;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import com.vladykin.replicamap.kafka.impl.worker.Worker;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;

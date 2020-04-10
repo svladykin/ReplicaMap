@@ -1,7 +1,6 @@
 package com.vladykin.replicamap.kafka.impl.util;
 
 import com.vladykin.replicamap.ReplicaMapException;
-import com.vladykin.replicamap.kafka.impl.MiniRecord;
 import java.net.NetworkInterface;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -255,10 +254,6 @@ public final class Utils {
         }
 
         return Arrays.binarySearch(sortedArr, x);
-    }
-
-    public static boolean isOverMaxOffset(MiniRecord rec, long maxOffset) {
-        return rec.offset() > maxOffset;
     }
 
     public static Set<Integer> assignPartitionsRoundRobin(int workerId, int allWorkers, int allParts, short[] allowedParts) {
