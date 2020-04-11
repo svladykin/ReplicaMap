@@ -94,6 +94,7 @@ import static com.vladykin.replicamap.kafka.impl.util.Utils.generateUniqueNodeId
 import static com.vladykin.replicamap.kafka.impl.util.Utils.getMacAddresses;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.parseIntSet;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.stream.Collectors.toList;
 
 /**
@@ -775,6 +776,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         if (!casState(NEW, STARTING))
             throw new IllegalStateException("The state is not " + NEW + ", actual state: " + getState());
 
+        trace.trace("starting: {}", allowedPartitions);
         log.info("Starting for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientIdHex);
 
         for (OpsWorker worker : opsWorkers)
@@ -789,6 +791,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected ReplicaMapManager onWorkersSteady(Void ignore, Throwable ex) {
         if (ex == null && casState(STARTING, RUNNING)) {
             log.info("Started for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientIdHex);
+
+            trace.trace("started: {}", allowedPartitions);
 
             return this;
         }
@@ -831,6 +835,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
             if (casState(s, STOPPING))
                 break;
         }
+
+        trace.trace("stopping: {}", allowedPartitions);
 
         log.info("Stopping for topics [{}, {}, {}], client id {}",
             dataTopic, opsTopic, flushTopic, clientIdHex);

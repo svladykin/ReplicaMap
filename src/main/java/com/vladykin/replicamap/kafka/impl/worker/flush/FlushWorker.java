@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
@@ -268,15 +269,18 @@ public class FlushWorker extends Worker implements AutoCloseable {
     protected void collectUnprocessedFlushRequests(
         Consumer<Object,FlushRequest> flushConsumer,
         TopicPartition flushPart,
-        List<ConsumerRecord<Object,FlushRequest>> partRecs
+        List<ConsumerRecord<Object,FlushRequest>> flushReqsList
     ) {
+        for (ConsumerRecord<Object,FlushRequest> rec : flushReqsList)
+            trace.trace("part: {}, receivedFlushReq: {}", flushPart, rec);
+
         UnprocessedFlushRequests flushReqs = unprocessedFlushRequests.get(flushPart);
 
         // If it is the first batch of records for this partition we need to initialize the processing for it.
         if (flushReqs == null) {
             // Load flush history and clean the flushQueue until the max committed historical offset,
             // after that FlushQueue will not accept outdated records.
-            long firstRecOffset = partRecs.get(0).offset();
+            long firstRecOffset = flushReqsList.get(0).offset();
             ConsumerRecord<Object,FlushRequest> maxCommittedFlushReq =
                 loadMaxCommittedFlushRequest(flushConsumer, flushPart, firstRecOffset);
 
@@ -289,12 +293,12 @@ public class FlushWorker extends Worker implements AutoCloseable {
                 flushQueues.get(flushPart.partition()).clean(maxFlushOffsetOps, "maxHistory");
             }
 
-            long maxFlushReqOffset = partRecs.get(0).offset() - 1L; // Right before the first received record.
+            long maxFlushReqOffset = flushReqsList.get(0).offset() - 1L; // Right before the first received record.
             flushReqs = initUnprocessedFlushRequests(flushPart, maxFlushReqOffset, maxFlushOffsetOps);
         }
 
-        receivedFlushRequests.add(partRecs.size());
-        flushReqs.addFlushRequests(partRecs);
+        receivedFlushRequests.add(flushReqsList.size());
+        flushReqs.addFlushRequests(flushReqsList);
     }
 
     protected void resetAll(Consumer<Object,FlushRequest> flushConsumer) {
@@ -583,6 +587,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
             if (partitions.isEmpty())
                 return;
 
+            trace.trace("assigned: {}", partitions);
+
             log.debug("Flush partitions assigned: {}", partitions);
             clearUnprocessedFlushRequests(partitions);
             initDataProducers(partitions);
@@ -593,6 +599,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
             if (partitions.isEmpty())
                 return;
+
+            trace.trace("revoked: {}", partitions);
 
             log.debug("Flush partitions revoked: {}", partitions);
             clearUnprocessedFlushRequests(partitions);
