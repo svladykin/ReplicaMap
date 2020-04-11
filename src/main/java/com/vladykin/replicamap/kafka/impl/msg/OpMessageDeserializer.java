@@ -82,20 +82,20 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
         ByteBuffer buf = ByteBuffer.wrap(opMsgBytes);
         byte opType = buf.get();
 
-        if (opType == OP_FLUSH_REQUEST) {
-            return new FlushRequest(
-                ByteUtils.readVarlong(buf),
-                ByteUtils.readVarlong(buf),
-                ByteUtils.readVarlong(buf),
-                ByteUtils.readVarlong(buf));
-        }
+        switch (opType) {
+            case OP_FLUSH_REQUEST:
+                return new FlushRequest(
+                    ByteUtils.readVarlong(buf),
+                    ByteUtils.readVarlong(buf),
+                    ByteUtils.readVarlong(buf),
+                    ByteUtils.readVarlong(buf));
 
-        if (opType == OP_FLUSH_NOTIFICATION) {
-            return new FlushNotification(
-                ByteUtils.readVarlong(buf),
-                ByteUtils.readVarlong(buf),
-                ByteUtils.readVarlong(buf),
-                ByteUtils.readVarlong(buf));
+            case OP_FLUSH_NOTIFICATION:
+                return new FlushNotification(
+                    ByteUtils.readVarlong(buf),
+                    ByteUtils.readVarlong(buf),
+                    ByteUtils.readVarlong(buf),
+                    ByteUtils.readVarlong(buf));
         }
 
         return new MapUpdate(
