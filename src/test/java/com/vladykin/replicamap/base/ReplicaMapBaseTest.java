@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.interruptRunningOps;
@@ -36,7 +37,7 @@ class ReplicaMapBaseTest {
 
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', map, maxActiveOps) {
             @Override
-            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 queue.add(update);
             }
 
@@ -223,7 +224,7 @@ class ReplicaMapBaseTest {
 
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', map, maxActiveOps) {
             @Override
-            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 queue.add(update);
             }
 
@@ -271,7 +272,7 @@ class ReplicaMapBaseTest {
             'x', map, maxActiveOps, false, Long.MAX_VALUE, TimeUnit.NANOSECONDS
         ) {
             @Override
-            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 queue.add(update);
             }
 
@@ -326,7 +327,7 @@ class ReplicaMapBaseTest {
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
             new Semaphore(0), true, 1, TimeUnit.MILLISECONDS) {
             @Override
-            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 throw new  IllegalStateException();
             }
         };
@@ -350,7 +351,7 @@ class ReplicaMapBaseTest {
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
             new Semaphore(10)) {
             @Override
-            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 throw new  IllegalStateException("test");
             }
         };
@@ -376,7 +377,7 @@ class ReplicaMapBaseTest {
         Semaphore s = new Semaphore(10);
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(), s) {
             @Override
-            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 // no-op
             }
         };
@@ -409,7 +410,7 @@ class ReplicaMapBaseTest {
             }
 
             @Override
-            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 // no-op
             }
         };
@@ -431,7 +432,7 @@ class ReplicaMapBaseTest {
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
             new Semaphore(10), true, 1, TimeUnit.MILLISECONDS) {
             @Override
-            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, FailureCallback callback) {
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 throw new  IllegalStateException();
             }
         };
@@ -444,7 +445,7 @@ class ReplicaMapBaseTest {
     void testListener() {
         TestReplicaMapBase<Integer,String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(), new Semaphore(10)) {
             @Override
-            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> up, FailureCallback callback) {
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> up, Consumer<Throwable> callback) {
                 assertEquals('x', up.srcId);
                 onReceiveUpdate(true, up.opId, up.updateType, up.key, up.exp, up.upd, up.function, null);
             }

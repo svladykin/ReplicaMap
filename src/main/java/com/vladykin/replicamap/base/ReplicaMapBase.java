@@ -426,7 +426,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         V exp,
         V upd,
         BiFunction<?,?,?> function,
-        FailureCallback onSendFailed
+        Consumer<Throwable> onSendFailed
     ) throws Exception;
 
     /**
@@ -477,7 +477,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
             '}';
     }
 
-    protected static abstract class AsyncOp<R,K,V> extends CompletableFuture<R> implements FailureCallback {
+    protected static abstract class AsyncOp<R,K,V> extends CompletableFuture<R> implements Consumer<Throwable> {
         @SuppressWarnings("rawtypes")
         protected static final AtomicReferenceFieldUpdater<AsyncOp, OpState> STATE =
             AtomicReferenceFieldUpdater.newUpdater(AsyncOp.class, OpState.class, "state");
@@ -554,6 +554,10 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
 
         @Override
+        public void accept(Throwable th) {
+            onError(th);
+        }
+
         public void onError(Throwable th) {
             finish(null, th, true);
         }

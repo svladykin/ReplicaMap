@@ -5,14 +5,15 @@ import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-public class TestMultiQueue<K,V> implements BiConsumer<TestReplicaMapUpdate<K,V>, FailureCallback> {
+public class TestMultiQueue<K,V> implements BiConsumer<TestReplicaMapUpdate<K,V>, Consumer<Throwable>> {
     private final ReentrantLock lock = new ReentrantLock();
     private final List<ConcurrentLinkedQueue<TestReplicaMapUpdate<K,V>>> queues = new ArrayList<>();
 
     @Override
-    public void accept(TestReplicaMapUpdate<K,V> update, FailureCallback callback) {
+    public void accept(TestReplicaMapUpdate<K,V> update, Consumer<Throwable> callback) {
         lock.lock();
         try {
             for (ConcurrentLinkedQueue<TestReplicaMapUpdate<K,V>> queue : queues)
@@ -35,6 +36,7 @@ public class TestMultiQueue<K,V> implements BiConsumer<TestReplicaMapUpdate<K,V>
         return q::poll;
     }
 
+    @SuppressWarnings("BusyWait")
     void awaitEmpty() throws InterruptedException {
         outerLoop: for (;;) {
             lock.lock();

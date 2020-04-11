@@ -28,6 +28,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -520,12 +521,12 @@ public class ReplicaMapBaseMultithreadedTest {
         }
 
         @Override
-        protected void sendUpdate(long opId, byte updateType, K key, V exp, V upd, BiFunction<?,?,?> function, FailureCallback callback) {
+        protected void sendUpdate(long opId, byte updateType, K key, V exp, V upd, BiFunction<?,?,?> function, Consumer<Throwable> callback) {
             if (failOps.remove(opId)) {
                 if (ThreadLocalRandom.current().nextBoolean())
                     throw new TestException();
 
-                callback.onCompletion(null, new TestException());
+                callback.accept(new TestException());
 
                 // Here we test the scenario when the callback was notified about the exception, but the update was sent.
                 if (ThreadLocalRandom.current().nextInt(3000) > 0)
@@ -537,10 +538,11 @@ public class ReplicaMapBaseMultithreadedTest {
         }
 
         @Override
-        protected void doSendUpdate(TestReplicaMapUpdate<K,V> update, FailureCallback callback) {
+        protected void doSendUpdate(TestReplicaMapUpdate<K,V> update, Consumer<Throwable> callback) {
             mq.accept(update, callback);
         }
 
+        @SuppressWarnings("BusyWait")
         void awaitForOps() throws InterruptedException {
             while (numAppliedOps.get() < numSentOps.get())
                 Thread.sleep(1);

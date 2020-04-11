@@ -1,13 +1,13 @@
 package com.vladykin.replicamap.kafka;
 
 import com.vladykin.replicamap.ReplicaMap;
-import com.vladykin.replicamap.base.FailureCallback;
 import com.vladykin.replicamap.base.ReplicaMapBase;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 
 /**
  * Implementation of {@link ReplicaMap} over Kafka.
@@ -54,7 +54,7 @@ public class KReplicaMap<K,V> extends ReplicaMapBase<K,V> {
         V exp,
         V upd,
         BiFunction<?,?,?> function,
-        FailureCallback onSendFailed
+        Consumer<Throwable> onSendFailed
     ) {
         manager.sendUpdate(this, opId, updateType, key, exp, upd, function, onSendFailed);
     }

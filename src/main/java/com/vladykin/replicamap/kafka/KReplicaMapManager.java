@@ -3,11 +3,9 @@ package com.vladykin.replicamap.kafka;
 import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
-import com.vladykin.replicamap.base.FailureCallback;
 import com.vladykin.replicamap.holder.MapsHolder;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
-import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.MapUpdate;
@@ -20,9 +18,10 @@ import com.vladykin.replicamap.kafka.impl.part.NeverPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import com.vladykin.replicamap.kafka.impl.worker.Worker;
+import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.worker.flush.FlushWorker;
 import com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorker;
-import com.vladykin.replicamap.kafka.impl.worker.Worker;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -900,7 +899,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         V exp,
         V upd,
         BiFunction<?,?,?> function,
-        FailureCallback onSendFailed
+        java.util.function.Consumer<Throwable> onSendFailed
     ) {
         checkRunning();
 
@@ -911,12 +910,10 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
         opsProducer.send(newMapUpdateRecord(map, opId, updateType, key, exp, upd, function),
             (meta, err) -> {
-                if (err == null && meta != null) {
+                if (err != null)
+                    onSendFailed.accept(err);
+                else
                     sentUpdates.increment();
-//                    trace.trace("sendUpdate {} offset={}, key={}, val={}", clientIdHex, meta.offset(), key, upd);
-                }
-
-                onSendFailed.onCompletion(meta, err);
             });
     }
 
