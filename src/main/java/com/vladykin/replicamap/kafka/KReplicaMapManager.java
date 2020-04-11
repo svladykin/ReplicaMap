@@ -142,6 +142,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final CompletableFuture<ReplicaMapManager> opsSteadyFut;
     protected final CompletableFuture<ReplicaMapManager> stoppedFut = new CompletableFuture<>();
 
+    protected final int totalPartitions;
     protected final short[] allowedPartitions;
 
     protected volatile State state = NEW;
@@ -210,26 +211,26 @@ public class KReplicaMapManager implements ReplicaMapManager {
             maps = cfg.getConfiguredInstance(MAPS_HOLDER, MapsHolder.class);
 
             opsProducer = newKafkaProducerOps();
-            int parts = resolveTotalPartitions();
+            totalPartitions = resolveTotalPartitions();
 
-            validateAllowedPartitions(parts);
+            validateAllowedPartitions(totalPartitions);
 
-            if (opsWorkers > parts)
-                opsWorkers = allowedPartitions == null ? parts : allowedPartitions.length;
+            if (opsWorkers > totalPartitions)
+                opsWorkers = allowedPartitions == null ? totalPartitions : allowedPartitions.length;
 
             if (opsWorkers > flushWorkers)
                 flushWorkers = Math.max(opsWorkers >>> 1, 1);
 
             flushProducer = newKafkaProducerFlush();
-            flushQueues = new ArrayList<>(parts);
+            flushQueues = new ArrayList<>(totalPartitions);
             cleanQueue = newCleanQueue();
 
-            for (int part = 0; part < parts; part++)
+            for (int part = 0; part < totalPartitions; part++)
                 flushQueues.add(newFlushQueue(new TopicPartition(dataTopic, part)));
 
             this.opsWorkers = new ArrayList<>(opsWorkers);
             for (int workerId = 0; workerId < opsWorkers; workerId++) {
-                Set<Integer> assignedParts = assignPartitionsToWorker(workerId, opsWorkers, parts);
+                Set<Integer> assignedParts = assignPartitionsToWorker(workerId, opsWorkers, totalPartitions);
                 this.opsWorkers.add(newOpsWorker(workerId, assignedParts));
             }
 
@@ -240,7 +241,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
             this.flushWorkers = new ArrayList<>(flushWorkers);
             for (int workerId = 0; workerId < flushWorkers; workerId++)
-                this.flushWorkers.add(newFlushWorker(workerId, parts));
+                this.flushWorkers.add(newFlushWorker(workerId, totalPartitions));
 
             onNewReplicaMapManager();
 
@@ -470,6 +471,41 @@ public class KReplicaMapManager implements ReplicaMapManager {
             parts.addAll(worker.getAssignedPartitions());
 
         return parts.size();
+    }
+
+    /**
+     * @return Number of partitions.
+     */
+    public int getTotalPartitions() {
+        return totalPartitions;
+    }
+
+    /**
+     * @return Allowed number of partitions.
+     */
+    public int getAllowedPartitions() {
+        return allowedPartitions == null ? totalPartitions : allowedPartitions.length;
+    }
+
+    /**
+     * @return Data Kafka topic name.
+     */
+    public String getDataTopic() {
+        return dataTopic;
+    }
+
+    /**
+     * @return Ops Kafka topic name.
+     */
+    public String getOpsTopic() {
+        return opsTopic;
+    }
+
+    /**
+     * @return Flush Kafka topic name.
+     */
+    public String getFlushTopic() {
+        return flushTopic;
     }
 
     /**

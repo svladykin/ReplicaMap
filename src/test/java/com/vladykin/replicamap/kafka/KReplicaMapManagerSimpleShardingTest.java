@@ -116,6 +116,8 @@ class KReplicaMapManagerSimpleShardingTest {
         assertEquals(2, AllowedPartsResolver.cnt.get());
 
         for (KReplicaMapManager m : asList(shard1, shard2, shard3, shard4)) {
+            assertEquals(4, m.getTotalPartitions());
+            assertEquals(2, m.getAllowedPartitions());
             assertEquals(6, m.getReceivedDataRecords());
             assertEquals(0, m.getReceivedUpdates());
             assertEquals(2, m.getReceivedFlushNotifications());
@@ -173,7 +175,7 @@ class KReplicaMapManagerSimpleShardingTest {
             if (exp == total)
                 break;
 
-            Thread.sleep(20);
+            Thread.sleep(100);
 
             if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(30))
                 throw new TimeoutException("Expected: " + exp + ", actual: " + total);

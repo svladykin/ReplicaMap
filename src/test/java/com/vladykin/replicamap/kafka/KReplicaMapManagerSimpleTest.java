@@ -132,6 +132,11 @@ class KReplicaMapManagerSimpleTest {
 
         KReplicaMapManager m = new KReplicaMapManager(getDefaultConfig());
 
+        assertEquals(DATA_TOPIC, m.getDataTopic());
+        assertEquals(OPS_TOPIC, m.getOpsTopic());
+        assertEquals(FLUSH_TOPIC, m.getFlushTopic());
+        assertEquals(5, m.getTotalPartitions());
+
         assertSame(KReplicaMapManager.State.NEW, m.getState());
         CompletableFuture<ReplicaMapManager> startFut = m.start();
         assertSame(KReplicaMapManager.State.STARTING, m.getState());
@@ -426,6 +431,7 @@ class KReplicaMapManagerSimpleTest {
         w.close();
     }
 
+    @SuppressWarnings("BusyWait")
     static void awaitEqualMaps(ReplicaMap<?,?> x, ReplicaMap<?,?> y, String... keyVals) throws Exception {
         if (x == null)
             assertNull(y);
@@ -517,6 +523,7 @@ class KReplicaMapManagerSimpleTest {
 //            System.out.println();
         }
 
+        @SuppressWarnings("BusyWait")
         void assertAllFired() throws InterruptedException {
             long start = System.nanoTime();
             // Need to wait here because this method is called when the maps are equal,

@@ -55,7 +55,7 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
 
     protected BiFunction<?,?,?> readFunction(String topic, Headers headers, ByteBuffer buf) {
         if (!buf.hasRemaining())
-            return null; // compatibility
+            return null; // Backward compatibility.
 
         return read(topic, headers, buf, funDes);
     }
