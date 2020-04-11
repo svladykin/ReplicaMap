@@ -26,6 +26,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
+import org.apache.kafka.common.utils.ByteUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -346,26 +347,33 @@ public final class Utils {
         return instance;
     }
 
-    public static ByteBuffer serializeShortArray(short[] arr) {
-        ByteBuffer buf = ByteBuffer.allocate(4 + arr.length * 2);
+    public static byte[] serializeShortArray(short[] arr) {
+        if (arr == null)
+            return null;
 
-        buf.putInt(arr.length);
+        int len = ByteUtils.sizeOfVarint(arr.length);
         for (short x : arr)
-            buf.putShort(x);
+            len += ByteUtils.sizeOfVarint(x);
 
-        buf.flip();
-        return buf;
+        ByteBuffer buf = ByteBuffer.allocate(len);
+        ByteUtils.writeVarint(arr.length, buf);
+
+        for (short x : arr)
+            ByteUtils.writeVarint(x, buf);
+
+        assert buf.remaining() == 0;
+        return buf.array();
     }
 
     public static short[] deserializeShortArray(ByteBuffer buf) {
         if (buf == null || buf.remaining() == 0)
             return null;
 
-        int len = buf.getInt();
+        int len = ByteUtils.readVarint(buf);
         short[] arr = new short[len];
 
         for (int i = 0; i < len; i++)
-            arr[i] = buf.getShort();
+            arr[i] = (short)ByteUtils.readVarint(buf);
 
         return arr;
     }

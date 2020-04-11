@@ -1,6 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.util;
 
 import com.vladykin.replicamap.ReplicaMapException;
+import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -11,14 +12,17 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.kafka.impl.util.Utils.assignPartitionsRoundRobin;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.deserializeShortArray;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.generateUniqueNodeId;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.getMacAddresses;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.macHash1;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.rotateRight;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.serializeShortArray;
 import static java.lang.Integer.toBinaryString;
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -250,5 +254,30 @@ class UtilsTest {
 //            System.out.println(i);
             assertEquals((i & 1) == 0, Utils.contains(arr, (short)i));
         }
+    }
+
+    @Test
+    void testSerializeShortArray() {
+        assertNull(serializeShortArray(null));
+        assertNull(deserializeShortArray(null));
+
+        ByteBuffer buf = ByteBuffer.allocate(10);
+        buf.position(10);
+        assertNull(deserializeShortArray(buf));
+
+        checkSerializeShortArray(new short[]{}, 1);
+        checkSerializeShortArray(new short[]{1}, 2);
+        checkSerializeShortArray(new short[]{1,2}, 3);
+        checkSerializeShortArray(new short[]{63}, 2);
+        checkSerializeShortArray(new short[]{64}, 3);
+
+        checkSerializeShortArray(new short[63], 64);
+        checkSerializeShortArray(new short[64], 66);
+    }
+
+    void checkSerializeShortArray(short[] arr, int expLen) {
+        byte[] bytes = serializeShortArray(arr);
+        assertEquals(expLen, bytes.length);
+        assertArrayEquals(arr, deserializeShortArray(ByteBuffer.wrap(bytes)));
     }
 }

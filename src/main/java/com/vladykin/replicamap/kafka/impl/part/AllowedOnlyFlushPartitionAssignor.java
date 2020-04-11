@@ -58,9 +58,7 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
     public void configure(Map<String,?> configs) {
         flushTopic = (String)Utils.requireNonNull(configs.get(FLUSH_TOPIC), "flushTopic");
         allowedParts = (short[])configs.get(ALLOWED_PARTS); // null means that all partitions are allowed
-
-        if (allowedParts != null)
-            allowedPartsBytes = Utils.serializeShortArray(allowedParts).array();
+        allowedPartsBytes = Utils.serializeShortArray(allowedParts);
     }
 
 //    @Override 2.3.1
