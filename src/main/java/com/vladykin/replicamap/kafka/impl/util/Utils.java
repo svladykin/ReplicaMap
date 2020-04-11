@@ -322,10 +322,10 @@ public final class Utils {
             .collect(Collectors.toList());
     }
 
-    public static Map<TopicPartition,Long> positions(Consumer<?,?> consumer, String topic) {
+    public static Map<TopicPartition,Long> positions(Consumer<?,?> consumer) {
         Map<TopicPartition,Long> map = new HashMap<>();
 
-        for (TopicPartition part : partitions(consumer, topic))
+        for (TopicPartition part : consumer.assignment())
             map.putIfAbsent(part, consumer.position(part));
 
         return map;

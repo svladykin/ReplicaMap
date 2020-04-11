@@ -227,7 +227,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             if (!recs.isEmpty())
                 trace.trace("poll: {}, positions: {}, endOffsets: {}",
                     recs.partitions(),
-                    Utils.positions(flushConsumer, flushTopic),
+                    Utils.positions(flushConsumer),
                     Utils.endOffsets(flushConsumer, flushTopic));
 
             // Add new records to unprocessed set and load history if it is the first flush for the partition.
