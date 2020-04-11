@@ -488,6 +488,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
 //                flushPart, dataBatch.getMinOffset(), dataBatch.getMaxOffset(), dataBatch.getMaxCleanOffset(),
 //                futs.get(entry.getKey()).get().offset(), entry.getKey(), entry.getValue());
 
+        trace.trace("flushed: {}, offset: {}", flushPart, flushConsumerOffset.offset() - 1);
+
         // We check that the batch is not empty, thus we have to have the last record non-null here.
         // Since ReplicaMap checks preconditions locally before sending anything to Kafka,
         // it is impossible to have a large number of failed update attempts,
