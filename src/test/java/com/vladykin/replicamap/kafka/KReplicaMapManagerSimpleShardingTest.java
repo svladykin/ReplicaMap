@@ -178,7 +178,7 @@ class KReplicaMapManagerSimpleShardingTest {
 
             Thread.sleep(100);
 
-            if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(30)) {
+            if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(300)) {
                 TimeoutException e = new TimeoutException("Expected: " + exp + ", actual: " + total);
                 trace.error("awaitFor", e);
                 throw e;
