@@ -219,9 +219,12 @@ public class FlushWorker extends Worker implements AutoCloseable {
                 recs = flushConsumer.poll(millis(pollTimeoutMs));
             }
             catch (NoOffsetForPartitionException e) {
+                trace.trace("init: {}", e.partitions());
                 initFlushConsumerOffset(flushConsumer, e);
                 recs = flushConsumer.poll(millis(pollTimeoutMs));
             }
+
+            trace.trace("poll: {}", recs);
 
             // Add new records to unprocessed set and load history if it is the first flush for the partition.
             for (TopicPartition flushPart : recs.partitions()) {
