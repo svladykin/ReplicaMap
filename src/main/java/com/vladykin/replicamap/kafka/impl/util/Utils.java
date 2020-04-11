@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -319,6 +320,15 @@ public final class Utils {
         return parts.stream()
             .map(p -> new TopicPartition(topic, p.partition()))
             .collect(Collectors.toList());
+    }
+
+    public static Map<TopicPartition,Long> positions(Consumer<?,?> consumer, String topic) {
+        Map<TopicPartition,Long> map = new HashMap<>();
+
+        for (TopicPartition part : partitions(consumer, topic))
+            map.putIfAbsent(part, consumer.position(part));
+
+        return map;
     }
 
     public static Map<TopicPartition,Long> endOffsets(Consumer<?,?> consumer, String topic) {
