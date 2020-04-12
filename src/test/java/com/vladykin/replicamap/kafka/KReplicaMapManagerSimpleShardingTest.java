@@ -153,7 +153,7 @@ class KReplicaMapManagerSimpleShardingTest {
         assertThrows(ReplicaMapException.class, () -> shard4.getMap().put(5, 1));
 
         for (KReplicaMapManager m : asList(shard1, shard2, shard3, shard4)) {
-            assertEquals(1, m.getSentUpdates());
+            awaitFor(1, KReplicaMapManager::getSentUpdates, m);
             awaitFor(2, KReplicaMapManager::getReceivedUpdates, m);
             awaitFor(1, KReplicaMapManager::getSentFlushRequests, m);
         }
