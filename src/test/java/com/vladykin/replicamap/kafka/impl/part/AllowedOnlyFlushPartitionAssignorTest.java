@@ -109,8 +109,8 @@ class AllowedOnlyFlushPartitionAssignorTest {
         Cluster meta = new Cluster("testCluster", Collections.emptySet(), partsInfo,
             Collections.emptySet(), Collections.emptySet());
 
-        Map<String,AllowedOnlyFlushPartitionAssignor.Assignment> assigns = assignors[0].assign(meta, //subs);
-            new AllowedOnlyFlushPartitionAssignor.GroupSubscription(subs)).groupAssignment(); //-- for Kafka 2.4.1
+        Map<String,AllowedOnlyFlushPartitionAssignor.Assignment> assigns = assignors[0].assign(meta, subs);
+//            new AllowedOnlyFlushPartitionAssignor.GroupSubscription(subs)).groupAssignment(); //-- for Kafka 2.4.1
 
         short[][] res = new short[assigns.size()][];
         assertEquals(assignors.length, res.length);

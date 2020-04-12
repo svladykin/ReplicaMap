@@ -13,7 +13,7 @@ repositories {
     mavenCentral()
 }
 
-val kafkaVersion = "2.4.1"
+val kafkaVersion = "2.3.1"
 
 dependencies {
     implementation("org.apache.kafka", "kafka-clients", kafkaVersion)
