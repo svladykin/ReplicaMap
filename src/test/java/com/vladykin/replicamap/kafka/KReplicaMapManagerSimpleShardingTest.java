@@ -58,7 +58,7 @@ class KReplicaMapManagerSimpleShardingTest {
         HashMap<String,Object> cfg = new HashMap<>();
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
         cfg.put(FLUSH_PERIOD_OPS, 2);
-        cfg.put(FLUSH_MAX_POLL_TIMEOUT_MS, 1L);
+        cfg.put(FLUSH_MAX_POLL_TIMEOUT_MS, 5000L);
 
         cfg.put(KEY_SERIALIZER_CLASS, IntegerSerializer.class);
         cfg.put(KEY_DESERIALIZER_CLASS, IntegerDeserializer.class);
