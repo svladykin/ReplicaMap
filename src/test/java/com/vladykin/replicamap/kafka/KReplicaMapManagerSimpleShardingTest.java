@@ -38,7 +38,6 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESER
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.createTopics;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.kafkaClusterWith3Brokers;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -178,11 +177,8 @@ class KReplicaMapManagerSimpleShardingTest {
 
             Thread.sleep(100);
 
-            if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(300)) {
-                TimeoutException e = new TimeoutException("Expected: " + exp + ", actual: " + total);
-                trace.error("awaitFor", e);
-                throw e;
-            }
+            if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(30))
+                throw new TimeoutException("Expected: " + exp + ", actual: " + total);
         }
     }
 

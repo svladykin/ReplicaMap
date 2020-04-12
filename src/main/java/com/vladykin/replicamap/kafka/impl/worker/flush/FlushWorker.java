@@ -41,7 +41,6 @@ import org.slf4j.LoggerFactory;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
@@ -219,15 +218,14 @@ public class FlushWorker extends Worker implements AutoCloseable {
                 recs = flushConsumer.poll(millis(pollTimeoutMs));
             }
             catch (NoOffsetForPartitionException e) {
-                trace.trace("init: {}", e.partitions());
-                initFlushConsumerOffset(flushConsumer, e);
+                initFlushConsumerOffset(flushConsumer, e); // needed when it is a new empty flush topic
                 recs = flushConsumer.poll(millis(pollTimeoutMs));
             }
 
-            trace.trace("poll: {}, positions: {}, endOffsets: {}",
-                recs.partitions(),
-                Utils.positions(flushConsumer),
-                Utils.endOffsets(flushConsumer, flushTopic));
+//            trace.trace("poll: {}, positions: {}, endOffsets: {}",
+//                recs.partitions(),
+//                Utils.positions(flushConsumer),
+//                Utils.endOffsets(flushConsumer, flushTopic));
 
             // Add new records to unprocessed set and load history if it is the first flush for the partition.
             for (TopicPartition flushPart : recs.partitions()) {
@@ -277,9 +275,6 @@ public class FlushWorker extends Worker implements AutoCloseable {
         TopicPartition flushPart,
         List<ConsumerRecord<Object,FlushRequest>> flushReqsList
     ) {
-        for (ConsumerRecord<Object,FlushRequest> rec : flushReqsList)
-            trace.trace("part: {}, receivedFlushReq: {}", flushPart, rec);
-
         UnprocessedFlushRequests flushReqs = unprocessedFlushRequests.get(flushPart);
 
         // If it is the first batch of records for this partition we need to initialize the processing for it.
@@ -494,8 +489,6 @@ public class FlushWorker extends Worker implements AutoCloseable {
 //                flushPart, dataBatch.getMinOffset(), dataBatch.getMaxOffset(), dataBatch.getMaxCleanOffset(),
 //                futs.get(entry.getKey()).get().offset(), entry.getKey(), entry.getValue());
 
-        trace.trace("flushed: {}, offset: {}", flushPart, flushConsumerOffset.offset() - 1);
-
         // We check that the batch is not empty, thus we have to have the last record non-null here.
         // Since ReplicaMap checks preconditions locally before sending anything to Kafka,
         // it is impossible to have a large number of failed update attempts,
@@ -595,8 +588,6 @@ public class FlushWorker extends Worker implements AutoCloseable {
             if (partitions.isEmpty())
                 return;
 
-            trace.trace("assigned: {}", partitions);
-
             log.debug("Flush partitions assigned: {}", partitions);
             clearUnprocessedFlushRequests(partitions);
             initDataProducers(partitions);
@@ -607,8 +598,6 @@ public class FlushWorker extends Worker implements AutoCloseable {
         public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
             if (partitions.isEmpty())
                 return;
-
-            trace.trace("revoked: {}", partitions);
 
             log.debug("Flush partitions revoked: {}", partitions);
             clearUnprocessedFlushRequests(partitions);

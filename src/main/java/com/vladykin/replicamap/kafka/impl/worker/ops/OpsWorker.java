@@ -34,7 +34,6 @@ import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REMOVE_ANY;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.trace;
 import static java.util.Collections.singleton;
 
 /**
@@ -337,8 +336,6 @@ public class OpsWorker extends Worker implements AutoCloseable {
         flushProducer.send(rec, (meta, err) -> {
             if (err == null)
                 sentFlushRequests.increment();
-
-            trace.trace("offset:{}, sentFlushReq: {}", err != null ? err.toString() : meta.offset(), rec);
         });
     }
 
