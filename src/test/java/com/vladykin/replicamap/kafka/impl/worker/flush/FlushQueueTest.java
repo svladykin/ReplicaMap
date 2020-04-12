@@ -24,6 +24,7 @@ class FlushQueueTest {
     @Test
     void testSimple() {
         FlushQueue q = new FlushQueue(null);
+        q.setMaxOffset(-1);
 
         assertEquals(-1, q.maxCleanOffset);
         assertEquals(-1, q.maxAddOffset);
@@ -131,6 +132,8 @@ class FlushQueueTest {
     public void testThreadLocalBuffer() {
         FlushQueue q = new FlushQueue(null);
 
+        q.setMaxOffset(0);
+
         q.lock.acquireUninterruptibly();
 
         q.add(1,null, 1, false);
@@ -138,7 +141,7 @@ class FlushQueueTest {
         q.add(1,null, 3, false);
 
         assertEquals(-1, q.maxCleanOffset);
-        assertEquals(-1, q.maxAddOffset);
+        assertEquals(0, q.maxAddOffset);
         assertEquals(0, q.queue.size());
 
         q.lock.release();
@@ -160,6 +163,7 @@ class FlushQueueTest {
             AtomicLong lastAddedOffset = new AtomicLong(-1);
 
             FlushQueue q = new FlushQueue(null);
+            q.setMaxOffset(-1);
 
             for (int j = 0; j < 50; j++) {
                 CyclicBarrier start = new CyclicBarrier(3);
@@ -221,6 +225,8 @@ class FlushQueueTest {
     @Test
     void testCollect() {
         FlushQueue q = new FlushQueue(null);
+        q.setMaxOffset(1000);
+
         FlushQueue.Batch batch = q.collect(stream(1000L));
 
         assertNull(batch);

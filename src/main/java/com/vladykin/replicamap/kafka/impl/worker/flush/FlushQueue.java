@@ -22,7 +22,7 @@ public class FlushQueue {
 
     protected final TopicPartition dataPart;
 
-    protected long maxAddOffset = -1;
+    protected long maxAddOffset = Long.MIN_VALUE;
     protected long maxCleanOffset = -1;
 
     protected final ThreadLocal<ArrayDeque<MiniRecord>> threadLocalQueue =
@@ -90,17 +90,37 @@ public class FlushQueue {
         }
     }
 
-    protected void addRecord(MiniRecord rec) {
-        if (maxAddOffset == -1)
-            maxAddOffset = rec.offset();
-        else {
-            long nextOffset = maxAddOffset + 1;
+    /**
+     * Setup the max offset before adding records.
+     *
+     * @param offset Offset.
+     */
+    public void setMaxOffset(long offset) {
+        if (offset < -1)
+            throw new IllegalArgumentException("Illegal offset: " + offset);
 
-            if (nextOffset != rec.offset()) // check that we do not miss any records
-                throw new IllegalStateException("Expected record offset " + nextOffset + ", actual " + rec.offset());
+        lock.acquireUninterruptibly();
+        try {
+            if (maxAddOffset != Long.MIN_VALUE)
+                throw new IllegalStateException("Max offset is already set: " + maxAddOffset);
 
-            maxAddOffset = nextOffset;
+            maxAddOffset = offset;
         }
+        finally {
+            lock.release();
+        }
+    }
+
+    protected void addRecord(MiniRecord rec) {
+        if (maxAddOffset == Long.MIN_VALUE)
+            throw new IllegalStateException("Need to setup max offset: " + maxAddOffset);
+
+        long nextOffset = maxAddOffset + 1;
+
+        if (nextOffset != rec.offset()) // check that we do not miss any records
+            throw new IllegalStateException("Expected record offset " + nextOffset + ", actual " + rec.offset());
+
+        maxAddOffset = nextOffset;
 
         if (rec.key() == null) // non-update record
             return;

@@ -454,6 +454,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
 //            trace.trace("seek offset={}, part={}", offset, part);
 
             opsConsumer.seek(part, offset);
+            flushQueues.get(part.partition()).setMaxOffset(offset - 1); // the last processed offset is expected here
 
             checkInterrupted();
         }
