@@ -69,9 +69,9 @@ tasks.named<Test>("test") {
 //                "com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedWindowTest",
 //                "testMultithreadedSlidingWindowWithRestart"
 //        )
-        includeTest(
-                "com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleShardingTest",
-                "testSimpleSharding"
-        )
+//        includeTest(
+//                "com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleShardingTest",
+//                "testSimpleSharding"
+//        )
     }
 }
