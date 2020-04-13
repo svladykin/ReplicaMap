@@ -29,11 +29,18 @@ public class UnprocessedFlushRequests {
         this.initialized = initialized;
 
         if (initialized) {
-            assert firstRecOffset == 0: firstRecOffset;
+            if (firstRecOffset != 0)
+                throw new IllegalArgumentException("Illegal first record offset: " + firstRecOffset);
+
             this.maxFlushReqOffset = -1;
         }
-        else // Current max will be before the previous record of the first one.
+        else {
+            if (firstRecOffset < 1)
+                throw new IllegalArgumentException("Illegal first record offset: " + firstRecOffset);
+
+            // Current max will be before the previous record of the first one.
             this.maxFlushReqOffset = firstRecOffset - 2;
+        }
     }
 
     public boolean isInitialized() {

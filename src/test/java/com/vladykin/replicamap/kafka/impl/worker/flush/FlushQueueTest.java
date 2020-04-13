@@ -289,4 +289,14 @@ class FlushQueueTest {
 
         assertNull(batch);
     }
+
+    @Test
+    void testChecks() {
+        FlushQueue q = new FlushQueue(null);
+
+        assertThrows(IllegalStateException.class, () -> q.add("key", "val", 7, true));
+        assertThrows(IllegalArgumentException.class, () -> q.setMaxOffset(-2));
+        q.setMaxOffset(-1);
+        assertThrows(IllegalStateException.class, () -> q.setMaxOffset(5));
+    }
 }

@@ -16,6 +16,10 @@ class UnprocessedFlushRequestsTest {
     @Test
     void testSimple() {
         TopicPartition flushPart = new TopicPartition("bla", 6);
+
+        assertThrows(IllegalArgumentException.class, () ->
+            new UnprocessedFlushRequests(flushPart, 0, false));
+
         UnprocessedFlushRequests reqs = new UnprocessedFlushRequests(flushPart, 10, false);
 
         assertFalse(reqs.isInitialized());
@@ -32,6 +36,9 @@ class UnprocessedFlushRequestsTest {
                 new FlushRequest(0, 21, 0)))));
         assertThrows(IllegalStateException.class, () ->
             reqs.addFlushRequests(asList(new ConsumerRecord<>("flush", 0, 8, null,
+                new FlushRequest(0, 21, 0)))));
+        assertThrows(IllegalStateException.class, () ->
+            reqs.addFlushRequests(asList(new ConsumerRecord<>("flush", 0, 10, null,
                 new FlushRequest(0, 21, 0)))));
 
         assertTrue(reqs.isEmpty());
@@ -71,6 +78,10 @@ class UnprocessedFlushRequestsTest {
 
         reqs.addFlushRequests(asList(new ConsumerRecord<>("flush", 0, 12, null,
             new FlushRequest(0, 23, 9))));
+
+        assertThrows(IllegalStateException.class, () -> reqs.addFlushRequests(asList(
+            new ConsumerRecord<>("flush", 0, 9, null,
+                new FlushRequest(0, 25, 7)))));
 
         assertFalse(reqs.isEmpty());
         assertEquals(2, reqs.size());
@@ -137,7 +148,15 @@ class UnprocessedFlushRequestsTest {
     @Test
     void testInitialized() {
         TopicPartition flushPart = new TopicPartition("bla", 6);
+
+        assertThrows(IllegalArgumentException.class, () ->
+            new UnprocessedFlushRequests(flushPart, 1, true));
+
         UnprocessedFlushRequests reqs = new UnprocessedFlushRequests(flushPart, 0, true);
+
+        assertThrows(IllegalStateException.class, () -> reqs.addFlushRequests(asList(
+            new ConsumerRecord<>("flush", 0, 9, null,
+                new FlushRequest(0, 25, 7)))));
 
         assertTrue(reqs.isInitialized());
         assertEquals(flushPart, reqs.flushPart);
