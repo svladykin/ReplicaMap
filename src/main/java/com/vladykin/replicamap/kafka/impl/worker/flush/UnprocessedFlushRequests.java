@@ -20,13 +20,24 @@ public class UnprocessedFlushRequests {
 
     protected final TopicPartition flushPart;
     protected final ArrayDeque<ConsumerRecord<Object,FlushRequest>> flushReqs = new ArrayDeque<>();
-    protected long maxFlushOffsetOps;
+    protected long maxFlushOffsetOps = -1;
     protected long maxFlushReqOffset;
+    protected boolean initialized;
 
-    public UnprocessedFlushRequests(TopicPartition flushPart, long maxFlushReqOffset, long maxFlushOffsetOps) {
+    public UnprocessedFlushRequests(TopicPartition flushPart, long firstRecOffset, boolean initialized) {
         this.flushPart = flushPart;
-        this.maxFlushReqOffset = maxFlushReqOffset;
-        this.maxFlushOffsetOps = maxFlushOffsetOps;
+        this.initialized = initialized;
+
+        if (initialized) {
+            assert firstRecOffset == 0: firstRecOffset;
+            this.maxFlushReqOffset = -1;
+        }
+        else // Current max will be before the previous record of the first one.
+            this.maxFlushReqOffset = firstRecOffset - 2;
+    }
+
+    public boolean isInitialized() {
+        return initialized;
     }
 
     @Override
@@ -40,18 +51,25 @@ public class UnprocessedFlushRequests {
 
     public void addFlushRequests(List<ConsumerRecord<Object,FlushRequest>> partRecs) {
         for (ConsumerRecord<Object,FlushRequest> flushReq : partRecs) {
-            if (flushReq.offset() <= maxFlushReqOffset) {
-                throw new IllegalStateException("Offset of the record must be higher than " + maxFlushReqOffset +
-                    " : " + flushReq);
+            // Check that we do not miss records.
+            if (flushReq.offset() != 1 + maxFlushReqOffset) {
+                throw new IllegalStateException("Invalid offset, expected: " + maxFlushReqOffset +
+                    ", actual: " + flushReq);
             }
+            maxFlushReqOffset++;
 
             long flushOffsetOps = flushReq.value().getFlushOffsetOps();
+
+            if (!initialized) {
+                initialized = true;
+                maxFlushOffsetOps = flushOffsetOps;
+                continue; // It was the last previously committed flush request.
+            }
 
             // We may only add requests to the queue if they are not reordered,
             // otherwise we will not be able to commit the offset out of order.
             if (flushOffsetOps > maxFlushOffsetOps) {
                 flushReqs.add(flushReq);
-                maxFlushReqOffset = flushReq.offset();
                 maxFlushOffsetOps = flushOffsetOps;
             }
         }

@@ -40,7 +40,6 @@ import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.seconds;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
@@ -207,7 +206,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
-                log.error("Failed to create flush consumer for topic " + flushTopic, e);
+                log.error("Failed to create flush consumer for topic: " + flushTopic, e);
 
             return false;
         }
@@ -218,14 +217,9 @@ public class FlushWorker extends Worker implements AutoCloseable {
                 recs = flushConsumer.poll(millis(pollTimeoutMs));
             }
             catch (NoOffsetForPartitionException e) {
-                initFlushConsumerOffset(flushConsumer, e); // needed when it is a new empty flush topic
+                initFlushConsumerOffset(flushConsumer, e); // Needed when it is a new empty flush topic.
                 recs = flushConsumer.poll(millis(pollTimeoutMs));
             }
-
-//            trace.trace("poll: {}, positions: {}, endOffsets: {}",
-//                recs.partitions(),
-//                Utils.positions(flushConsumer),
-//                Utils.endOffsets(flushConsumer, flushTopic));
 
             // Add new records to unprocessed set and load history if it is the first flush for the partition.
             for (TopicPartition flushPart : recs.partitions()) {
@@ -275,30 +269,31 @@ public class FlushWorker extends Worker implements AutoCloseable {
         TopicPartition flushPart,
         List<ConsumerRecord<Object,FlushRequest>> flushReqsList
     ) {
+        if (flushReqsList.isEmpty())
+            return;
+
         UnprocessedFlushRequests flushReqs = unprocessedFlushRequests.get(flushPart);
 
         // If it is the first batch of records for this partition we need to initialize the processing for it.
         if (flushReqs == null) {
-            // Load flush history and clean the flushQueue until the max committed historical offset,
-            // after that FlushQueue will not accept outdated records.
             long firstRecOffset = flushReqsList.get(0).offset();
-            ConsumerRecord<Object,FlushRequest> maxCommittedFlushReq =
-                loadMaxCommittedFlushRequest(flushConsumer, flushPart, firstRecOffset);
+            boolean loadLastCommittedFlushReq = firstRecOffset > 0;
 
-            long maxFlushOffsetOps = -1L;
-            if (maxCommittedFlushReq != null) {
-//                trace.trace("{} firstRecOffset={}, maxCommittedFlushReq={}",
-//                    flushPart, firstRecOffset, maxCommittedFlushReq);
+            flushReqs = new UnprocessedFlushRequests(flushPart, firstRecOffset, !loadLastCommittedFlushReq);
+            unprocessedFlushRequests.put(flushPart, flushReqs);
 
-                maxFlushOffsetOps = maxCommittedFlushReq.value().getFlushOffsetOps();
-                flushQueues.get(flushPart.partition()).clean(maxFlushOffsetOps, "maxHistory");
+            if (loadLastCommittedFlushReq) {
+                // We seek for the previous record which is the last committed flush request to make sure that
+                // there will be no issues if the subsequent flush requests will arrive out of order.
+                flushConsumer.seek(flushPart, firstRecOffset - 1);
+                return;
             }
-
-            long maxFlushReqOffset = flushReqsList.get(0).offset() - 1L; // Right before the first received record.
-            flushReqs = initUnprocessedFlushRequests(flushPart, maxFlushReqOffset, maxFlushOffsetOps);
         }
 
-        receivedFlushRequests.add(flushReqsList.size());
+        int cnt = flushReqsList.size();
+        if (!flushReqs.isInitialized()) cnt--; // Ignore the last committed flush request.
+        receivedFlushRequests.add(cnt);
+
         flushReqs.addFlushRequests(flushReqsList);
     }
 
@@ -310,70 +305,6 @@ public class FlushWorker extends Worker implements AutoCloseable {
             resetDataProducer(new TopicPartition(flushTopic, part));
 
         flushConsumers.reset(0, flushConsumer);
-    }
-
-    protected UnprocessedFlushRequests initUnprocessedFlushRequests(
-        TopicPartition flushPart,
-        long maxFlushReqOffset,
-        long maxFlushOffsetOps
-    ) {
-        if (log.isDebugEnabled()) {
-            log.debug("Init unprocessed flush requests for partition {}, maxFlushReqOffset: {}, maxFlushOffsetOps: {}",
-                flushPart, maxFlushReqOffset, maxFlushOffsetOps);
-        }
-
-        UnprocessedFlushRequests flushRequests = new UnprocessedFlushRequests(
-            flushPart, maxFlushReqOffset, maxFlushOffsetOps);
-
-        if (unprocessedFlushRequests.put(flushPart, flushRequests) != null)
-            throw new IllegalStateException("Unprocessed flush requests already initialized for partition: " + flushPart);
-
-        return flushRequests;
-    }
-
-    protected ConsumerRecord<Object,FlushRequest> loadMaxCommittedFlushRequest(
-        Consumer<Object,FlushRequest> flushConsumer,
-        TopicPartition flushPart,
-        long firstFlushReqOffset
-    ) {
-        if (firstFlushReqOffset == 0)
-            return null; // We are at the beginning, no previous committed flush requests.
-
-        long currentPosition = flushConsumer.position(flushPart);
-        assert currentPosition >= firstFlushReqOffset + 1: currentPosition + " " + firstFlushReqOffset;
-
-        long startOffset = firstFlushReqOffset - 1; // Take the previous record.
-        flushConsumer.seek(flushPart, startOffset);
-
-        ConsumerRecord<Object,FlushRequest> max = null;
-
-        do {
-            List<ConsumerRecord<Object,FlushRequest>> flushRecs = flushConsumer.poll(seconds(1)).records(flushPart);
-
-            if (flushRecs.isEmpty())
-                continue;
-
-            max = flushRecs.get(0);
-        }
-        while (flushConsumer.position(flushPart) < firstFlushReqOffset);
-
-        log.debug("Found max history flush request for partition {}: {}", flushPart, max);
-
-        if (max == null) {
-            throw new ReplicaMapException("Committed flush requests lost before offset: " + firstFlushReqOffset +
-                ", check flush topic retention settings: " + flushTopic);
-        }
-
-        // Sometimes this happens because Kafka does not fetch correctly the previous record for some reason.
-        // This is not a critical error, we just reset and try again.
-        if (max.offset() >= firstFlushReqOffset) {
-            throw new ReplicaMapException("Committed flush requests lost before offset: " + firstFlushReqOffset +
-                ", found record: " + max);
-        }
-
-        flushConsumer.seek(flushPart, currentPosition);
-
-        return max;
     }
 
     protected boolean flushPartition(
