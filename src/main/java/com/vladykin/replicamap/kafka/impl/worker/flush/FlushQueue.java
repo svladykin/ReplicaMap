@@ -253,7 +253,6 @@ public class FlushQueue {
             return maxOffset;
         }
 
-        @SuppressWarnings("unused")
         public long getMaxCleanOffset() {
             return maxCleanOffset;
         }
@@ -261,9 +260,9 @@ public class FlushQueue {
         @Override
         public String toString() {
             return "Batch{" +
-                "minOffset=" + minOffset +
-                ", maxOffset=" + maxOffset +
-                ", maxCleanOffset=" + maxCleanOffset +
+                "minOffset=" + getMinOffset() +
+                ", maxOffset=" + getMaxOffset() +
+                ", maxCleanOffset=" + getMaxCleanOffset() +
                 ", collectedAll=" + getCollectedAll() +
                 ", size=" + size() +
                 ", map=" + super.toString() +
