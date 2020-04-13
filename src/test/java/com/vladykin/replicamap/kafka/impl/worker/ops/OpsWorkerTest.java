@@ -141,6 +141,7 @@ public class OpsWorkerTest {
     @Test
     void testForwardCompatibility() {
         TopicPartition p = new TopicPartition(TOPIC_OPS, 0);
+        opsWorker.flushQueues.get(p.partition()).setMaxOffset(0L);
         opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 1L, null,
             new MapUpdate((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
         opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 2L, "key",
@@ -240,6 +241,8 @@ public class OpsWorkerTest {
     @SuppressWarnings("ConstantConditions")
     @Test
     void testApplyOpsTopicRecords() {
+        opsWorker.flushQueues.get(opsPart.partition()).setMaxOffset(1000);
+
         opsWorker.applyOpsTopicRecords(opsPart, Arrays.asList(
             newPutRecord(CLIENT1_ID, 1001),
             newPutRecord(CLIENT2_ID, 1002),
@@ -319,6 +322,7 @@ public class OpsWorkerTest {
         CompletableFuture<Void> steadyFut = opsWorker.getSteadyFuture();
 
         assertFalse(steadyFut.isDone());
+        opsWorker.flushQueues.get(opsPart.partition()).setMaxOffset(49);
         assertFalse(opsWorker.processOpsRecords(new ConsumerRecords<>(singletonMap(opsPart, asList(
             newPutRecord(CLIENT2_ID, 50),
             newPutRecord(CLIENT2_ID, 51)
