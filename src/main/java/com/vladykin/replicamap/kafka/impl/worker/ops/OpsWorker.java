@@ -57,7 +57,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
     protected final String opsTopic;
     protected final String flushTopic;
 
-    protected final Set<Integer> assignedParts;
+    protected final List<TopicPartition> assignedOpsParts;
 
     protected final Consumer<Object,Object> dataConsumer;
     protected final Consumer<Object,OpMessage> opsConsumer;
@@ -105,6 +105,10 @@ public class OpsWorker extends Worker implements AutoCloseable {
         if (assignedParts == null || assignedParts.isEmpty())
             throw new ReplicaMapException("Ops worker " + workerId + " received 0 partitions.");
 
+        assignedOpsParts = assignedParts.stream()
+            .map((part) -> new TopicPartition(opsTopic, part))
+            .collect(Collectors.toList());
+
         this.clientId = clientId;
         this.dataTopic = dataTopic;
         this.opsTopic = opsTopic;
@@ -112,7 +116,6 @@ public class OpsWorker extends Worker implements AutoCloseable {
         this.dataConsumer = dataConsumer;
         this.opsConsumer = opsConsumer;
         this.flushProducer = flushProducer;
-        this.assignedParts = assignedParts;
         this.flushPeriodOps = flushPeriodOps;
         this.flushQueues = flushQueues;
         this.cleanQueue = cleanQueue;
@@ -128,10 +131,10 @@ public class OpsWorker extends Worker implements AutoCloseable {
             Duration pollTimeout = millis(1);
             Map<TopicPartition,Long> opsOffsets = new HashMap<>();
 
-            for (TopicPartition dataPart : getAssignedTopicPartitions(dataTopic)) {
+            for (TopicPartition opsPart : assignedOpsParts) {
+                TopicPartition dataPart = new TopicPartition(dataTopic, opsPart.partition());
                 log.debug("Loading data for partition {}", dataPart);
 
-                TopicPartition opsPart = new TopicPartition(opsTopic, dataPart.partition());
                 ConsumerRecord<Object,FlushNotification> lastFlushRec = findLastFlushNotification(dataPart, opsPart, pollTimeout);
 
                 long flushOffsetOps = 0L;
@@ -438,7 +441,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
     }
 
     protected void seekOpsOffsets(Map<TopicPartition,Long> opsOffsets) {
-        assert opsOffsets.size() == assignedParts.size();
+        assert opsOffsets.size() == assignedOpsParts.size();
         opsConsumer.assign(opsOffsets.keySet());
 
         for (Map.Entry<TopicPartition,Long> entry : opsOffsets.entrySet()) {
@@ -467,24 +470,18 @@ public class OpsWorker extends Worker implements AutoCloseable {
             }
             catch (InterruptException | WakeupException e) {
                 if (log.isDebugEnabled())
-                    log.debug("Poll interrupted for partitions: {}", getAssignedTopicPartitions(opsTopic));
+                    log.debug("Poll interrupted for partitions: {}", assignedOpsParts);
 
                 return;
             }
 
             if (processOpsRecords(recs)) {
                 if (log.isDebugEnabled())
-                    log.debug("Steady for partitions: {}", getAssignedTopicPartitions(opsTopic));
+                    log.debug("Steady for partitions: {}", assignedOpsParts);
 
                 pollTimeout = Utils.seconds(3);
             }
         }
-    }
-
-    protected List<TopicPartition> getAssignedTopicPartitions(String topic) {
-        return assignedParts.stream()
-            .map(part -> new TopicPartition(topic, part))
-            .collect(Collectors.toList());
     }
 
     protected boolean processOpsRecords(ConsumerRecords<Object,OpMessage> recs) {
