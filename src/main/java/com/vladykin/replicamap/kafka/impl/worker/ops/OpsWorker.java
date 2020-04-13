@@ -198,7 +198,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
                 for (ConsumerRecord<Object,Object> rec : recs.records(dataPart)) {
                     if (isOverMaxOffset(rec, flushOffsetData))
-                        break outer;
+                        break outer; // Needed in case of parallel compaction.
 
                     loadedRecsCnt++;
                     lastRecOffset = rec.offset();
