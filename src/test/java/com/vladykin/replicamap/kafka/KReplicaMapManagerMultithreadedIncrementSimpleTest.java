@@ -112,7 +112,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
         ExecutorService exec = Executors.newFixedThreadPool(threadsCnt);
 
         try {
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 5; i++) {
                 CyclicBarrier start = new CyclicBarrier(threadsCnt);
 
                 CompletableFuture<?> fut = Utils.allOf(executeThreads(threadsCnt, exec, () -> {
@@ -120,7 +120,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
 
                     start.await();
 
-                    for (int j = 0; j < 1000; j++) {
+                    for (int j = 0; j < 500; j++) {
                         int mgrId = rnd.nextInt(managersCnt);
 
                         KReplicaMapManager m = managers.get(mgrId, managersFactory);
