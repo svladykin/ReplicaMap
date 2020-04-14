@@ -30,6 +30,7 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DATA_TOPIC;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
@@ -59,6 +60,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
 
         cfg.put(FLUSH_PERIOD_OPS, 30);
+        cfg.put(FLUSH_MAX_POLL_TIMEOUT_MS, 5);
 
         cfg.put(DATA_TOPIC, "data");
         cfg.put(OPS_TOPIC, "ops");
@@ -78,6 +80,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
         return cfg;
     }
 
+    @SuppressWarnings("BusyWait")
     @Test
     void testMultithreadedIncrement() throws Exception {
         int threadsCnt = 25;
@@ -117,7 +120,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
 
                     start.await();
 
-                    for (int j = 0; j < 300; j++) {
+                    for (int j = 0; j < 1000; j++) {
                         int mgrId = rnd.nextInt(managersCnt);
 
                         KReplicaMapManager m = managers.get(mgrId, managersFactory);
@@ -150,6 +153,13 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
 
                 for (int mgrId = 0; mgrId < managersCnt; mgrId++) {
                     KReplicaMapManager m = managers.get(mgrId, managersFactory);
+//                    System.out.println(mgrId + " -> flushWrk:  " + m.getFlushWorkers());
+//                    System.out.println(mgrId + " -> updates:   " + m.getReceivedUpdates());
+//                    System.out.println(mgrId + " -> flushReqs: " + m.getSentFlushRequests());
+//                    System.out.println(mgrId + " -> flushReqs: " + m.getReceivedFlushRequests());
+//                    System.out.println(mgrId + " -> flushes:   " + m.getSuccessfulFlushes());
+//                    System.out.println();
+
                     KReplicaMap<Integer,Long> map = m.getMap();
 
                     for (int k = 0; k < keys; k++) {

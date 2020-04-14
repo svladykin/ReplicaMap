@@ -212,13 +212,15 @@ public class KReplicaMapManager implements ReplicaMapManager {
             opsProducer = newKafkaProducerOps();
             totalPartitions = resolveTotalPartitions();
 
-            validateAllowedPartitions(totalPartitions);
+            validateAllowedPartitions();
 
-            if (opsWorkers > totalPartitions)
-                opsWorkers = allowedPartitions == null ? totalPartitions : allowedPartitions.length;
+            if (opsWorkers > getAllowedPartitions())
+                opsWorkers = getAllowedPartitions();
+            checkPositive(opsWorkers, "opsWorkers");
 
-            if (opsWorkers > flushWorkers)
+            if (opsWorkers < flushWorkers)
                 flushWorkers = Math.max(opsWorkers >>> 1, 1);
+            checkPositive(flushWorkers, "flushWorkers");
 
             flushProducer = newKafkaProducerFlush();
             flushQueues = new ArrayList<>(totalPartitions);
@@ -229,7 +231,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
             this.opsWorkers = new ArrayList<>(opsWorkers);
             for (int workerId = 0; workerId < opsWorkers; workerId++) {
-                Set<Integer> assignedParts = assignPartitionsToWorker(workerId, opsWorkers, totalPartitions);
+                Set<Integer> assignedParts = assignPartitionsToWorker(workerId, opsWorkers);
                 this.opsWorkers.add(newOpsWorker(workerId, assignedParts));
             }
 
@@ -287,10 +289,10 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return ap;
     }
 
-    protected void validateAllowedPartitions(int totalParts) {
+    protected void validateAllowedPartitions() {
         if (allowedPartitions != null) {
             for (short part : allowedPartitions) {
-                if (part >= totalParts)
+                if (part < 0 || part >= totalPartitions)
                     throw new ReplicaMapException("Invalid allowed partitions: " + Arrays.toString(allowedPartitions));
             }
         }
@@ -380,8 +382,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         );
     }
 
-    protected Set<Integer> assignPartitionsToWorker(int workerId, int allWorkers, int allParts) {
-        return assignPartitionsRoundRobin(workerId, allWorkers, allParts, allowedPartitions);
+    protected Set<Integer> assignPartitionsToWorker(int workerId, int allWorkers) {
+        return assignPartitionsRoundRobin(workerId, allWorkers, totalPartitions, allowedPartitions);
     }
 
     protected long generateClientId() {
@@ -484,6 +486,20 @@ public class KReplicaMapManager implements ReplicaMapManager {
      */
     public int getAllowedPartitions() {
         return allowedPartitions == null ? totalPartitions : allowedPartitions.length;
+    }
+
+    /**
+     * @return Number of ops workers.
+     */
+    public int getOpsWorkers() {
+        return opsWorkers.size();
+    }
+
+    /**
+     * @return Number of flush workers.
+     */
+    public int getFlushWorkers() {
+        return flushWorkers.size();
     }
 
     /**

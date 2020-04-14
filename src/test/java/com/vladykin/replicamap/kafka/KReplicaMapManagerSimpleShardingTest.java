@@ -31,8 +31,10 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLU
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_SERIALIZER_CLASS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.PARTITIONER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
@@ -58,6 +60,9 @@ class KReplicaMapManagerSimpleShardingTest {
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
         cfg.put(FLUSH_PERIOD_OPS, 2);
         cfg.put(FLUSH_MAX_POLL_TIMEOUT_MS, 5000L);
+
+        cfg.put(OPS_WORKERS, 3);
+        cfg.put(FLUSH_WORKERS, 2);
 
         cfg.put(KEY_SERIALIZER_CLASS, IntegerSerializer.class);
         cfg.put(KEY_DESERIALIZER_CLASS, IntegerDeserializer.class);
@@ -93,6 +98,9 @@ class KReplicaMapManagerSimpleShardingTest {
 
         KReplicaMapManager all = new KReplicaMapManager(getShardedConfig(null, false));
 
+        assertEquals(3, all.getOpsWorkers());
+        assertEquals(2, all.getFlushWorkers());
+
         all.start(Duration.ofSeconds(START_TIMEOUT));
 
         for (int i = 0; i < 12; i++)
@@ -116,6 +124,8 @@ class KReplicaMapManagerSimpleShardingTest {
         assertEquals(2, AllowedPartsResolver.cnt.get());
 
         for (KReplicaMapManager m : asList(shard1, shard2, shard3, shard4)) {
+            assertEquals(2, m.getOpsWorkers());
+            assertEquals(2, m.getFlushWorkers());
             assertEquals(4, m.getTotalPartitions());
             assertEquals(2, m.getAllowedPartitions());
             assertEquals(6, m.getReceivedDataRecords());
