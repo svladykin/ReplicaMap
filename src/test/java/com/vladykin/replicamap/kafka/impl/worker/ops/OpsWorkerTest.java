@@ -199,12 +199,14 @@ public class OpsWorkerTest {
         dataConsumer.addRecord(new ConsumerRecord<>(TOPIC_DATA, 0, ++offset, "c", "C"));
         dataConsumer.addRecord(new ConsumerRecord<>(TOPIC_DATA, 0, ++offset, "d", "D"));
 
+        dataConsumer.updateEndOffsets(singletonMap(dataPart, offset + 1));
         assertThrows(ReplicaMapException.class, () -> opsWorker.loadDataForPartition(dataPart));
 
         dataConsumer.addRecord(new ConsumerRecord<>(TOPIC_DATA, 0, ++offset,
             NO_TIMESTAMP, TimestampType.NO_TIMESTAMP_TYPE, null, NULL_SIZE, NULL_SIZE,"e", "E",
             new RecordHeaders(singleton(new RecordHeader(FlushWorker.OPS_OFFSET_HEADER,
                 Utils.serializeVarlong(777888))))));
+        dataConsumer.updateEndOffsets(singletonMap(dataPart, offset + 1));
 
         assertEquals(777888, opsWorker.loadDataForPartition(dataPart));
         assertEquals(5, appliedUpdates.get());
