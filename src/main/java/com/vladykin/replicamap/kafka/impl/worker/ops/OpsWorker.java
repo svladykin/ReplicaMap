@@ -9,7 +9,6 @@ import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import com.vladykin.replicamap.kafka.impl.worker.Worker;
 import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,14 +25,15 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
+import org.apache.kafka.common.header.Header;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REMOVE_ANY;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.isOverMaxOffset;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
+import static com.vladykin.replicamap.kafka.impl.worker.flush.FlushWorker.OPS_OFFSET_HEADER;
 import static java.util.Collections.singleton;
 
 /**
@@ -45,12 +45,6 @@ import static java.util.Collections.singleton;
 public class OpsWorker extends Worker implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(OpsWorker.class);
 
-    protected static final ConsumerRecord<Object,FlushNotification> NOT_FOUND =
-        new ConsumerRecord<>("NOT_FOUND", 0, 0, null, null);
-
-    protected static final ConsumerRecord<Object,FlushNotification> NOT_EXIST =
-        new ConsumerRecord<>("NOT_EXIST", 0, 0, null, null);
-
     protected final long clientId;
 
     protected final String dataTopic;
@@ -59,7 +53,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
     protected final List<TopicPartition> assignedOpsParts;
 
-    protected final Consumer<Object,Object> dataConsumer;
+    protected Consumer<Object,Object> dataConsumer;
     protected final Consumer<Object,OpMessage> opsConsumer;
     protected final Producer<Object,FlushRequest> flushProducer;
 
@@ -128,35 +122,14 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
     protected Map<TopicPartition, Long> loadData() {
         try {
-            Duration pollTimeout = millis(1);
             Map<TopicPartition,Long> opsOffsets = new HashMap<>();
 
             for (TopicPartition opsPart : assignedOpsParts) {
                 TopicPartition dataPart = new TopicPartition(dataTopic, opsPart.partition());
                 log.debug("Loading data for partition {}", dataPart);
 
-                ConsumerRecord<Object,FlushNotification> lastFlushRec = findLastFlushNotification(dataPart, opsPart, pollTimeout);
-
-                long flushOffsetOps = 0L;
-
-                if (lastFlushRec != null) {
-                    FlushNotification op = lastFlushRec.value();
-                    flushOffsetOps = op.getFlushOffsetOps() + 1; // + 1 because we need the first unflushed ops offset
-                    long flushOffsetData = op.getFlushOffsetData();
-
-                    if (log.isDebugEnabled())
-                        log.debug("Found last flush record {} for partition {}", lastFlushRec, opsPart);
-
-                    loadDataForPartition(dataPart, flushOffsetData, pollTimeout);
-                    lastFlushNotifications.put(opsPart, op);
-
-//                    trace.trace("last {} : {}", opsPart, lastFlushRec);
-                }
-                else
-                    log.debug("Flush record does not exist for partition {}", opsPart);
-
+                long flushOffsetOps = loadDataForPartition(dataPart) + 1; // Add 1 because we need first unflushed position.
                 opsOffsets.put(opsPart, flushOffsetOps);
-
                 checkInterrupted();
             }
 
@@ -164,77 +137,42 @@ public class OpsWorker extends Worker implements AutoCloseable {
         }
         finally {
             Utils.close(dataConsumer); // We do not need it anymore.
+            dataConsumer = null;
         }
     }
 
-    protected int loadDataForPartition(TopicPartition dataPart, long flushOffsetData, Duration pollTimeout) {
+    protected long readOpsOffsetHeader(ConsumerRecord<Object,Object> dataRec) {
+        Header header = dataRec.headers().lastHeader(OPS_OFFSET_HEADER);
+
+        if (header == null)
+            throw new ReplicaMapException("No '" + OPS_OFFSET_HEADER +
+                "' header found for the last committed data record: " + dataRec);
+
+        return Utils.deserializeVarlong(header.value());
+    }
+
+    protected long loadDataForPartition(TopicPartition dataPart) {
         dataConsumer.assign(singleton(dataPart));
         dataConsumer.seekToBeginning(singleton(dataPart));
 
-        int loadedRecsCnt = 0;
-        long lastRecOffset = -1;
+        ConsumerRecord<Object,Object> lastDataRec = null;
 
-        Map<Object,Object> loadedData = new HashMap<>(); // log.isTraceEnabled() ? new HashMap<>() : null;
-
-        outer: for (;;) {
-            ConsumerRecords<Object,Object> recs = dataConsumer.poll(pollTimeout);
+        for (;;) {
+            ConsumerRecords<Object,Object> recs = dataConsumer.poll(millis(5));
 
             if (recs.isEmpty()) {
-                long endOffsetData = Utils.endOffset(dataConsumer, dataPart);
+                // With read_committed endOffset means LSO.
+                if (dataConsumer.position(dataPart) < Utils.endOffset(dataConsumer, dataPart))
+                    continue;
 
-                if (log.isDebugEnabled()) {
-                    log.debug("Empty records while loading data for partition {}, endOffsetData: {}, " +
-                                "flushOffsetData: {}, loadedRecs: {}, lastRecOffset: {}",
-                                dataPart, endOffsetData, flushOffsetData, loadedRecsCnt, lastRecOffset);
-                }
-
-                if (endOffsetData <= flushOffsetData) { // flushOffsetData is inclusive, endOffsetData is exclusive
-                    throw new ReplicaMapException("Too low end offset of the data partition: " +
-                        dataPart + ", endOffsetData: " + endOffsetData + ", flushOffsetData: " + flushOffsetData);
-                }
-
-                if (dataConsumer.position(dataPart) == endOffsetData)
-                    break; // we've loaded all the available data records
+                return lastDataRec == null ? -1L : readOpsOffsetHeader(lastDataRec);
             }
-            else {
-                assert recs.partitions().size() == 1;
 
-                for (ConsumerRecord<Object,Object> rec : recs.records(dataPart)) {
-                    if (isOverMaxOffset(rec, flushOffsetData))
-                        break outer; // Needed in case of parallel compaction.
-
-                    loadedRecsCnt++;
-                    lastRecOffset = rec.offset();
-
-                    log.trace("Loading data partition {}, record: {}", dataPart, rec);
-
-                    applyDataTopicRecord(rec);
-                    collectDataRecord(loadedData, rec);
-
-                    if (rec.offset() == flushOffsetData)
-                        break outer; // it was the last record we need
-                }
+            for (ConsumerRecord<Object,Object> rec : recs.records(dataPart)) {
+                log.trace("Loading data partition {}, record: {}", dataPart, rec);
+                applyDataTopicRecord(rec);
+                lastDataRec = rec;
             }
-        }
-
-        if (log.isDebugEnabled())
-            log.debug("Loaded {} data records for partition {}: {}", loadedRecsCnt, dataPart, loadedData);
-
-//        for (Map.Entry<Object,Object> entry : loadedData.entrySet())
-//            trace.trace("loadDataForPartition {} key={}, val={}", dataPart, entry.getKey(), entry.getValue());
-
-        return loadedRecsCnt;
-    }
-
-    protected void collectDataRecord(Map<Object,Object> loadedData, ConsumerRecord<Object,Object> rec) {
-        if (loadedData != null) {
-            Object k = rec.key();
-            Object v = rec.value();
-
-            if (v == null)
-                loadedData.remove(k);
-            else
-                loadedData.put(k, v);
         }
     }
 
@@ -244,7 +182,6 @@ public class OpsWorker extends Worker implements AutoCloseable {
         byte opType = val == null ? OP_REMOVE_ANY : OP_PUT;
 
         receivedDataRecords.increment();
-
         updateHandler.applyReceivedUpdate(dataRec.topic(), dataRec.partition(), dataRec.offset(),
             0L, 0L, opType, key, null, val, null, null);
     }
@@ -346,100 +283,6 @@ public class OpsWorker extends Worker implements AutoCloseable {
         return new FlushRequest(clientId, flushOffsetOps, lastCleanOffsetOps);
     }
 
-    protected ConsumerRecord<Object,FlushNotification> findLastFlushNotification(
-        TopicPartition dataPart,
-        TopicPartition opsPart,
-        Duration pollTimeout
-    ) {
-        opsConsumer.assign(singleton(opsPart));
-        long maxOffset = Utils.endOffset(opsConsumer, opsPart);
-
-        for (;;) {
-            ConsumerRecord<Object,FlushNotification> lastFlushRec =
-                tryFindLastFlushNotification(opsPart, maxOffset, pollTimeout);
-
-            if (lastFlushRec == NOT_EXIST)
-                return null;
-
-            if (lastFlushRec != NOT_FOUND && isValidFlushNotification(dataPart, lastFlushRec))
-                return lastFlushRec;
-
-            maxOffset -= flushPeriodOps;
-        }
-    }
-
-    protected boolean isValidFlushNotification(
-        TopicPartition dataPart,
-        ConsumerRecord<Object,FlushNotification> lastFlushRec
-    ) {
-        // Sometimes Kafka provides smaller offset than actually is known to be committed.
-        // In that case we have to find earlier flush record to be able to load the data.
-        long endOffsetData = Utils.endOffset(dataConsumer, dataPart);
-        if (endOffsetData > lastFlushRec.value().getFlushOffsetData())
-            return true;
-
-        log.warn("Committed offset is not found in data partition {}, end offset: {}, flush record: {}",
-            dataPart, endOffsetData, lastFlushRec);
-
-        return false;
-    }
-
-    protected ConsumerRecord<Object,FlushNotification> tryFindLastFlushNotification(
-        TopicPartition opsPart,
-        long maxOffset,
-        Duration pollTimeout
-    ) {
-        long offset = maxOffset - flushPeriodOps;
-        if (offset < 0)
-            offset = 0;
-
-        if (log.isDebugEnabled()) {
-            log.debug("Searching for the last flush notification for partition {}, seek to {}, flushPeriodOps: {}",
-                opsPart, offset, flushPeriodOps);
-        }
-
-        opsConsumer.seek(opsPart, offset);
-
-        int processedRecs = 0;
-        ConsumerRecord<Object,FlushNotification> lastFlush = null;
-
-        outer: for (;;) {
-            ConsumerRecords<Object,OpMessage> recs = opsConsumer.poll(pollTimeout);
-
-            if (recs.isEmpty()) {
-                if (Utils.isEndPosition(opsConsumer, opsPart))
-                    break;
-                else
-                    continue;
-            }
-
-            for (ConsumerRecord<Object,OpMessage> rec : recs.records(opsPart)) {
-                processedRecs++;
-
-                if (log.isTraceEnabled())
-                    log.trace("Searching through record: {}", rec);
-
-                if (rec.value().getOpType() == OP_FLUSH_NOTIFICATION) {
-                    lastFlush = Utils.cast(rec);
-                    break outer;
-                }
-
-                if (rec.offset() > maxOffset)
-                    break outer;
-            }
-        }
-
-        if (log.isDebugEnabled()) {
-            log.debug("Searched through {} records in partition {}, last flush notification record: {}",
-                processedRecs, opsPart, lastFlush);
-        }
-
-        if (lastFlush != null)
-            return lastFlush;
-
-        return offset == 0 ? NOT_EXIST : NOT_FOUND;
-    }
-
     protected void seekOpsOffsets(Map<TopicPartition,Long> opsOffsets) {
         assert opsOffsets.size() == assignedOpsParts.size();
         opsConsumer.assign(opsOffsets.keySet());
@@ -461,12 +304,10 @@ public class OpsWorker extends Worker implements AutoCloseable {
     }
 
     protected void processOps() {
-        Duration pollTimeout = Utils.millis(3);
-
         while (!isInterrupted()) {
             ConsumerRecords<Object,OpMessage> recs;
             try {
-                recs = opsConsumer.poll(pollTimeout);
+                recs = opsConsumer.poll(millis(1000));
             }
             catch (InterruptException | WakeupException e) {
                 if (log.isDebugEnabled())
@@ -478,8 +319,6 @@ public class OpsWorker extends Worker implements AutoCloseable {
             if (processOpsRecords(recs)) {
                 if (log.isDebugEnabled())
                     log.debug("Steady for partitions: {}", assignedOpsParts);
-
-                pollTimeout = Utils.seconds(3);
             }
         }
     }

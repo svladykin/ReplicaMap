@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +26,7 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.utils.ByteUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,17 +43,17 @@ public final class Utils {
 
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
 
-    private static final Duration[] SECONDS = new Duration[1000];
+    public static final long MIN_DURATION_MS = 5;
     private static final Duration[] MILLIS = new Duration[1000];
 
-    public static Duration seconds(int sec) {
-        return duration(SECONDS, sec, ChronoUnit.SECONDS);
-    }
-
     public static Duration millis(long ms) {
+        if (ms < 5) // KafkaConsumer.poll(ms) may often produce empty results and break tests.
+            throw new IllegalArgumentException("Too small duration: " + ms);
+
         return duration(MILLIS, ms, ChronoUnit.MILLIS);
     }
 
+    @SuppressWarnings("SameParameterValue")
     private static Duration duration(Duration[] cache, long x, ChronoUnit u) {
         if (x >= cache.length)
             return Duration.of(x, u);
@@ -232,10 +232,6 @@ public final class Utils {
         return Runtime.getRuntime().availableProcessors();
     }
 
-    public static boolean isOverMaxOffset(ConsumerRecord<?,?> rec, long maxOffset) {
-        return rec.offset() > maxOffset;
-    }
-
     public static boolean contains(short[] sortedArr, short x) {
         return indexOf(sortedArr, x) >= 0;
     }
@@ -322,15 +318,6 @@ public final class Utils {
             .collect(Collectors.toList());
     }
 
-    public static Map<TopicPartition,Long> positions(Consumer<?,?> consumer) {
-        Map<TopicPartition,Long> map = new HashMap<>();
-
-        for (TopicPartition part : consumer.assignment())
-            map.putIfAbsent(part, consumer.position(part));
-
-        return map;
-    }
-
     public static Map<TopicPartition,Long> endOffsets(Consumer<?,?> consumer, String topic) {
         return consumer.endOffsets(partitions(consumer, topic));
     }
@@ -342,10 +329,6 @@ public final class Utils {
             throw new ReplicaMapException("Failed to fetch end offset for partition: " + part);
 
         return endOffsets.get(part);
-    }
-
-    public static boolean isEndPosition(Consumer<?,?> consumer, TopicPartition part) {
-        return endOffset(consumer, part) == consumer.position(part);
     }
 
     public static <T> T getConfiguredInstance(Class<T> clazz, Map<String,?> configs) {
@@ -386,5 +369,33 @@ public final class Utils {
             arr[i] = (short)ByteUtils.readVarint(buf);
 
         return arr;
+    }
+
+    public static byte[] serializeVarlong(long x) {
+        byte[] bytes = new byte[ByteUtils.sizeOfVarlong(x)];
+        ByteUtils.writeVarlong(x, ByteBuffer.wrap(bytes));
+        return bytes;
+    }
+
+    public static long deserializeVarlong(byte[] bytes) {
+        return ByteUtils.readVarlong(ByteBuffer.wrap(bytes));
+    }
+
+    public static Iterable<Header> concat(Iterable<Header> a, Iterable<Header> b) {
+        if (a == null)
+            return b;
+
+        if (b == null)
+            return a;
+
+        List<Header> list = new ArrayList<>();
+
+        for (Header h : a)
+            list.add(h);
+
+        for (Header h : b)
+            list.add(h);
+
+        return list;
     }
 }

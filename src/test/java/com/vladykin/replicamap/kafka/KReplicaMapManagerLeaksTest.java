@@ -116,6 +116,7 @@ class KReplicaMapManagerLeaksTest {
             m.put(new TopicPartition(FLUSH_TOPIC, 0), 0L);
             m.put(new TopicPartition(FLUSH_TOPIC, 1), 0L);
 
+            updateBeginningOffsets(m);
             updateEndOffsets(m);
 
             consumers.add(this);

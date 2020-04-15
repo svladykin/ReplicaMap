@@ -165,15 +165,17 @@ class FlushWorkerTest {
 
     @Test
     void testProcessFlushRequests() throws ExecutionException, InterruptedException {
-        assertFalse(flushWorker.processFlushRequests(0)); // Not steady.
+        long pollTimeoutMs = 5;
+
+        assertFalse(flushWorker.processFlushRequests(pollTimeoutMs)); // Not steady.
         opsSteadyFut.complete(null);
 
-        assertFalse(flushWorker.processFlushRequests(0)); // No flush requests.
+        assertFalse(flushWorker.processFlushRequests(pollTimeoutMs)); // No flush requests.
 
         initFlushConsumer(777,101, 97);
         flushWorker.initDataProducers(singleton(flushPart));
         assertTrue(flushWorker.unprocessedFlushRequests.isEmpty());
-        assertFalse(flushWorker.processFlushRequests(0)); // No data in flush queue.
+        assertFalse(flushWorker.processFlushRequests(pollTimeoutMs)); // No data in flush queue.
         assertTrue(flushWorker.unprocessedFlushRequests.get(flushPart).isEmpty());
         assertFalse(flushWorker.unprocessedFlushRequests.get(flushPart).isInitialized());
 
@@ -192,7 +194,7 @@ class FlushWorkerTest {
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(777,101, 98);
         flushConsumer.close();
-        assertFalse(flushWorker.processFlushRequests(0)); // Exception on creating the consumer.
+        assertFalse(flushWorker.processFlushRequests(pollTimeoutMs)); // Exception on creating the consumer.
         assertTrue(flushWorker.unprocessedFlushRequests.get(flushPart).isEmpty());
         assertFalse(flushWorker.unprocessedFlushRequests.get(flushPart).isInitialized());
 
@@ -203,7 +205,7 @@ class FlushWorkerTest {
         flushWorker.initDataProducers(singleton(flushPart));
         dataProducer.fenceProducer();
 
-        assertFalse(flushWorker.processFlushRequests(0));
+        assertFalse(flushWorker.processFlushRequests(pollTimeoutMs));
         assertFalse(dataProducer.transactionCommitted());
         assertTrue(flushWorker.unprocessedFlushRequests.get(flushPart).isEmpty());
         assertFalse(flushWorker.unprocessedFlushRequests.get(flushPart).isInitialized());
@@ -216,10 +218,10 @@ class FlushWorkerTest {
         initFlushConsumer(778, 101, 98);
 
         assertEquals(0, successfulFlushes.sum());
-        assertFalse(flushWorker.processFlushRequests(0)); // Load last committed flush request.
+        assertFalse(flushWorker.processFlushRequests(pollTimeoutMs)); // Load last committed flush request.
         assertEquals(0, successfulFlushes.sum());
         initFlushConsumer(777, 101, 98);
-        assertTrue(flushWorker.processFlushRequests(0));
+        assertTrue(flushWorker.processFlushRequests(pollTimeoutMs));
 
         assertTrue(dataProducer.transactionCommitted());
         assertEquals(1, flushQueue.size());
@@ -253,7 +255,7 @@ class FlushWorkerTest {
         assertTrue(flushWorker.unprocessedFlushRequests.get(flushPart).isEmpty());
 
         assertEquals(1, flushQueue.size());
-        assertFalse(flushWorker.processFlushRequests(0));
+        assertFalse(flushWorker.processFlushRequests(pollTimeoutMs));
         assertEquals(1, flushQueue.size());
         assertEquals(1, successfulFlushes.sum());
 
@@ -263,7 +265,7 @@ class FlushWorkerTest {
         initFlushConsumer(777, 102, 101);
         flushConsumer.setPollException(new KafkaException("test"));
 
-        assertFalse(flushWorker.processFlushRequests(0));
+        assertFalse(flushWorker.processFlushRequests(pollTimeoutMs));
         assertEquals(1, flushQueue.size());
         assertEquals(1, successfulFlushes.sum());
 
@@ -273,7 +275,7 @@ class FlushWorkerTest {
         flushWorker.initDataProducers(singleton(flushPart));
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(0, 102, 101);
-        assertTrue(flushWorker.processFlushRequests(0));
+        assertTrue(flushWorker.processFlushRequests(pollTimeoutMs));
         assertEquals(0, flushQueue.size());
         assertEquals(1, dataProducer.history().size());
         assertEquals(1, opsProducer.history().size());

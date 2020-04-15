@@ -2,6 +2,7 @@ package com.vladykin.replicamap.kafka;
 
 import com.salesforce.kafka.test.KafkaTestUtils;
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
+import com.vladykin.replicamap.ReplicaMapException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -19,7 +20,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.kafkaCl
 import static com.vladykin.replicamap.kafka.KReplicaMapTools.CMD_INIT_EXISTING;
 import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class KReplicaMapToolsInitExistingTxTest {
 
@@ -58,12 +59,22 @@ class KReplicaMapToolsInitExistingTxTest {
             producer.send(new ProducerRecord<>(DATA, 3, "bla", "Bla"));
 
             producer.commitTransaction();
+
+            producer.beginTransaction();
+
+            producer.send(new ProducerRecord<>(DATA, 1, "abc", "nnn"));
+            producer.send(new ProducerRecord<>(DATA, 3, "qwe", "543"));
+            producer.send(new ProducerRecord<>(DATA, 3, "bla", "123"));
+
+            producer.flush();
+            producer.abortTransaction();
         }
 
-        try (KReplicaMapManager m = new KReplicaMapManager(getDefaultConfig())) {
-            m.start(10, TimeUnit.SECONDS);
-            assertTrue(m.getMap().isEmpty());
-        }
+        assertThrows(ReplicaMapException.class, () -> {
+            try (KReplicaMapManager m = new KReplicaMapManager(getDefaultConfig())) {
+                m.start(10, TimeUnit.SECONDS);
+            }
+        });
 
         KReplicaMapTools.main();
         KReplicaMapTools.main(CMD_INIT_EXISTING, sharedKafkaTestResource.getKafkaConnectString(), DATA, OPS);

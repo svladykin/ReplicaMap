@@ -207,7 +207,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
                 long start = System.nanoTime();
 
                 for (;;) {
-                    ConsumerRecords<Object,Object> data = dataConsumer.poll(Utils.seconds(1));
+                    ConsumerRecords<Object,Object> data = dataConsumer.poll(Utils.millis(1000));
 
                     if (!data.isEmpty())
                         break;

@@ -2,6 +2,7 @@ package com.vladykin.replicamap.kafka;
 
 import com.salesforce.kafka.test.KafkaTestUtils;
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
+import com.vladykin.replicamap.ReplicaMapException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -15,7 +16,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapTools.CMD_INIT_EXISTING;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class KReplicaMapToolsInitExistingTest {
 
@@ -51,10 +52,11 @@ class KReplicaMapToolsInitExistingTest {
         recs.put("bla".getBytes(UTF_8), "Bla".getBytes(UTF_8));
         u.produceRecords(recs, DATA, 3);
 
-        try (KReplicaMapManager m = new KReplicaMapManager(getDefaultConfig())) {
-            m.start(10, TimeUnit.SECONDS);
-            assertTrue(m.getMap().isEmpty());
-        }
+        assertThrows(ReplicaMapException.class, () -> {
+            try (KReplicaMapManager m = new KReplicaMapManager(getDefaultConfig())) {
+                m.start(10, TimeUnit.SECONDS);
+            }
+        });
 
         KReplicaMapTools.main();
         KReplicaMapTools.main(CMD_INIT_EXISTING, sharedKafkaTestResource.getKafkaConnectString(), DATA, OPS);

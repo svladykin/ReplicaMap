@@ -87,6 +87,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.PARTITIONER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_DURATION_MS;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.assignPartitionsRoundRobin;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.check;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.checkPositive;
@@ -182,7 +183,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         checkPositive(opsSendTimeout, OPS_SEND_TIMEOUT_MS);
 
         flushMaxPollTimeout = cfg.getLong(FLUSH_MAX_POLL_TIMEOUT_MS);
-        checkPositive(flushMaxPollTimeout, FLUSH_MAX_POLL_TIMEOUT_MS);
+        if (flushMaxPollTimeout < MIN_DURATION_MS)
+            throw new ReplicaMapException(FLUSH_MAX_POLL_TIMEOUT_MS + " must not be less that " + MIN_DURATION_MS);
 
         flushPeriodOps = cfg.getInt(FLUSH_PERIOD_OPS);
         checkPositive(flushPeriodOps, FLUSH_PERIOD_OPS);

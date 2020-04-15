@@ -35,10 +35,13 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ProducerFencedException;
+import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.header.internals.RecordHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_DURATION_MS;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
@@ -52,6 +55,8 @@ import static java.util.stream.Collectors.toList;
  */
 public class FlushWorker extends Worker implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(FlushWorker.class);
+
+    public static final String OPS_OFFSET_HEADER = "replicamap.ops";
 
     protected final long clientId;
 
@@ -132,7 +137,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
     @Override
     protected void doRun() throws Exception {
-        long pollTimeoutMs = 1;
+        long pollTimeoutMs = 5;
 
         while (!isInterrupted()) {
             boolean flushed = processFlushRequests(pollTimeoutMs);
@@ -149,7 +154,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
     }
 
     protected long updatePollTimeout(long pollTimeoutMs, boolean flushed, boolean cleaned) {
-        return flushed || cleaned ? 1 : Math.min(pollTimeoutMs * 2, maxPollTimeout);
+        return flushed || cleaned ? MIN_DURATION_MS : Math.min(pollTimeoutMs * 2, maxPollTimeout);
     }
 
     protected boolean processCleanRequests() {
@@ -350,7 +355,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
         try {
             dataProducer = dataProducers.get(part, null);
-            flushOffsetData = flushTx(dataProducer, dataBatch, flushPart, flushConsumerOffset);
+            flushOffsetData = flushTx(dataProducer, dataBatch, flushPart, flushConsumerOffset, flushOffsetOps);
         }
         catch (Exception e) {
             boolean fenced = e instanceof ProducerFencedException;
@@ -398,27 +403,24 @@ public class FlushWorker extends Worker implements AutoCloseable {
         Producer<Object,Object> dataProducer,
         FlushQueue.Batch dataBatch,
         TopicPartition flushPart,
-        OffsetAndMetadata flushConsumerOffset
+        OffsetAndMetadata flushConsumerOffset,
+        long flushOffsetOps
     ) throws ExecutionException, InterruptedException {
+        assert !dataBatch.isEmpty();
+
         int part = flushPart.partition();
         Future<RecordMetadata> lastDataRecMetaFut = null;
 
-//        Map<Object,Future<RecordMetadata>> futs = new HashMap<>();
+        int i = 0;
 
         dataProducer.beginTransaction();
         for (Map.Entry<Object,Object> entry : dataBatch.entrySet()) {
             lastDataRecMetaFut = dataProducer.send(new ProducerRecord<>(
-                dataTopic, part, entry.getKey(), entry.getValue()));
-
-//            futs.put(entry.getKey(), lastDataRecMetaFut);
+                dataTopic, part, entry.getKey(), entry.getValue(),
+                ++i != dataBatch.size() ? null : newOpsOffsetHeader(flushOffsetOps)));
         }
         dataProducer.sendOffsetsToTransaction(singletonMap(flushPart, flushConsumerOffset), flushConsumerGroupId);
         dataProducer.commitTransaction();
-
-//        for (Map.Entry<Object,Object> entry : dataBatch.entrySet())
-//            trace.trace("flushTx {} minOffset={}, maxOffset={}, maxCleanOffset={}, dataOffset={}, key={}, val={}",
-//                flushPart, dataBatch.getMinOffset(), dataBatch.getMaxOffset(), dataBatch.getMaxCleanOffset(),
-//                futs.get(entry.getKey()).get().offset(), entry.getKey(), entry.getValue());
 
         // We check that the batch is not empty, thus we have to have the last record non-null here.
         // Since ReplicaMap checks preconditions locally before sending anything to Kafka,
@@ -426,6 +428,10 @@ public class FlushWorker extends Worker implements AutoCloseable {
         // there must always be a winner, so we will be able to commit periodically.
         assert lastDataRecMetaFut != null;
         return lastDataRecMetaFut.get().offset();
+    }
+
+    public static Iterable<Header> newOpsOffsetHeader(long offset) {
+        return singleton(new RecordHeader(OPS_OFFSET_HEADER, Utils.serializeVarlong(offset)));
     }
 
     protected void sendFlushNotification(TopicPartition dataPart, long flushOffsetData, long flushOffsetOps) {
