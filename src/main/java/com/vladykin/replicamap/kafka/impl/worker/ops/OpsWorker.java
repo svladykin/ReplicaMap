@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REMOVE_ANY;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static com.vladykin.replicamap.kafka.impl.worker.flush.FlushWorker.OPS_OFFSET_HEADER;
 import static java.util.Collections.singleton;
@@ -158,7 +159,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         ConsumerRecord<Object,Object> lastDataRec = null;
 
         for (;;) {
-            ConsumerRecords<Object,Object> recs = dataConsumer.poll(millis(5));
+            ConsumerRecords<Object,Object> recs = dataConsumer.poll(MIN_POLL_TIMEOUT);
 
             if (recs.isEmpty()) {
                 // With read_committed endOffset means LSO.

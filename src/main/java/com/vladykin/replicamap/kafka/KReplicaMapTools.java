@@ -22,7 +22,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
-import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT;
 import static java.util.Collections.singleton;
 
 /**
@@ -151,7 +151,7 @@ public class KReplicaMapTools {
         boolean reachedZero = false;
 
         for (int step = 1;;) {
-            ConsumerRecords<byte[],byte[]> recs = consumer.poll(millis(5));
+            ConsumerRecords<byte[],byte[]> recs = consumer.poll(MIN_POLL_TIMEOUT);
 
             if (recs.isEmpty()) {
                 endOffset = Utils.endOffset(consumer, dataPart); // With read_committed endOffset means LSO.

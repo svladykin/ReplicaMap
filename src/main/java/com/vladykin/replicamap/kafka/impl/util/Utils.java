@@ -43,11 +43,13 @@ public final class Utils {
 
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
 
-    public static final long MIN_DURATION_MS = 5;
     private static final Duration[] MILLIS = new Duration[1000];
 
+    public static final long MIN_POLL_TIMEOUT_MS = 5;
+    public static final Duration MIN_POLL_TIMEOUT = millis(MIN_POLL_TIMEOUT_MS);
+
     public static Duration millis(long ms) {
-        if (ms < 5) // KafkaConsumer.poll(ms) may often produce empty results and break tests.
+        if (ms < MIN_POLL_TIMEOUT_MS) // KafkaConsumer.poll(ms) may often produce empty results and break tests.
             throw new IllegalArgumentException("Too small duration: " + ms);
 
         return duration(MILLIS, ms, ChronoUnit.MILLIS);

@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class FlushWorkerTest {
-    static final long MAX_POLL_TIMEOUT = 20;
+    static final long MAX_POLL_TIMEOUT = 80;
 
     LazyList<Consumer<Object,Object>> dataConsumers;
     LazyList<Producer<Object,Object>> dataProducers;
@@ -137,22 +137,22 @@ class FlushWorkerTest {
 
     @Test
     void testUpdatePollTimeout() {
-        assertEquals(1, flushWorker.updatePollTimeout(15, false, true));
-        assertEquals(1, flushWorker.updatePollTimeout(15, true, false));
-        assertEquals(1, flushWorker.updatePollTimeout(15, true, true));
+        assertEquals(5, flushWorker.updatePollTimeout(15, false, true));
+        assertEquals(5, flushWorker.updatePollTimeout(15, true, false));
+        assertEquals(5, flushWorker.updatePollTimeout(15, true, true));
 
-        long timeout = 1;
-        assertEquals(2, timeout = flushWorker.updatePollTimeout(timeout, false, false));
-        assertEquals(4, timeout = flushWorker.updatePollTimeout(timeout, false, false));
-        assertEquals(8, timeout = flushWorker.updatePollTimeout(timeout, false, false));
-        assertEquals(16, timeout = flushWorker.updatePollTimeout(timeout, false, false));
+        long timeout = 5;
+        assertEquals(10, timeout = flushWorker.updatePollTimeout(timeout, false, false));
         assertEquals(20, timeout = flushWorker.updatePollTimeout(timeout, false, false));
-        assertEquals(20, timeout = flushWorker.updatePollTimeout(timeout, false, false));
+        assertEquals(40, timeout = flushWorker.updatePollTimeout(timeout, false, false));
+        assertEquals(80, timeout = flushWorker.updatePollTimeout(timeout, false, false));
+        assertEquals(80, timeout = flushWorker.updatePollTimeout(timeout, false, false));
+        assertEquals(80, timeout = flushWorker.updatePollTimeout(timeout, false, false));
 
-        assertEquals(1, timeout = flushWorker.updatePollTimeout(timeout, false, true));
-        assertEquals(2, timeout = flushWorker.updatePollTimeout(timeout, false, false));
-        assertEquals(4, timeout = flushWorker.updatePollTimeout(timeout, false, false));
-        assertEquals(8, flushWorker.updatePollTimeout(timeout, false, false));
+        assertEquals(5, timeout = flushWorker.updatePollTimeout(timeout, false, true));
+        assertEquals(10, timeout = flushWorker.updatePollTimeout(timeout, false, false));
+        assertEquals(20, timeout = flushWorker.updatePollTimeout(timeout, false, false));
+        assertEquals(40, flushWorker.updatePollTimeout(timeout, false, false));
     }
 
     @Test

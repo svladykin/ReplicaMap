@@ -41,7 +41,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_DURATION_MS;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
@@ -137,7 +137,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
     @Override
     protected void doRun() throws Exception {
-        long pollTimeoutMs = 5;
+        long pollTimeoutMs = MIN_POLL_TIMEOUT_MS;
 
         while (!isInterrupted()) {
             boolean flushed = processFlushRequests(pollTimeoutMs);
@@ -154,7 +154,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
     }
 
     protected long updatePollTimeout(long pollTimeoutMs, boolean flushed, boolean cleaned) {
-        return flushed || cleaned ? MIN_DURATION_MS : Math.min(pollTimeoutMs * 2, maxPollTimeout);
+        return flushed || cleaned ? MIN_POLL_TIMEOUT_MS : Math.min(pollTimeoutMs * 2, maxPollTimeout);
     }
 
     protected boolean processCleanRequests() {
