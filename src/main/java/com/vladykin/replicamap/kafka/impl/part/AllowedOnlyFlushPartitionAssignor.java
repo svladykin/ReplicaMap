@@ -4,6 +4,7 @@ import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +35,7 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
 
     @Override
     public String name() {
-        return "ReplicaMap-flush";
+        return "replicamap-flush";
     }
 
     public static void setupConsumerConfig(
@@ -90,6 +91,9 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
             members.add(new Member(entry.getKey(), allowed));
         }
 
+        // To have stable results, maybe in the future it will be useful for incremental rebalancing.
+        members.sort(Comparator.comparing(Member::id));
+
         int parts = partitionsPerTopic.get(flushTopic);
 
         for (short part = 0; part < parts; part++) {
@@ -135,6 +139,10 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         Member(String id, short[] allowedParts) {
             this.id = id;
             this.allowedParts = allowedParts;
+        }
+
+        String id() {
+            return id;
         }
 
         int assignable(short part, int parts) {
