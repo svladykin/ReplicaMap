@@ -10,6 +10,7 @@ jdk:
 env:
   - ORG_GRADLE_PROJECT_kafkaVersion=2.3.1
   - ORG_GRADLE_PROJECT_kafkaVersion=2.4.1
+  - ORG_GRADLE_PROJECT_kafkaVersion=2.5.0
 
 before_cache:
   - rm -f  $HOME/.gradle/caches/modules-2/modules-2.lock
