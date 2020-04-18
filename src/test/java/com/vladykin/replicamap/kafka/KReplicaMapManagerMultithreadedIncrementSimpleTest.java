@@ -14,6 +14,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -106,7 +107,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
         Map<TopicPartition, Long> offsets = new HashMap<>();
         try (Consumer<Object,Object> dataConsumer =
                  managers.get(0, managersFactory).newKafkaConsumerData()) {
-            checkFlushedData("data", dataConsumer, offsets, true);
+            awaitFlushedData("data", dataConsumer, offsets, true);
         }
 
         ExecutorService exec = Executors.newFixedThreadPool(threadsCnt);
@@ -173,7 +174,7 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
 
                 try (Consumer<Object,Object> dataConsumer =
                          managers.get(0, managersFactory).newKafkaConsumerData()) {
-                    checkFlushedData("data", dataConsumer, offsets, false);
+                    awaitFlushedData("data", dataConsumer, offsets, false);
                 }
 
                 System.out.println("iteration " + i + " OK");
@@ -186,45 +187,60 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
         }
     }
 
-    static void checkFlushedData(String dataTopic, Consumer<Object,Object> dataConsumer, Map<TopicPartition, Long> offsets, boolean preCheck) {
+    @SuppressWarnings("BusyWait")
+    static void awaitFlushedData(
+        String dataTopic,
+        Consumer<Object,Object> dataConsumer,
+        Map<TopicPartition, Long> offsets,
+        boolean preCheck
+    ) throws Exception {
         boolean ok = preCheck;
+        long start = System.nanoTime();
 
-        for (PartitionInfo partInfo : dataConsumer.partitionsFor(dataTopic)) {
-            TopicPartition part = new TopicPartition(dataTopic, partInfo.partition());
-            Long oldOffset = offsets.get(part);
-            long newOffset = Utils.endOffset(dataConsumer, part);
+        for (;;) {
+            for (PartitionInfo partInfo : dataConsumer.partitionsFor(dataTopic)) {
+                TopicPartition part = new TopicPartition(dataTopic, partInfo.partition());
+                Long oldOffset = offsets.get(part);
+                long newOffset = Utils.endOffset(dataConsumer, part);
 
-            if (oldOffset != null) {
-                if (newOffset == oldOffset)
-                    continue;
+                if (oldOffset != null) {
+                    if (newOffset == oldOffset)
+                        continue;
 
-                assertTrue(newOffset > oldOffset,
-                    newOffset + " > " + oldOffset + " for partition " + part);
+                    assertTrue(newOffset > oldOffset,
+                        newOffset + " > " + oldOffset + " for partition " + part);
 
-                dataConsumer.assign(singleton(part));
-                dataConsumer.seek(part, oldOffset);
+                    dataConsumer.assign(singleton(part));
+                    dataConsumer.seek(part, oldOffset);
 
-                long start = System.nanoTime();
+                    long miniStart = System.nanoTime();
 
-                for (;;) {
-                    ConsumerRecords<Object,Object> data = dataConsumer.poll(Utils.millis(1000));
+                    for (;;) {
+                        ConsumerRecords<Object,Object> data = dataConsumer.poll(Utils.millis(1000));
 
-                    if (!data.isEmpty())
-                        break;
+                        if (!data.isEmpty())
+                            break;
 
-                    if (System.nanoTime() - start > SECONDS.toNanos(15))
-                        fail("Failed to fetch committed data for partition " + part);
+                        if (System.nanoTime() - miniStart > SECONDS.toNanos(15))
+                            fail("Failed to fetch committed data for partition " + part);
+                    }
+
+                    ok = true;
                 }
+                else
+                    assertEquals(0L, newOffset);
 
-                ok = true;
+                offsets.put(part, newOffset);
             }
-            else
-                assertEquals(0L, newOffset);
 
-            offsets.put(part, newOffset);
+            if (ok)
+                return;
+
+            if (System.nanoTime() - start > SECONDS.toNanos(60))
+                throw new TimeoutException();
+
+            Thread.sleep(100);
         }
-
-        assertTrue(ok);
     }
 
     public static class SkipListMapHolder extends MapsHolderSingle {

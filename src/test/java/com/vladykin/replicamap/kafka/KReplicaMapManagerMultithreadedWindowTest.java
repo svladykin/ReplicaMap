@@ -22,9 +22,12 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
+import java.util.function.ToLongFunction;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.LongDeserializer;
@@ -47,14 +50,13 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedIncrementRestartTest.awaitEqual;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedIncrementSimpleTest.checkFlushedData;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedIncrementSimpleTest.awaitFlushedData;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.createTopics;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.kafkaClusterWith3Brokers;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 
 public class KReplicaMapManagerMultithreadedWindowTest {
     static final String TOPIC_SUFFIX = "_zzz";
@@ -97,7 +99,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         int managersCnt = 39;
         int maxNonStopCnt = 2;
         int parts = 4;
-        int iterations = 5;
+        int iterations = 10;
         int updatesPerIteration = 200;
         int restartPeriod = 50;
 
@@ -117,7 +119,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
 
         Map<TopicPartition, Long> offsets = new HashMap<>();
         try (Consumer<Object,Object> dataConsumer = mgr.newKafkaConsumerData()) {
-            checkFlushedData(DATA, dataConsumer, offsets, true);
+            awaitFlushedData(DATA, dataConsumer, offsets, true);
         }
 
         for (long k = 0; k < threadsCnt; k++) {
@@ -186,12 +188,21 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                 System.out.println("checking " + i);
                 System.out.println("last keys: " + Arrays.asList(lastAddedKey));
 
-                List<KReplicaMap<Long,Long>> maps = new ArrayList<>();
+                KReplicaMapManager[] ms = new KReplicaMapManager[managersCnt];
+                List<KReplicaMap<Long,Long>> maps = new ArrayList<>(managersCnt);
                 int minMapSize = Integer.MAX_VALUE;
                 int maxMapSize = -1;
 
                 for (int mgrId = 0; mgrId < managersCnt; mgrId++) {
-                    KReplicaMapManager m = managers.get(mgrId, managersFactory);
+                    KReplicaMapManager m = ms[mgrId] = managers.get(mgrId, managersFactory);
+
+//                    System.out.println(m.getAllowedPartitions());
+//                    System.out.println(m.getSentFlushRequests());
+//                    System.out.println(m.getAssignedFlushPartitions());
+//                    System.out.println(m.getReceivedFlushRequests());
+//                    System.out.println(m.getSuccessfulFlushes());
+//                    System.out.println();
+
                     KReplicaMap<Long,Long> map = m.getMap();
                     maps.add(map);
 
@@ -237,22 +248,45 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                     return ThreadLocalRandom.current().nextBoolean() ? -1 : 1;
                 }, 120, SECONDS, m -> "\n" + Long.toHexString(m.getManager().clientId) + "  " + m.unwrap().toString());
 
+                awaitPositive(KReplicaMapManager::getSuccessfulFlushes, ms);
+
                 try (Consumer<Object,Object> dataConsumer =
                          managers.get(0, managersFactory).newKafkaConsumerData()) {
-                    checkFlushedData(DATA, dataConsumer, offsets, false);
+                    awaitFlushedData(DATA, dataConsumer, offsets, false);
                 }
 
                 System.out.println("iteration " + i + " OK");
             }
         }
-        catch (Throwable e) {
-            e.printStackTrace();
-            fail(e.toString());
-        }
+//        catch (Throwable e) {
+//            e.printStackTrace();
+//            fail(e.toString());
+//        }
         finally {
             exec.shutdownNow();
             assertTrue(exec.awaitTermination(30, SECONDS));
             Utils.close(managers);
+        }
+    }
+
+    @SuppressWarnings("BusyWait")
+    public static void awaitPositive(ToLongFunction<KReplicaMapManager> metric, KReplicaMapManager... ms)
+        throws InterruptedException, TimeoutException {
+        long start = System.nanoTime();
+
+        for (;;) {
+            long total = 0;
+
+            for (KReplicaMapManager m : ms)
+                total += metric.applyAsLong(m);
+
+            if (total > 0)
+                return;
+
+            Thread.sleep(100);
+
+            if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(30))
+                throw new TimeoutException();
         }
     }
 

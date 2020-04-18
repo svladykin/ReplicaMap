@@ -45,7 +45,8 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedIncrementSimpleTest.checkFlushedData;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedIncrementSimpleTest.awaitFlushedData;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedWindowTest.awaitPositive;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.createTopics;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.kafkaClusterWith3Brokers;
 import static java.util.Collections.singletonList;
@@ -82,6 +83,7 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
         return cfg;
     }
 
+    @SuppressWarnings("BusyWait")
     @Test
     void testMultithreadedIncrementWithRestart() throws Exception {
         int threadsCnt = 12;
@@ -106,7 +108,7 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
         Map<TopicPartition, Long> offsets = new HashMap<>();
         try (Consumer<Object,Object> dataConsumer =
                  managers.get(0, managersFactory).newKafkaConsumerData()) {
-            checkFlushedData("data", dataConsumer, offsets, true);
+            awaitFlushedData("data", dataConsumer, offsets, true);
         }
 
         ExecutorService exec = Executors.newFixedThreadPool(threadsCnt);
@@ -164,10 +166,11 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
 
                 System.out.println("checking " + i);
 
+                KReplicaMapManager[] ms = new KReplicaMapManager[managersCnt];
                 List<ReplicaMap<Integer,Long>> maps = new ArrayList<>();
 
                 for (int mgrId = 0; mgrId < managersCnt; mgrId++) {
-                    KReplicaMapManager m = managers.get(mgrId, managersFactory);
+                    KReplicaMapManager m = ms[mgrId] = managers.get(mgrId, managersFactory);
                     KReplicaMap<Integer,Long> map = m.getMap();
 
                     for (int k = 0; k < keys; k++) {
@@ -191,9 +194,11 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
                     return 0;
                 },60, SECONDS, m -> m.unwrap().toString());
 
+                awaitPositive(KReplicaMapManager::getSuccessfulFlushes, ms);
+
                 try (Consumer<Object,Object> dataConsumer =
                          managers.get(0, managersFactory).newKafkaConsumerData()) {
-                    checkFlushedData("data", dataConsumer, offsets, false);
+                    awaitFlushedData("data", dataConsumer, offsets, false);
                 }
 
                 System.out.println("iteration " + i + " OK");
@@ -206,7 +211,7 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
         }
     }
 
-    @SuppressWarnings({"SameParameterValue", "OptionalGetWithoutIsPresent"})
+    @SuppressWarnings({"SameParameterValue", "OptionalGetWithoutIsPresent", "BusyWait"})
     static <X> void awaitEqual(
         List<X> list,
         Comparator<X> cmp,
@@ -235,7 +240,7 @@ class KReplicaMapManagerMultithreadedIncrementRestartTest {
                 int c = cmp.compare(max, x);
 
                 while (c > 0) {
-                    Thread.sleep(1);
+                    Thread.sleep(5);
                     c = cmp.compare(max, x);
                 }
 
