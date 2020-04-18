@@ -5,7 +5,6 @@ import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.function.BiFunction;
-import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.utils.ByteUtils;
 
@@ -49,18 +48,18 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
         return arr;
     }
 
-    protected V readValue(String topic, Headers headers, ByteBuffer buf) {
-        return read(topic, headers, buf, valDes);
+    protected V readValue(String topic, ByteBuffer buf) {
+        return read(topic, buf, valDes);
     }
 
-    protected BiFunction<?,?,?> readFunction(String topic, Headers headers, ByteBuffer buf) {
+    protected BiFunction<?,?,?> readFunction(String topic, ByteBuffer buf) {
         if (!buf.hasRemaining())
             return null; // Backward compatibility.
 
-        return read(topic, headers, buf, funDes);
+        return read(topic, buf, funDes);
     }
 
-    protected <Z> Z read(String topic, Headers headers, ByteBuffer buf, Deserializer<Z> des) {
+    protected <Z> Z read(String topic, ByteBuffer buf, Deserializer<Z> des) {
         byte[] arr = readByteArray(buf);
 
         if (arr == null)
@@ -69,16 +68,11 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
         if (des == null)
             throw new NullPointerException("Deserializer is not provided.");
 
-        return des.deserialize(topic, headers, arr);
+        return des.deserialize(topic, arr);
     }
 
     @Override
     public OpMessage deserialize(String topic, byte[] opMsgBytes) {
-        return deserialize(topic, null, opMsgBytes);
-    }
-
-    @Override
-    public OpMessage deserialize(String topic, Headers headers, byte[] opMsgBytes) {
         ByteBuffer buf = ByteBuffer.wrap(opMsgBytes);
         byte opType = buf.get();
 
@@ -102,9 +96,9 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
             opType,
             ByteUtils.readVarlong(buf),
             ByteUtils.readVarlong(buf),
-            readValue(topic, headers, buf),
-            readValue(topic, headers, buf),
-            readFunction(topic, headers, buf)
+            readValue(topic, buf),
+            readValue(topic, buf),
+            readFunction(topic, buf)
         );
     }
 

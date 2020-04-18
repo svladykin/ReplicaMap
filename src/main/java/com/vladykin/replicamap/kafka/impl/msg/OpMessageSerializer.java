@@ -5,7 +5,6 @@ import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.function.BiFunction;
-import org.apache.kafka.common.header.Headers;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.utils.ByteUtils;
 
@@ -38,11 +37,6 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
 
     @Override
     public byte[] serialize(String topic, OpMessage opMsg) {
-        return serialize(topic, null, opMsg);
-    }
-
-    @Override
-    public byte[] serialize(String topic, Headers headers, OpMessage opMsg) {
         switch (opMsg.getOpType()) {
             case OP_FLUSH_REQUEST:
                 return serializeFlushRequest((FlushRequest)opMsg);
@@ -51,19 +45,19 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
                 return serializeFlushNotification((FlushNotification)opMsg);
         }
 
-        return serializeMapUpdateMessage((MapUpdate)opMsg, topic, headers);
+        return serializeMapUpdateMessage((MapUpdate)opMsg, topic);
     }
 
     @SuppressWarnings("unchecked")
-    protected byte[] serializeMapUpdateMessage(MapUpdate opMsg, String topic, Headers headers) {
+    protected byte[] serializeMapUpdateMessage(MapUpdate opMsg, String topic) {
         V expVal = (V)opMsg.getExpectedValue();
-        byte[] exp = expVal == null ? null : valSer.serialize(topic, headers, expVal);
+        byte[] exp = expVal == null ? null : valSer.serialize(topic, expVal);
 
         V updVal = (V)opMsg.getUpdatedValue();
-        byte[] upd = updVal == null ? null : valSer.serialize(topic, headers, updVal);
+        byte[] upd = updVal == null ? null : valSer.serialize(topic, updVal);
 
         BiFunction<?,?,?> funVal = opMsg.getFunction();
-        byte[] fun = funVal == null ? null : funSer.serialize(topic, headers, funVal);
+        byte[] fun = funVal == null ? null : funSer.serialize(topic, funVal);
 
         int opTypeSize = 1;
         int clientIdSize = ByteUtils.sizeOfVarlong(opMsg.getClientId());

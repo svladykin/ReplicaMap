@@ -606,7 +606,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         conCfg.putIfAbsent(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, cfg.getClass(KEY_DESERIALIZER_CLASS));
         conCfg.putIfAbsent(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, cfg.getClass(VALUE_DESERIALIZER_CLASS));
 
-        conCfg.putIfAbsent(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, false);
+        conCfg.putIfAbsent("allow.auto.create.topics", false); // ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG
         conCfg.putIfAbsent(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         conCfg.putIfAbsent(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
         conCfg.putIfAbsent(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "none");

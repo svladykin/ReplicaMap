@@ -1,6 +1,7 @@
 package com.vladykin.replicamap.kafka.compute;
 
 import com.vladykin.replicamap.kafka.KReplicaMapManagerConfig;
+import java.util.Map;
 import java.util.function.BiFunction;
 import org.apache.kafka.common.serialization.Deserializer;
 
@@ -13,5 +14,14 @@ import org.apache.kafka.common.serialization.Deserializer;
  * @author Sergi Vladykin http://vladykin.com
  */
 public interface ComputeDeserializer extends Deserializer<BiFunction<?,?,?>> {
-    // no-op
+    // Compatibility for older clients.
+    @Override
+    default void configure(Map<String,?> configs, boolean isKey) {
+        // no-op
+    }
+
+    @Override
+    default void close() {
+        // no-op
+    }
 }

@@ -1,5 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
+import com.vladykin.replicamap.kafka.TestDeserializer;
+import com.vladykin.replicamap.kafka.TestSerializer;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
 import java.nio.charset.StandardCharsets;
@@ -77,8 +79,8 @@ class OpMessageTest {
 
     @Test
     void testFlushRequest() {
-        OpMessageSerializer<Void> ser = new OpMessageSerializer<>((topic, msg) -> null, null);
-        OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((topic, msgBytes) -> null, null);
+        OpMessageSerializer<Void> ser = new OpMessageSerializer<>((TestSerializer<Void>)(topic, msg) -> null, null);
+        OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((TestDeserializer<Void>)(topic, msgBytes) -> null, null);
 
         long clientId = 5;
         long flushOffsetOps = 7;
@@ -100,8 +102,8 @@ class OpMessageTest {
 
     @Test
     void testFlushNotification() {
-        OpMessageSerializer<Void> ser = new OpMessageSerializer<>((topic, msg) -> null, null);
-        OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((topic, msgBytes) -> null, null);
+        OpMessageSerializer<Void> ser = new OpMessageSerializer<>((TestSerializer<Void>)(topic, msg) -> null, null);
+        OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((TestDeserializer<Void>)(topic, msgBytes) -> null, null);
 
         long clientId = 5;
         long flushOffsetOps = 7;

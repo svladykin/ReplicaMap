@@ -2,6 +2,7 @@ package com.vladykin.replicamap.kafka.compute;
 
 import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.kafka.KReplicaMapManagerConfig;
+import java.util.Map;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.BiFunction;
 import org.apache.kafka.common.serialization.Serializer;
@@ -31,4 +32,15 @@ public interface ComputeSerializer extends Serializer<BiFunction<?,?,?>> {
      * @return {@code true} If this serializer can serialize the given function.
      */
     boolean canSerialize(BiFunction<?,?,?> function);
+
+    // Compatibility for older clients.
+    @Override
+    default void configure(Map<String,?> configs, boolean isKey) {
+        // no-op
+    }
+
+    @Override
+    default void close() {
+        // no-op
+    }
 }

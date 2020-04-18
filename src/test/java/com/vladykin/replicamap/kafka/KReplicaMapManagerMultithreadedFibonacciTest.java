@@ -18,8 +18,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
-import org.apache.kafka.common.serialization.Deserializer;
-import org.apache.kafka.common.serialization.Serializer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
@@ -212,6 +210,7 @@ class KReplicaMapManagerMultithreadedFibonacciTest {
         }
     }
 
+    @SuppressWarnings("BusyWait")
     boolean doFibonnacciRun(long mapId, Map<String,BigInteger> map) throws InterruptedException {
 //        if (map.size() < 3)
             initFibonacci(mapId, map);
@@ -234,6 +233,7 @@ class KReplicaMapManagerMultithreadedFibonacciTest {
         return nextFibonacci(mapId, map, a, b, c);
     }
 
+    @SuppressWarnings("BusyWait")
     static void assertFibonacci(long mapId, Map<String,BigInteger> map, boolean await) throws InterruptedException {
         for (;;) {
             BigInteger a = get(mapId, map, "a");
@@ -320,14 +320,14 @@ class KReplicaMapManagerMultithreadedFibonacciTest {
         }
     }
 
-    public static class BigIntSerializer implements Serializer<BigInteger> {
+    public static class BigIntSerializer implements TestSerializer<BigInteger> {
         @Override
         public byte[] serialize(String topic, BigInteger data) {
             return data == null ? null : data.toByteArray();
         }
     }
 
-    public static class BigIntDeserializer implements Deserializer<BigInteger> {
+    public static class BigIntDeserializer implements TestDeserializer<BigInteger> {
         @Override
         public BigInteger deserialize(String topic, byte[] data) {
             return data == null ? null : new BigInteger(data);

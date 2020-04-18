@@ -82,7 +82,7 @@ public class KReplicaMapTools {
         cfg.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
         cfg.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class);
         cfg.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "none");
-        cfg.put(ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG, false);
+        cfg.put("allow.auto.create.topics", false); // ConsumerConfig.ALLOW_AUTO_CREATE_TOPICS_CONFIG
         cfg.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
         cfg.put(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed");
 
