@@ -1,5 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.part;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,6 +20,35 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AllowedOnlyFlushPartitionAssignorTest {
+
+    // ConsumerPartitionAssignor is only available in 2.4.1, so using reflection
+    // to be able to compile the test with both 2.3.1 and 2.4.1 Kafka versions.
+    static final Constructor<?> GRP_SUB_CONSTRUCTOR;
+    static final Method GRP_SUB_UNWRAPPER;
+
+    static {
+        Constructor<?> constructor = null;
+        Method unwrapper = null;
+        try {
+            String prefix = "org.apache.kafka.clients.consumer.ConsumerPartitionAssignor$";
+
+            constructor = Class.forName(prefix + "GroupSubscription")
+                .getConstructor(Map.class);
+
+            unwrapper = Class.forName(prefix + "GroupAssignment")
+                .getDeclaredMethod("groupAssignment");
+        }
+        catch (ClassNotFoundException e) {
+            // ignore
+        }
+        catch (NoSuchMethodException e) {
+            throw new IllegalStateException(e);
+        }
+
+        GRP_SUB_CONSTRUCTOR = constructor;
+        GRP_SUB_UNWRAPPER = unwrapper;
+    }
+
 
     private static final String TOPIC = "testFlushTopic";
     private static final List<String> TOPICS_LIST = Collections.singletonList(TOPIC);
@@ -109,7 +140,8 @@ class AllowedOnlyFlushPartitionAssignorTest {
         Cluster meta = new Cluster("testCluster", Collections.emptySet(), partsInfo,
             Collections.emptySet(), Collections.emptySet());
 
-        Map<String,AllowedOnlyFlushPartitionAssignor.Assignment> assigns = assignors[0].assign(meta, subs);
+        Map<String,AllowedOnlyFlushPartitionAssignor.Assignment> assigns = unwrap241(
+            assignors[0].assign(meta, wrap241(subs)));
 //            new AllowedOnlyFlushPartitionAssignor.GroupSubscription(subs)).groupAssignment(); //-- for Kafka 2.4.1
 
         short[][] res = new short[assigns.size()][];
@@ -141,10 +173,37 @@ class AllowedOnlyFlushPartitionAssignorTest {
         return res;
     }
 
+    @SuppressWarnings("unchecked")
+    static <X> X wrap241(Map<String,AllowedOnlyFlushPartitionAssignor.Subscription> subs) {
+        if (GRP_SUB_CONSTRUCTOR == null)
+            return (X)subs;
+
+        try {
+            return (X)GRP_SUB_CONSTRUCTOR.newInstance(subs);
+        }
+        catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static <X> X unwrap241 (Object subs) {
+        if (GRP_SUB_UNWRAPPER == null)
+            return (X)subs;
+
+        try {
+            return (X)GRP_SUB_UNWRAPPER.invoke(subs);
+        }
+        catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     static AllowedOnlyFlushPartitionAssignor createAssignor(short[] allowedParts) {
         return createAssignor(TOPIC, allowedParts);
     }
 
+    @SuppressWarnings("SameParameterValue")
     static AllowedOnlyFlushPartitionAssignor createAssignor(String flushTopic, short[] allowedParts) {
         AllowedOnlyFlushPartitionAssignor assignor = new AllowedOnlyFlushPartitionAssignor();
 
