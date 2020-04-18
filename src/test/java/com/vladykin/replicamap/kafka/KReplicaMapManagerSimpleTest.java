@@ -116,6 +116,8 @@ class KReplicaMapManagerSimpleTest {
 
         admin.createTopics(asList(ops, flush, data)).all().get(5, SECONDS);
 
+        Thread.sleep(300); // Sometimes it takes time for Kafka to make things visible.
+
         assertTrue(utils.consumeAllRecordsFromTopic(dataTopic).isEmpty());
         assertTrue(utils.consumeAllRecordsFromTopic(opsTopic).isEmpty());
         assertTrue(utils.consumeAllRecordsFromTopic(flushTopic).isEmpty());
