@@ -3,7 +3,7 @@ import org.gradle.api.tasks.testing.logging.TestLogEvent.*
 
 plugins {
     `java-library`
-    maven
+    `maven-publish`
 }
 
 group = "com.vladykin"
@@ -42,14 +42,14 @@ tasks {
 
     val sourcesJar by creating(Jar::class) {
         dependsOn(JavaPlugin.CLASSES_TASK_NAME)
-        classifier = "sources"
+        archiveClassifier.set("sources")
         from(sourceSets["main"].allSource)
     }
 
     val javadocJar by creating(Jar::class) {
         dependsOn(JavaPlugin.JAVADOC_TASK_NAME)
-        classifier = "javadoc"
-        from(tasks["javadoc"])
+        archiveClassifier.set("javadoc")
+        from(javadoc.get().destinationDir)
     }
 
     artifacts {
@@ -68,13 +68,13 @@ tasks.named<Test>("test") {
         exceptionFormat = FULL
     }
     filter {
-//        includeTest(
-//                "com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedWindowTest",
-//                "testMultithreadedSlidingWindowWithRestart"
-//        )
-//        includeTest(
-//                "com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleShardingTest",
-//                "testSimpleSharding"
-//        )
+        includeTest(
+                "com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedWindowTest",
+                "testMultithreadedSlidingWindowWithRestart"
+        )
+        includeTest(
+                "com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleShardingTest",
+                "testSimpleSharding"
+        )
     }
 }
