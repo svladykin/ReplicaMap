@@ -6,8 +6,8 @@ jdk:
   - openjdk8
   - openjdk9
   - openjdk11
-#  - openjdk13
-  - openjdk14
+  - openjdk13
+#  - openjdk14
 
 env:
   - ORG_GRADLE_PROJECT_kafkaVersion=1.0.0
