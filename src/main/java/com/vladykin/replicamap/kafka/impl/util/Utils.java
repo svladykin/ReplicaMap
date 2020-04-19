@@ -1,6 +1,8 @@
 package com.vladykin.replicamap.kafka.impl.util;
 
 import com.vladykin.replicamap.ReplicaMapException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.net.NetworkInterface;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -39,10 +41,24 @@ import static java.util.Collections.singleton;
  *
  * @author Sergi Vladykin http://vladykin.com
  */
+@SuppressWarnings("JavaReflectionMemberAccess")
 public final class Utils {
 //    public static final Logger trace = LoggerFactory.getLogger(Utils.class.getName() + ".trace");
 
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
+
+    private static final Method POLL;
+
+    static {
+        Method poll = null;
+        try {
+            poll = Consumer.class.getMethod("poll", Duration.class);
+        }
+        catch (NoSuchMethodException e) {
+            // no-op
+        }
+        POLL = poll;
+    }
 
     private static final Duration[] MILLIS = new Duration[5000];
 
@@ -63,11 +79,24 @@ public final class Utils {
         return d;
     }
 
+    @SuppressWarnings("unchecked")
     public static <K,V> ConsumerRecords<K,V> poll(Consumer<K,V> c, long timeoutMs) {
         if (timeoutMs < MIN_POLL_TIMEOUT_MS) // "poll" may often produce empty results and break tests for small timeouts
             throw new IllegalArgumentException("Too small duration: " + timeoutMs);
 
-        return c.poll(timeoutMs); // millis(timeoutMs));
+        if (POLL != null) {
+            try { // Since Kafka 2.0.0 it is the recommended way to poll.
+                return (ConsumerRecords<K,V>)POLL.invoke(c, millis(timeoutMs));
+            }
+            catch (IllegalAccessException e) {
+                throw new IllegalStateException(e);
+            }
+            catch (InvocationTargetException e) {
+                throw (RuntimeException)e.getCause();
+            }
+        }
+
+        return c.poll(timeoutMs);
     }
 
     public static <X> X ifNull(X x, X dflt) {
