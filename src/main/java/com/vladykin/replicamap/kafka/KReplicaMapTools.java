@@ -136,6 +136,8 @@ public class KReplicaMapTools {
                 fut.get();
         }
 
+        Thread.sleep(3000); // Ensure visibility.
+
         return "Found data topic partitions with data: " + lastDataRecords.keySet();
     }
 
