@@ -32,8 +32,7 @@ import org.slf4j.LoggerFactory;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REMOVE_ANY;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.impl.worker.flush.FlushWorker.OPS_OFFSET_HEADER;
 import static java.util.Collections.singleton;
 
@@ -159,7 +158,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         ConsumerRecord<Object,Object> lastDataRec = null;
 
         for (;;) {
-            ConsumerRecords<Object,Object> recs = dataConsumer.poll(MIN_POLL_TIMEOUT);
+            ConsumerRecords<Object,Object> recs = Utils.poll(dataConsumer, MIN_POLL_TIMEOUT_MS);
 
             if (recs.isEmpty()) {
                 // With read_committed endOffset means LSO.
@@ -308,7 +307,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         while (!isInterrupted()) {
             ConsumerRecords<Object,OpMessage> recs;
             try {
-                recs = opsConsumer.poll(millis(1000));
+                recs = Utils.poll(opsConsumer, 1000);
             }
             catch (InterruptException | WakeupException e) {
                 if (log.isDebugEnabled())

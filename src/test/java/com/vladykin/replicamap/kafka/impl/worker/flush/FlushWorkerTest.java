@@ -263,7 +263,7 @@ class FlushWorkerTest {
         flushWorker.initDataProducers(singleton(flushPart));
         flushConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         initFlushConsumer(777, 102, 101);
-        flushConsumer.setPollException(new KafkaException("test"));
+        flushConsumer.setException(new KafkaException("test"));
 
         assertFalse(flushWorker.processFlushRequests(pollTimeoutMs));
         assertEquals(1, flushQueue.size());

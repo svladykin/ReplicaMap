@@ -20,6 +20,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.PartitionInfo;
@@ -43,15 +44,11 @@ public final class Utils {
 
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
 
-    private static final Duration[] MILLIS = new Duration[1000];
+    private static final Duration[] MILLIS = new Duration[5000];
 
     public static final long MIN_POLL_TIMEOUT_MS = 5;
-    public static final Duration MIN_POLL_TIMEOUT = millis(MIN_POLL_TIMEOUT_MS);
 
     public static Duration millis(long ms) {
-        if (ms < MIN_POLL_TIMEOUT_MS) // KafkaConsumer.poll(ms) may often produce empty results and break tests.
-            throw new IllegalArgumentException("Too small duration: " + ms);
-
         return duration(MILLIS, ms, ChronoUnit.MILLIS);
     }
 
@@ -64,6 +61,13 @@ public final class Utils {
         if (d == null)
             cache[(int)x] = d = Duration.of(x, u);
         return d;
+    }
+
+    public static <K,V> ConsumerRecords<K,V> poll(Consumer<K,V> c, long timeoutMs) {
+        if (timeoutMs < MIN_POLL_TIMEOUT_MS) // "poll" may often produce empty results and break tests for small timeouts
+            throw new IllegalArgumentException("Too small duration: " + timeoutMs);
+
+        return c.poll(timeoutMs); // millis(timeoutMs));
     }
 
     public static <X> X ifNull(X x, X dflt) {

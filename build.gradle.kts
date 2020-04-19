@@ -13,7 +13,7 @@ repositories {
     mavenCentral()
 }
 
-val kafkaVersion = if (!project.hasProperty("kafkaVersion")) "2.3.1"
+val kafkaVersion = if (!project.hasProperty("kafkaVersion")) "1.0.0"
                    else project.property("kafkaVersion") as String
 
 println("Using kafkaVersion: $kafkaVersion")

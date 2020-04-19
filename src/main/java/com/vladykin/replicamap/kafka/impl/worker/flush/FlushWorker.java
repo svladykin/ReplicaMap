@@ -42,7 +42,6 @@ import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT_MS;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.millis;
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
@@ -219,11 +218,11 @@ public class FlushWorker extends Worker implements AutoCloseable {
         ConsumerRecords<Object,FlushRequest> recs;
         try {
             try {
-                recs = flushConsumer.poll(millis(pollTimeoutMs));
+                recs = Utils.poll(flushConsumer, pollTimeoutMs);
             }
             catch (NoOffsetForPartitionException e) {
                 initFlushConsumerOffset(flushConsumer, e); // Needed when it is a new empty flush topic.
-                recs = flushConsumer.poll(millis(pollTimeoutMs));
+                recs = Utils.poll(flushConsumer, pollTimeoutMs);
             }
 
             // Add new records to unprocessed set and load history if it is the first flush for the partition.
