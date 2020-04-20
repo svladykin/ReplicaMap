@@ -110,7 +110,7 @@ class KReplicaMapManagerSimpleTest {
         flush.configs(new HashMap<>(cfg));
 
         cfg.put("cleanup.policy", "compact");
-        cfg.put("min.compaction.lag.ms", "3600000");
+        cfg.put("min.compaction.lag.ms", "0");
 
         data.configs(new HashMap<>(cfg));
 
