@@ -24,7 +24,9 @@ dependencies {
     testImplementation("org.junit.jupiter", "junit-jupiter", "5.4.1")
     testImplementation("com.salesforce.kafka.test", "kafka-junit5", "3.2.1")
 
-    testRuntimeOnly("org.apache.kafka", "kafka_2.12", kafkaVersion)
+    testRuntimeOnly("org.apache.kafka", "kafka_2.12", kafkaVersion) {
+        exclude("org.slf4j")
+    }
     testRuntimeOnly("org.slf4j", "slf4j-simple", "1.7.26")
 }
 
