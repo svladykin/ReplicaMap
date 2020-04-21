@@ -42,6 +42,8 @@ Think of it as a Java `ConcurrentMap<K,V>` that replicates all the updates over 
   
 + Kafka client is the only dependency of ReplicaMap.
 
++ Supports Kafka versions 1.x.x and 2.x.x
+
 ## Maven repository
 
 The project artifacts are hosted on [jitpack.io](https://jitpack.io), you need to add the repository to your project:
@@ -126,7 +128,7 @@ keys and values in a listener.
 
 There are 3 Kafka topics participate in the protocol (see below about their configuration): 
  - `data` topic, a compacted topic where plain key-value records are stored (an existing topic can be used)
- - `ops` topic, an operations log topic, where every update attempt is sent (analog to WAL in conventional databases)
+ - `ops` topic, an operation's log topic, where every update attempt is sent (analog to WAL in conventional databases)
  - `flush` topic, where flush requests are sent
 
 All these topics must be partitioned the same way.
@@ -169,13 +171,10 @@ flushed time ago by another client and newer updates can be overwritten by the o
   `unclean.leader.election.enable=false`
 - The `data` topic must be compacted. With some other cleanup policy clients may end up in inconsistent state:  
   `cleanup.policy=compact`
-- The `data` topic must not be compacted too early, otherwise races with data loading may occur. 
-  Give enough time to load the full data set from Kafka brokers to the client:  
-  `min.compaction.lag.ms=7200000`
 - The `ops` and `flush` topics can be cleaned:  
   `cleanup.policy=delete`
 - The `ops` and `flush` topics must have disabled time based retention, otherwise the logs 
-  may become corrupted if the updates were not frequent enough or the application was down for some time:  
+  may become corrupted if the updates were not frequent enough or if the application was down for some time:  
   `retention.ms=-1`
 - For the `flush` topic retention of 1 GiB per partition must always be enough:  
   `retention.bytes=1073741824`
@@ -186,8 +185,8 @@ flushed time ago by another client and newer updates can be overwritten by the o
   then we need to set retention size to `(16B + 2 * 1KiB + 70B) * (5000 + 5000) * 100 = 2GiB`:  
   `retention.bytes=2147483648`
 - Another important factor is not covered in the formula above: while a new client is loading data from the `data` topic
-  the found flush notification record in `ops` topic should not be evicted. Thus, we have to configure `ops` topic with 
-  delayed file deletion as we did with `data` compaction lag:  
+  the respective flush notification record in `ops` topic should not be evicted. Thus, we have to configure `ops` topic with 
+  delayed file deletion:  
   `file.delete.delay.ms=7200000` 
 
 ### Example configuration:
@@ -209,7 +208,7 @@ bin/kafka-topics.sh --create --topic $DATA_TOPIC --bootstrap-server $BOOTSTRAP_S
                 --config min.insync.replicas=$MIN_INSYNC_REPLICAS \
                 --config unclean.leader.election.enable=false \
                 --config cleanup.policy=compact \
-                --config min.compaction.lag.ms=$DELETE_DELAY_MS
+                --config min.compaction.lag.ms=0
 
 bin/kafka-topics.sh --create --topic $OPS_TOPIC --bootstrap-server $BOOTSTRAP_SERVER \
                 --replication-factor $REPLICATION --partitions $PARTITIONS \
@@ -246,12 +245,12 @@ bin/kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVER | grep $DATA_TOP
     ```shell script
     ZOOKEEPER="localhost:2181"
     bin/kafka-configs.sh --zookeeper $ZOOKEEPER --entity-type topics --entity-name $DATA_TOPIC --alter --add-config \
-       min.insync.replicas=$MIN_INSYNC_REPLICAS,unclean.leader.election.enable=false,cleanup.policy=compact,min.compaction.lag.ms=$DELETE_DELAY_MS
+       min.insync.replicas=$MIN_INSYNC_REPLICAS,unclean.leader.election.enable=false,cleanup.policy=compact,min.compaction.lag.ms=0
     ```
 
 4. Run the following command to initialize `ops` topic with the last `data` topic offsets:  
     ```shell script
-    java -cp slf4j-api-1.7.26.jar:kafka-clients-2.3.1.jar:replicamap-0.3.jar com.vladykin.replicamap.kafka.KReplicaMapTools \
+    java -cp slf4j-api-1.7.26.jar:kafka-clients-2.3.1.jar:replicamap-0.4.jar com.vladykin.replicamap.kafka.KReplicaMapTools \
           initExisting $BOOTSTRAP_SERVER $DATA_TOPIC $OPS_TOPIC
     ```
     it must print `OK: ...`
