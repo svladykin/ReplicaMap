@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.vladykin"
-version = "0.4"
+version = "0.4.1"
 
 repositories {
     mavenCentral()
@@ -58,6 +58,37 @@ tasks {
         add("archives", sourcesJar)
         add("archives", javadocJar)
         add("archives", jar)
+    }
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenJava") {
+            artifactId = "replicamap"
+            from(components["java"])
+            artifact(tasks["sourcesJar"])
+            artifact(tasks["javadocJar"])
+            pom {
+                name.set("ReplicaMap Library")
+                description.set("Embedded key-value database for Java applications replicated over Kafka")
+                url.set("https://github.com/svladykin/ReplicaMap")
+                licenses {
+                    license {
+                        name.set("MIT")
+                    }
+                }
+                developers {
+                    developer {
+                        id.set("svladykin")
+                        name.set("Sergi Vladykin")
+                        email.set("sergi.vladykin@gmail.com")
+                    }
+                }
+                scm {
+                    url.set("https://github.com/svladykin/ReplicaMap")
+                }
+            }
+        }
     }
 }
 
