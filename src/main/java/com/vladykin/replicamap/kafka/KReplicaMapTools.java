@@ -76,6 +76,10 @@ public class KReplicaMapTools {
     }
 
     public String setupExistingDataTopic(String bootstrapServers, String dataTopic, String opsTopic) throws Exception {
+        System.out.println("Setting up existing data topic: " + dataTopic);
+
+        Thread.sleep(3000); // Ensure visibility.
+
         Map<String, Object> cfg = new HashMap<>();
 
         cfg.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
