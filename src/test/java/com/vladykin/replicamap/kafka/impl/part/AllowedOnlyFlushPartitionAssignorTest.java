@@ -4,6 +4,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -49,10 +50,10 @@ class AllowedOnlyFlushPartitionAssignorTest {
         GRP_SUB_UNWRAPPER = unwrapper;
     }
 
-
-    private static final String TOPIC = "testFlushTopic";
-    private static final List<String> TOPICS_LIST = Collections.singletonList(TOPIC);
-    private static final Set<String> TOPICS_SET = Collections.singleton(TOPIC);
+    private static final String TOPIC_1 = "testTopic1";
+    private static final String TOPIC_2 = "testTopic2";
+    private static final List<String> TOPICS_LIST = Arrays.asList(TOPIC_1, TOPIC_2);
+    private static final Set<String> TOPICS_SET = new HashSet<>(TOPICS_LIST);
 
     @Test
     void testAssignor() {
@@ -107,6 +108,110 @@ class AllowedOnlyFlushPartitionAssignorTest {
             run(7, 3,
                 createAssignor(new short[]{1,3}),
                 createAssignor(new short[]{2,3})));
+
+        assertEq(new short[][]{
+                {1},
+                {3}
+            },
+            run(5, 2,
+                createAssignor(new short[]{1,3}),
+                createAssignor(new short[]{1,3})));
+
+        assertEq(new short[][]{
+                {0,3},
+                {1,}
+            },
+            run(5, 3,
+                createAssignor(new short[]{0,1,3}),
+                createAssignor(new short[]{0,1,3})));
+
+        assertEq(new short[][]{
+                {0,2},
+                {1,3}
+            },
+            run(5, 4,
+                createAssignor(new short[]{0,1,2,3}),
+                createAssignor(new short[]{0,1,2,3})));
+
+        assertEq(new short[][]{
+                {0,2,4},
+                {1,3}
+            },
+            run(5,
+                createAssignor(new short[]{0,1,2,3,4}),
+                createAssignor(new short[]{0,1,2,3,4})));
+
+        assertEq(new short[][]{ // FIXME: Unfair case, but should not happen in practice
+                {4},
+                {0,1,2,3}
+            },
+            run(5,
+                createAssignor(new short[]{0,1,2,3,4}),
+                createAssignor(new short[]{0,1,2,3})));
+
+        assertEq(new short[][]{ // fixed broken config
+                {0,2},
+                {1,3}
+            },
+            run(4,
+                createAssignor(new short[]{0,1,2,3,4}),
+                createAssignor(new short[]{0,1,2,3})));
+
+        assertEq(new short[][]{
+                {},
+                {1,2,3}
+            },
+            run(4, 3,
+                createAssignor(new short[]{}),
+                createAssignor(new short[]{1,2,3})));
+
+        assertEq(new short[][]{
+                {},
+                {}
+            },
+            run(4, 0,
+                createAssignor(new short[]{}),
+                createAssignor(new short[]{})));
+
+        assertEq(new short[][]{
+                {0,1},
+                {2,3}
+            },
+            run(4,
+                createAssignor(new short[]{0,1,2,3}),
+                createAssignor(new short[]{2,3})));
+
+        assertEq(new short[][]{
+                {0,3},
+                {1,2}
+            },
+            run(4,
+                createAssignor(new short[]{0,1,3}),
+                createAssignor(new short[]{1,2})));
+
+        assertEq(new short[][]{
+                {0,1},
+                {2}
+            },
+            run(4, 3,
+                createAssignor(new short[]{0,1}),
+                createAssignor(new short[]{1,2})));
+
+        assertEq(new short[][]{
+                {0,2},
+                {1}
+            },
+            run(4, 3,
+                createAssignor(new short[]{0,1,2}),
+                createAssignor(new short[]{1,2})));
+
+        assertEq(new short[][]{ // FIXME: Unfair case, but should not happen in practice
+                {0,1,2},
+                {3}
+            },
+            run(4,
+                createAssignor(new short[]{0,1,2  }),
+                createAssignor(new short[]{  1,2,3})));
     }
 
     static void assertEq(short[][] exp, short[][] act) {
@@ -134,15 +239,16 @@ class AllowedOnlyFlushPartitionAssignorTest {
         }
 
         List<PartitionInfo> partsInfo = new ArrayList<>();
-        for (int p = 0; p < parts; p++)
-            partsInfo.add(new PartitionInfo(TOPIC, p, null, null, null));
+        for (int p = 0; p < parts; p++) {
+            partsInfo.add(new PartitionInfo(TOPIC_1, p, null, null, null));
+            partsInfo.add(new PartitionInfo(TOPIC_2, p, null, null, null));
+        }
 
         Cluster meta = new Cluster("testCluster", Collections.emptySet(), partsInfo,
             Collections.emptySet(), Collections.emptySet());
 
-        Map<String,AllowedOnlyFlushPartitionAssignor.Assignment> assigns = unwrap241(
-            assignors[0].assign(meta, wrap241(subs)));
-//            new AllowedOnlyFlushPartitionAssignor.GroupSubscription(subs)).groupAssignment(); //-- for Kafka 2.4.1
+        Map<String,AllowedOnlyFlushPartitionAssignor.Assignment> assigns = unwrap(
+            assignors[0].assign(meta, wrap(subs)));
 
         short[][] res = new short[assigns.size()][];
         assertEquals(assignors.length, res.length);
@@ -155,26 +261,33 @@ class AllowedOnlyFlushPartitionAssignorTest {
             ByteBuffer userData = assign.userData();
             assertTrue(userData == null || 0 == userData.remaining());
 
-            short[] shortAssign = new short[assign.partitions().size()];
+            List<TopicPartition> assignedParts = assign.partitions();
+            short[] shortAssign = new short[assignedParts.size() / 2]; // divide by 2 because we have 2 topics
 
-            for (int j = 0; j < shortAssign.length; j++) {
-                TopicPartition p = assign.partitions().get(j);
-                assertEquals(TOPIC, p.topic());
-                assertTrue(uniqParts.add(p));
+            for (int j = 0; j < assignedParts.size(); j += 2) {
+                TopicPartition p1 = assignedParts.get(j);
+                assertEquals(TOPIC_1, p1.topic());
+                assertTrue(uniqParts.add(p1));
 
-                shortAssign[j] = (short)p.partition();
+                TopicPartition p2 = assignedParts.get(j + 1);
+                assertEquals(TOPIC_2, p2.topic());
+                assertTrue(uniqParts.add(p2));
+
+                assertEquals(p1.partition(), p2.partition());
+
+                shortAssign[j / 2] = (short)p1.partition();
             }
 
             res[i] = shortAssign;
         }
 
-        assertEquals(expAssignedParts, uniqParts.size());
+        assertEquals(expAssignedParts, uniqParts.size() / 2);
 
         return res;
     }
 
     @SuppressWarnings("unchecked")
-    static <X> X wrap241(Map<String,AllowedOnlyFlushPartitionAssignor.Subscription> subs) {
+    static <X> X wrap(Map<String,AllowedOnlyFlushPartitionAssignor.Subscription> subs) {
         if (GRP_SUB_CONSTRUCTOR == null)
             return (X)subs;
 
@@ -187,7 +300,7 @@ class AllowedOnlyFlushPartitionAssignorTest {
     }
 
     @SuppressWarnings("unchecked")
-    static <X> X unwrap241 (Object subs) {
+    static <X> X unwrap(Object subs) {
         if (GRP_SUB_UNWRAPPER == null)
             return (X)subs;
 
@@ -200,19 +313,13 @@ class AllowedOnlyFlushPartitionAssignorTest {
     }
 
     static AllowedOnlyFlushPartitionAssignor createAssignor(short[] allowedParts) {
-        return createAssignor(TOPIC, allowedParts);
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    static AllowedOnlyFlushPartitionAssignor createAssignor(String flushTopic, short[] allowedParts) {
         AllowedOnlyFlushPartitionAssignor assignor = new AllowedOnlyFlushPartitionAssignor();
 
         Map<String,Object> cfg = new HashMap<>();
-        AllowedOnlyFlushPartitionAssignor.setupConsumerConfig(cfg, allowedParts, flushTopic);
+        AllowedOnlyFlushPartitionAssignor.setupConsumerConfig(cfg, allowedParts);
         assignor.configure(cfg);
 
-        assertEquals(flushTopic, assignor.flushTopic);
-        assertEquals(allowedParts, assignor.allowedParts);
+        assertArrayEquals(allowedParts, assignor.allowedParts);
 
         return assignor;
     }

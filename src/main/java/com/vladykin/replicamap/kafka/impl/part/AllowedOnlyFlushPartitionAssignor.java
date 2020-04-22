@@ -4,11 +4,14 @@ import com.vladykin.replicamap.kafka.impl.util.Utils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.RangeAssignor;
 import org.apache.kafka.clients.consumer.internals.AbstractPartitionAssignor;
@@ -26,10 +29,8 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
 
     private static final Logger log = LoggerFactory.getLogger(AllowedOnlyFlushPartitionAssignor.class);
 
-    public static final String FLUSH_TOPIC = AllowedOnlyFlushPartitionAssignor.class.getName() + ".flushTopic";
     public static final String ALLOWED_PARTS = AllowedOnlyFlushPartitionAssignor.class.getName() + ".allowedParts";
 
-    protected String flushTopic;
     protected short[] allowedParts;
     protected byte[] allowedPartsBytes;
 
@@ -40,12 +41,8 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
 
     public static void setupConsumerConfig(
         Map<String,Object> configs,
-        short[] allowedPartitions,
-        String flushTopic
+        short[] allowedPartitions
     ) {
-        Utils.requireNonNull(flushTopic, "flushTopic");
-        configs.putIfAbsent(FLUSH_TOPIC, flushTopic);
-
         if (allowedPartitions != null)
             configs.putIfAbsent(ALLOWED_PARTS, allowedPartitions);
 
@@ -57,21 +54,47 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
 
     @Override
     public void configure(Map<String,?> configs) {
-        flushTopic = (String)Utils.requireNonNull(configs.get(FLUSH_TOPIC), "flushTopic");
-        allowedParts = (short[])configs.get(ALLOWED_PARTS); // null means that all partitions are allowed
-        allowedPartsBytes = Utils.serializeShortArray(allowedParts);
+        short[] parts = (short[])configs.get(ALLOWED_PARTS); // null means that all partitions are allowed
+
+        if (parts != null) {
+            allowedParts = copySortedUnique(parts);
+            allowedPartsBytes = Utils.serializeShortArray(allowedParts);
+        }
     }
 
-//    @Override 2.3.1
+    protected short[] copySortedUnique(short[] arr) {
+        TreeSet<Short> set = new TreeSet<>();
+
+        for (short x : arr) {
+            if (x < 0)
+                throw new IllegalArgumentException("Negative value: " + Arrays.toString(arr));
+
+            set.add(x);
+        }
+
+        short[] result = new short[set.size()];
+
+        int i = 0;
+        for (short x : set)
+            result[i++] = x;
+
+        return result;
+    }
+
+    // @Override
+    @SuppressWarnings("unused")
+    public short version() {
+        return 1;
+    }
+
+    // @Override
     public Subscription subscription(Set<String> topics) {
         return new Subscription(new ArrayList<>(topics), subscriptionUserData(topics));
     }
 
-//    @Override 2.4.1
+    // @Override
+    @SuppressWarnings("unused")
     public ByteBuffer subscriptionUserData(Set<String> topics) {
-        if (topics.size() != 1 || !topics.contains(flushTopic))
-            throw new IllegalStateException("Expected flush topic: " + flushTopic + ", actual: " + topics);
-
         return allowedPartsBytes == null ? null : ByteBuffer.wrap(allowedPartsBytes);
     }
 
@@ -80,21 +103,20 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         Map<String,Integer> partitionsPerTopic,
         Map<String,Subscription> subscriptionsPerMember
     ) {
-        if (partitionsPerTopic.size() != 1 || !partitionsPerTopic.containsKey(flushTopic))
-            throw new IllegalStateException("Partitions per topic: " + partitionsPerTopic);
+        if (new HashSet<>(partitionsPerTopic.values()).size() != 1)
+            throw new IllegalStateException("Number of partitions must be the same for each topic: " + partitionsPerTopic);
 
+        int parts = partitionsPerTopic.values().iterator().next();
         List<Member> members = new ArrayList<>(subscriptionsPerMember.size());
 
         for (Map.Entry<String,Subscription> entry : subscriptionsPerMember.entrySet()) {
             short[] allowed = Utils.deserializeShortArray(entry.getValue().userData());
 
-            members.add(new Member(entry.getKey(), allowed));
+            members.add(new Member(entry.getKey(), parts, allowed));
         }
 
         // To have stable results, maybe in the future it will be useful for incremental rebalancing.
         members.sort(Comparator.comparing(Member::id));
-
-        int parts = partitionsPerTopic.get(flushTopic);
 
         for (short part = 0; part < parts; part++) {
             Member best = null;
@@ -114,18 +136,17 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
                 }
             }
 
-            TopicPartition p = new TopicPartition(flushTopic, part);
-
-            if (best != null) // Some partitions may be unassigned because they are forbidden.
-                best.assign(p);
+            if (best != null) // Some partitions may be unassigned because they are forbidden for all the consumers.
+                best.assign(part);
             else
-                log.warn("Partition was not assigned: {}", p);
+                log.warn("Partition was not assigned: {}", part);
         }
 
+        Set<String> topics = partitionsPerTopic.keySet();
         Map<String,List<TopicPartition>> result = new HashMap<>(members.size());
 
         for (Member member : members)
-            result.put(member.id, member.assignments);
+            result.put(member.id, member.fullAssignments(topics));
 
         return result;
     }
@@ -134,11 +155,26 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
         final String id;
         final short[] allowedParts; // sorted
 
-        final List<TopicPartition> assignments = new ArrayList<>();
+        final List<Short> assignments = new ArrayList<>();
 
-        Member(String id, short[] allowedParts) {
+        Member(String id, int totalParts, short[] allowedParts) {
             this.id = id;
-            this.allowedParts = allowedParts;
+            this.allowedParts = dropExtraParts(allowedParts, totalParts); // fix misconfiguration
+        }
+
+        short[] dropExtraParts(short[] allowedParts, int totalParts) {
+            if (allowedParts == null)
+                return null;
+
+            int len = allowedParts.length;
+
+            while (len > 0 && allowedParts[len - 1] >= totalParts)
+                len--; // Allowed parts are sorted, so we always peek the max value
+
+            if (len != allowedParts.length)
+                allowedParts = Arrays.copyOf(allowedParts, len);
+
+            return allowedParts;
         }
 
         String id() {
@@ -157,11 +193,22 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
             return allowedParts.length - index;
         }
 
+        List<TopicPartition> fullAssignments(Collection<String> topics) {
+            List<TopicPartition> topicParts = new ArrayList<>(topics.size() * assignments.size());
+
+            for (short part : assignments) {
+                for (String topic : topics)
+                    topicParts.add(new TopicPartition(topic, part));
+            }
+
+            return topicParts;
+        }
+
         int assignments() {
             return assignments.size();
         }
 
-        void assign(TopicPartition part) {
+        void assign(short part) {
             assignments.add(part);
         }
     }

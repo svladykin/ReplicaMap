@@ -635,7 +635,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected void configureConsumerFlush(Map<String, Object> conCfg) {
         conCfg.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, flushConsumerGroupId);
 
-        AllowedOnlyFlushPartitionAssignor.setupConsumerConfig(conCfg, allowedPartitions, flushTopic);
+        AllowedOnlyFlushPartitionAssignor.setupConsumerConfig(conCfg, allowedPartitions);
     }
 
     protected <K,V> Producer<K,V> newKafkaProducer(
