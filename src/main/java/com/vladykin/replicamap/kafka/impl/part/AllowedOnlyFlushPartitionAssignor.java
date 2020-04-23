@@ -120,7 +120,7 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
 
         for (short part = 0; part < parts; part++) {
             Member best = null;
-            int bestAssignable = 0;
+            int bestScore = 0;
 
             for (Member member : members) {
                 int assignable = member.assignable(part, parts);
@@ -128,11 +128,11 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
                 if (assignable == 0)
                     continue; // Ignore the member, can not assign this partition to it.
 
-                if (best == null || assignable < bestAssignable ||
-                    (assignable == bestAssignable && member.assignments() < best.assignments()))
-                {
+                int score = member.assignments() + assignable;
+
+                if (best == null || score < bestScore) {
                     best = member;
-                    bestAssignable = assignable;
+                    bestScore = score;
                 }
             }
 

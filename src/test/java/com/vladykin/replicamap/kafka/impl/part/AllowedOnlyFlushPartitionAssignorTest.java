@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 class AllowedOnlyFlushPartitionAssignorTest {
 
@@ -141,9 +142,9 @@ class AllowedOnlyFlushPartitionAssignorTest {
                 createAssignor(new short[]{0,1,2,3,4}),
                 createAssignor(new short[]{0,1,2,3,4})));
 
-        assertEq(new short[][]{ // FIXME: Unfair case, but should not happen in practice
-                {4},
-                {0,1,2,3}
+        assertEq(new short[][]{
+                {1,3,4},
+                {0,2}
             },
             run(5,
                 createAssignor(new short[]{0,1,2,3,4}),
@@ -205,20 +206,136 @@ class AllowedOnlyFlushPartitionAssignorTest {
                 createAssignor(new short[]{0,1,2}),
                 createAssignor(new short[]{1,2})));
 
-        assertEq(new short[][]{ // FIXME: Unfair case, but should not happen in practice
-                {0,1,2},
-                {3}
+        assertEq(new short[][]{
+                {0,1},
+                {2,3}
             },
             run(4,
-                createAssignor(new short[]{0,1,2  }),
-                createAssignor(new short[]{  1,2,3})));
+                createAssignor(new short[]{0,1,2}),
+                createAssignor(new short[]{1,2,3})));
+
+        assertEq(new short[][]{
+                {2},
+                {1,3},
+                {0,4}
+            },
+            run(5,
+                createAssignor(new short[]{2}),
+                createAssignor(new short[]{1,2,3}),
+                createAssignor(new short[]{0,1,3,4})));
+
+        assertEq(new short[][]{
+                {2},
+                {3},
+                {0,1,4}
+            },
+            run(5,
+                createAssignor(new short[]{2}),
+                createAssignor(new short[]{2,3}),
+                createAssignor(new short[]{0,1,3,4})));
+
+        assertEq(new short[][]{
+                {3},
+                {2},
+                {0,1,4}
+            },
+            run(5,
+                createAssignor(new short[]{3}),
+                createAssignor(new short[]{2,3}),
+                createAssignor(new short[]{0,1,3,4})));
+
+        assertEq(new short[][]{
+                {3},
+                {2},
+                {0}
+            },
+            run(5, 3,
+                createAssignor(new short[]{3}),
+                createAssignor(new short[]{2,3}),
+                createAssignor(new short[]{0})));
+
+        assertEq(new short[][]{
+                {4},
+                {2,3},
+                {0,1}
+            },
+            run(5,
+                createAssignor(new short[]{4}),
+                createAssignor(new short[]{2,3}),
+                createAssignor(new short[]{0,1,3,4})));
+
+        assertEq(new short[][]{
+                {4},
+                {2,3},
+                {0}
+            },
+            run(5, 4,
+                createAssignor(new short[]{4}),
+                createAssignor(new short[]{2,3}),
+                createAssignor(new short[]{0,4})));
+
+        assertEq(new short[][]{
+                {3},
+                {4},
+                {1,2},
+                {0}
+            },
+            run(5,
+                createAssignor(new short[]{3,4}),
+                createAssignor(new short[]{3,4}),
+                createAssignor(new short[]{1,2,3}),
+                createAssignor(new short[]{0,1,3,4})));
+
+        assertEq(new short[][]{
+                {3},
+                {4},
+                {0,2},
+                {1}
+            },
+            run(5,
+                createAssignor(new short[]{3,4}),
+                createAssignor(new short[]{3,4}),
+                createAssignor(new short[]{0,1,2,3}),
+                createAssignor(new short[]{0,1,3,4})));
+
+        assertEq(new short[][]{
+                {3},
+                {4},
+                {1,2,5}, // this skew is because 2 and 5 are available only to this assignor
+                {0}
+            },
+            run(6,
+                createAssignor(new short[]{3,4}),
+                createAssignor(new short[]{3,4}),
+                createAssignor(new short[]{0,1,2,3,5}),
+                createAssignor(new short[]{0,1,3,4})));
+
+        assertEq(new short[][]{
+                {0,2,3},
+                {1,4}
+            },
+            run(5,
+                createAssignor(new short[]{0,1,2,3,5}),
+                createAssignor(new short[]{0,1,3,4})));
+
+        assertEq(new short[][]{
+                {0,1,2},
+                {3,5},
+                {4}
+            },
+            run(6,
+                createAssignor(new short[]{0,1,2}),
+                createAssignor(new short[]{3,4,5}),
+                createAssignor(new short[]{0,1,2,3,4,5})));
     }
 
     static void assertEq(short[][] exp, short[][] act) {
         assertEquals(exp.length, act.length);
 
-        for (int i = 0; i < exp.length; i++)
-            assertArrayEquals(exp[i], act[i]);
+        for (int i = 0; i < exp.length; i++) {
+            if (!Arrays.equals(exp[i], act[i]))
+                fail(Arrays.toString(exp[i]) + " != " + Arrays.toString(act[i]));
+        }
     }
 
     static short[][] run(int parts, AllowedOnlyFlushPartitionAssignor... assignors) {
