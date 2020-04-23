@@ -12,8 +12,8 @@ import com.vladykin.replicamap.kafka.impl.msg.MapUpdate;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageDeserializer;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
-import com.vladykin.replicamap.kafka.impl.part.AllowedOnlyFlushPartitionAssignor;
 import com.vladykin.replicamap.kafka.impl.part.AllowedOnlyPartitioner;
+import com.vladykin.replicamap.kafka.impl.part.FlushPartitionAssignor;
 import com.vladykin.replicamap.kafka.impl.part.NeverPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
@@ -635,7 +635,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected void configureConsumerFlush(Map<String, Object> conCfg) {
         conCfg.putIfAbsent(ConsumerConfig.GROUP_ID_CONFIG, flushConsumerGroupId);
 
-        AllowedOnlyFlushPartitionAssignor.setupConsumerConfig(conCfg, allowedPartitions);
+        FlushPartitionAssignor.setupConsumerConfig(conCfg, allowedPartitions, flushTopic);
     }
 
     protected <K,V> Producer<K,V> newKafkaProducer(

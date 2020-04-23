@@ -1,10 +1,13 @@
 package com.vladykin.replicamap.kafka.impl.part;
 
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -12,8 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.RangeAssignor;
+import java.util.regex.Pattern;
 import org.apache.kafka.clients.consumer.internals.AbstractPartitionAssignor;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.TopicPartition;
@@ -25,41 +27,106 @@ import org.slf4j.LoggerFactory;
  *
  * @author Sergi Vladykin http://vladykin.com
  */
-public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor implements Configurable {
+public class AllowedOnlyPartitionAssignor extends AbstractPartitionAssignor implements Configurable {
+    private static final Logger log = LoggerFactory.getLogger(AllowedOnlyPartitionAssignor.class);
 
-    private static final Logger log = LoggerFactory.getLogger(AllowedOnlyFlushPartitionAssignor.class);
-
-    public static final String ALLOWED_PARTS = AllowedOnlyFlushPartitionAssignor.class.getName() + ".allowedParts";
+    public static final String ALLOWED_PARTS =
+        AllowedOnlyPartitionAssignor.class.getSimpleName() + ".allowedParts";
 
     protected short[] allowedParts;
     protected byte[] allowedPartsBytes;
 
     @Override
     public String name() {
-        return "replicamap-flush";
-    }
-
-    public static void setupConsumerConfig(
-        Map<String,Object> configs,
-        short[] allowedPartitions
-    ) {
-        if (allowedPartitions != null)
-            configs.putIfAbsent(ALLOWED_PARTS, allowedPartitions);
-
-        configs.putIfAbsent(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, Arrays.asList(
-            AllowedOnlyFlushPartitionAssignor.class, // This one must go first to have higher priority.
-            RangeAssignor.class // This is for backward compatibility with previous versions.
-        ));
+        return "replicamap-allowed";
     }
 
     @Override
     public void configure(Map<String,?> configs) {
-        short[] parts = (short[])configs.get(ALLOWED_PARTS); // null means that all partitions are allowed
+        Object parts = configs.get(ALLOWED_PARTS);
 
-        if (parts != null) {
-            allowedParts = copySortedUnique(parts);
-            allowedPartsBytes = Utils.serializeShortArray(allowedParts);
+        if (parts == null)
+            return; // null means that all partitions are allowed
+
+        allowedParts = parseAllowedPartitions(parts);
+        allowedPartsBytes = Utils.serializeShortArray(allowedParts);
+    }
+
+    protected short[] parseAllowedPartitions(Object parts) {
+        if (parts instanceof int[]) {
+            int[] partsInt = (int[])parts;
+            short[] partsArr = new short[partsInt.length];
+
+            for (int i = 0; i < partsArr.length; i++)
+                partsArr[i] = castAsShort(partsInt[i]);
+
+            parts = partsArr;
         }
+        if (parts instanceof long[]) {
+            long[] partsLong = (long[])parts;
+            short[] partsArr = new short[partsLong.length];
+
+            for (int i = 0; i < partsArr.length; i++)
+                partsArr[i] = castAsShort(partsLong[i]);
+
+            parts = partsArr;
+        }
+        else {
+            if (parts instanceof String) { // Comma separated list.
+                String partsStr = (String)parts;
+                partsStr = partsStr.trim();
+
+                parts = partsStr.isEmpty() ?
+                    Collections.emptyList() : // Compatible with Kafka.
+                    Arrays.asList(Pattern.compile("\\s*,\\s*").split(partsStr, -1));
+            }
+            else if (parts instanceof String[])
+                parts = Arrays.asList((String[])parts);
+            else if (parts instanceof Number[])
+                parts = Arrays.asList((Number[])parts);
+
+            if (parts instanceof Collection) {
+                Collection<?> partsCol = (Collection<?>)parts;
+                short[] partsArr = new short[partsCol.size()];
+
+                int i = 0;
+                for (Object p : partsCol)
+                    partsArr[i++] = parseAllowedPartition(p);
+
+                parts = partsArr;
+            }
+        }
+
+        if (parts instanceof short[])
+            return copySortedUnique((short[])parts);
+
+        throw new IllegalArgumentException("Failed to parse " + ALLOWED_PARTS + ": " + parts);
+    }
+
+    protected short parseAllowedPartition(Object p) {
+        long x;
+
+        if (p instanceof String)
+            x = Long.parseLong((String)p);
+        else if (p instanceof Number) {
+            if (p instanceof BigInteger)
+                x = ((BigInteger)p).longValueExact();
+            else if (p instanceof BigDecimal)
+                x = ((BigDecimal)p).longValueExact();
+            else
+                x = ((Number)p).longValue();
+        }
+        else
+            throw new IllegalArgumentException("Failed to parse partition: " + p);
+
+        return castAsShort(x);
+    }
+
+    protected short castAsShort(long x) {
+        if (x < 0 || x > Short.MAX_VALUE)
+            throw new IllegalArgumentException("Partition value is out of range: " + x);
+
+        return (short)x;
     }
 
     protected short[] copySortedUnique(short[] arr) {
@@ -88,6 +155,7 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
     }
 
     // @Override
+    @SuppressWarnings("unused")
     public Subscription subscription(Set<String> topics) {
         return new Subscription(new ArrayList<>(topics), subscriptionUserData(topics));
     }

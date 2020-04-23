@@ -16,12 +16,11 @@ import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
-class AllowedOnlyFlushPartitionAssignorTest {
+class AllowedOnlyPartitionAssignorTest {
 
     // ConsumerPartitionAssignor is only available in 2.4.1, so using reflection
     // to be able to compile the test with both 2.3.1 and 2.4.1 Kafka versions.
@@ -426,20 +425,20 @@ class AllowedOnlyFlushPartitionAssignorTest {
         }
     }
 
-    static short[][] run(int parts, AllowedOnlyFlushPartitionAssignor... assignors) {
+    static short[][] run(int parts, AllowedOnlyPartitionAssignor... assignors) {
         return run(parts, parts, assignors);
     }
 
-    static short[][] run(int parts, int expAssignedParts, AllowedOnlyFlushPartitionAssignor... assignors) {
-        Map<String,AllowedOnlyFlushPartitionAssignor.Subscription> subs = new HashMap<>();
-        Set<AllowedOnlyFlushPartitionAssignor> uniqAssignors = new HashSet<>();
+    static short[][] run(int parts, int expAssignedParts, AllowedOnlyPartitionAssignor... assignors) {
+        Map<String,AllowedOnlyPartitionAssignor.Subscription> subs = new HashMap<>();
+        Set<AllowedOnlyPartitionAssignor> uniqAssignors = new HashSet<>();
         String name = assignors[0].name();
 
         for (int i = 0; i < assignors.length; i++) {
-            AllowedOnlyFlushPartitionAssignor a = assignors[i];
+            AllowedOnlyPartitionAssignor a = assignors[i];
             assertTrue(uniqAssignors.add(a));
             assertEquals(name, a.name());
-            subs.put(String.valueOf(i), new AllowedOnlyFlushPartitionAssignor.Subscription(TOPICS_LIST,
+            subs.put(String.valueOf(i), new AllowedOnlyPartitionAssignor.Subscription(TOPICS_LIST,
                 a.subscriptionUserData(TOPICS_SET)));
         }
 
@@ -452,7 +451,7 @@ class AllowedOnlyFlushPartitionAssignorTest {
         Cluster meta = new Cluster("testCluster", Collections.emptySet(), partsInfo,
             Collections.emptySet(), Collections.emptySet());
 
-        Map<String,AllowedOnlyFlushPartitionAssignor.Assignment> assigns = unwrap(
+        Map<String,AllowedOnlyPartitionAssignor.Assignment> assigns = unwrap(
             assignors[0].assign(meta, wrap(subs)));
 
         short[][] res = new short[assigns.size()][];
@@ -461,7 +460,7 @@ class AllowedOnlyFlushPartitionAssignorTest {
         Set<TopicPartition> uniqParts = new HashSet<>();
 
         for (int i = 0; i < res.length; i++) {
-            AllowedOnlyFlushPartitionAssignor.Assignment assign = assigns.get(String.valueOf(i));
+            AllowedOnlyPartitionAssignor.Assignment assign = assigns.get(String.valueOf(i));
 
             ByteBuffer userData = assign.userData();
             assertTrue(userData == null || 0 == userData.remaining());
@@ -492,7 +491,7 @@ class AllowedOnlyFlushPartitionAssignorTest {
     }
 
     @SuppressWarnings("unchecked")
-    static <X> X wrap(Map<String,AllowedOnlyFlushPartitionAssignor.Subscription> subs) {
+    static <X> X wrap(Map<String,AllowedOnlyPartitionAssignor.Subscription> subs) {
         if (GRP_SUB_CONSTRUCTOR == null)
             return (X)subs;
 
@@ -517,14 +516,12 @@ class AllowedOnlyFlushPartitionAssignorTest {
         }
     }
 
-    static AllowedOnlyFlushPartitionAssignor createAssignor(short[] allowedParts) {
-        AllowedOnlyFlushPartitionAssignor assignor = new AllowedOnlyFlushPartitionAssignor();
+    static AllowedOnlyPartitionAssignor createAssignor(Object allowedParts) {
+        AllowedOnlyPartitionAssignor assignor = new AllowedOnlyPartitionAssignor();
 
         Map<String,Object> cfg = new HashMap<>();
-        AllowedOnlyFlushPartitionAssignor.setupConsumerConfig(cfg, allowedParts);
+        cfg.put(AllowedOnlyPartitionAssignor.ALLOWED_PARTS, allowedParts);
         assignor.configure(cfg);
-
-        assertArrayEquals(allowedParts, assignor.allowedParts);
 
         return assignor;
     }
