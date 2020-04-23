@@ -191,8 +191,8 @@ class AllowedOnlyFlushPartitionAssignorTest {
                 createAssignor(new short[]{1,2})));
 
         assertEq(new short[][]{
-                {0,1},
-                {2}
+                {0},
+                {1,2}
             },
             run(4, 3,
                 createAssignor(new short[]{0,1}),
@@ -207,8 +207,8 @@ class AllowedOnlyFlushPartitionAssignorTest {
                 createAssignor(new short[]{1,2})));
 
         assertEq(new short[][]{
-                {0,1},
-                {2,3}
+                {0,2},
+                {1,3}
             },
             run(4,
                 createAssignor(new short[]{0,1,2}),
@@ -311,22 +311,35 @@ class AllowedOnlyFlushPartitionAssignorTest {
                 createAssignor(new short[]{0,1,3,4})));
 
         assertEq(new short[][]{
-                {0,2,3},
-                {1,4}
+                {0,2},
+                {1,3,4}
             },
             run(5,
                 createAssignor(new short[]{0,1,2,3,5}),
                 createAssignor(new short[]{0,1,3,4})));
 
         assertEq(new short[][]{
-                {0,1,2},
-                {3,5},
-                {4}
+                {0,1},
+                {3,4},
+                {2,5}
             },
             run(6,
                 createAssignor(new short[]{0,1,2}),
                 createAssignor(new short[]{3,4,5}),
                 createAssignor(new short[]{0,1,2,3,4,5})));
+
+        assertEq(new short[][]{
+                {0,1},
+                {3,4},
+                {6,7,8},
+                {2,5}
+            },
+            run(9,
+                createAssignor(new short[]{0,1,2}),
+                createAssignor(new short[]{3,4,5}),
+                createAssignor(new short[]{6,7,8}),
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8})));
+
     }
 
     static void assertEq(short[][] exp, short[][] act) {

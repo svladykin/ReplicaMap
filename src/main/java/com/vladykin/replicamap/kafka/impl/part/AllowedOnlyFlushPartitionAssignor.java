@@ -128,7 +128,11 @@ public class AllowedOnlyFlushPartitionAssignor extends AbstractPartitionAssignor
                 if (assignable == 0)
                     continue; // Ignore the member, can not assign this partition to it.
 
-                int score = member.assignments() + assignable;
+                // The score here can be interpreted as an estimated number of fair assignments
+                // for a member, and actually it should be calculated as
+                //       score = assignments + assignable / members
+                // but to keep the code simple and performant we multiply both sides by members.
+                int score = member.assignments() * members.size() + assignable;
 
                 if (best == null || score < bestScore) {
                     best = member;
