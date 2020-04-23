@@ -2,6 +2,8 @@ package com.vladykin.replicamap.kafka.impl.part;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,12 +13,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.kafka.common.Cluster;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -54,6 +61,55 @@ class AllowedOnlyPartitionAssignorTest {
     private static final String TOPIC_2 = "testTopic2";
     private static final List<String> TOPICS_LIST = Arrays.asList(TOPIC_1, TOPIC_2);
     private static final Set<String> TOPICS_SET = new HashSet<>(TOPICS_LIST);
+
+    @Test
+    void testParseAllowedPartitions() {
+        AllowedOnlyPartitionAssignor a = new AllowedOnlyPartitionAssignor();
+
+        assertArrayEquals(null, a.parseAllowedPartitions(null));
+
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new short[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new int[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new long[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(" "));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new String[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new Number[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new Long[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new Integer[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new BigDecimal[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new BigInteger[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new AtomicInteger[]{}));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(new ArrayList<>()));
+        assertArrayEquals(new short[]{}, a.parseAllowedPartitions(Collections.emptySet()));
+
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(new short[]{3,0,1,1,2}));
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(new int[]{3,0,1,1,2}));
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(new long[]{3,0,1,1,2}));
+
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(" 3,0, 1,1,2 "));
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(new String[]{" 3","0"," 1"," 1 ","2 "}));
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(new Long[]{3L,0L,1L,1L,2L}));
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(new Integer[]{3,0,1,1,2}));
+
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(Arrays.asList(3L,0L,1L,1L,2L)));
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(Arrays.asList(3,0,1,1,2)));
+
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(Stream.of(3,0,1,1,2)
+            .map(BigDecimal::new).collect(Collectors.toList())));
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(Stream.of("3","0","1","1","2")
+            .map(BigInteger::new).collect(Collectors.toSet())));
+        assertArrayEquals(new short[]{0,1,2,3}, a.parseAllowedPartitions(Stream.of(3,0,1,1,2)
+            .map(AtomicInteger::new).collect(Collectors.toList())));
+
+        assertArrayEquals(new short[]{7}, a.parseAllowedPartitions(7));
+        assertArrayEquals(new short[]{9}, a.parseAllowedPartitions(new BigDecimal(9)));
+
+        assertThrows(IllegalArgumentException.class, () -> a.parseAllowedPartitions("bla"));
+        assertThrows(IllegalArgumentException.class, () -> a.parseAllowedPartitions(Arrays.asList("aa", "bb")));
+        assertThrows(IllegalArgumentException.class, () -> a.parseAllowedPartitions(new long[]{-1}));
+        assertThrows(IllegalArgumentException.class, () -> a.parseAllowedPartitions(new int[]{Short.MAX_VALUE + 1}));
+        assertThrows(IllegalArgumentException.class, () -> a.parseAllowedPartitions(new BigDecimal(Short.MAX_VALUE + 1L)));
+    }
 
     @Test
     void testAssignor() {

@@ -53,6 +53,9 @@ public class AllowedOnlyPartitionAssignor extends AbstractPartitionAssignor impl
     }
 
     protected short[] parseAllowedPartitions(Object parts) {
+        if (parts == null)
+            return null;
+
         if (parts instanceof int[]) {
             int[] partsInt = (int[])parts;
             short[] partsArr = new short[partsInt.length];
@@ -84,6 +87,8 @@ public class AllowedOnlyPartitionAssignor extends AbstractPartitionAssignor impl
                 parts = Arrays.asList((String[])parts);
             else if (parts instanceof Number[])
                 parts = Arrays.asList((Number[])parts);
+            else if (parts instanceof Number)
+                parts = Collections.singleton(parts);
 
             if (parts instanceof Collection) {
                 Collection<?> partsCol = (Collection<?>)parts;
@@ -107,7 +112,7 @@ public class AllowedOnlyPartitionAssignor extends AbstractPartitionAssignor impl
         long x;
 
         if (p instanceof String)
-            x = Long.parseLong((String)p);
+            x = Long.parseLong(((String)p).trim());
         else if (p instanceof Number) {
             if (p instanceof BigInteger)
                 x = ((BigInteger)p).longValueExact();
