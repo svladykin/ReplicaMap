@@ -340,6 +340,81 @@ class AllowedOnlyFlushPartitionAssignorTest {
                 createAssignor(new short[]{6,7,8}),
                 createAssignor(new short[]{0,1,2,3,4,5,6,7,8})));
 
+        assertEq(new short[][]{
+                {0,1},
+                {2,3}
+            },
+            run(4,
+                createAssignor(new short[]{0,1}),
+                createAssignor(new short[]{0,1,2,3})));
+
+        assertEq(new short[][]{
+                {0,1},
+                {2,3,4,5}
+            },
+            run(6,
+                createAssignor(new short[]{0,1,2}),
+                createAssignor(new short[]{0,1,2,3,4,5})));
+
+        assertEq(new short[][]{
+                {0,1,2},
+                {3,4,5,6,7}
+            },
+            run(8,
+                createAssignor(new short[]{0,1,2,3}),
+                createAssignor(new short[]{0,1,2,3,4,5,6,7})));
+
+        assertEq(new short[][]{
+                {0,1,2,4},
+                {3,5,6,7,8,9}
+            },
+            run(10,
+                createAssignor(new short[]{0,1,2,3,4}),
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9})));
+
+        assertEq(new short[][]{
+                {0,1,2,3,5},
+                {4,6,7,8,9,10,11}
+            },
+            run(12,
+                createAssignor(new short[]{0,1,2,3,4,5}),
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9,10,11})));
+
+        assertEq(new short[][]{
+                {0,1,2,3,4,6},
+                {5,7,8,9,10,11,12,13,14,15}
+            },
+            run(16,
+                createAssignor(new short[]{0,1,2,3,4,5,6,7}),
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15})));
+
+        assertEq(new short[][]{
+                {0,1,2,3,4,5,7,9},
+                {6,8,10,11,12,13,14,15,16,17,18,19}
+            },
+            run(20,
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9}),
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19})));
+
+        assertEq(new short[][]{
+                {0,2,4,6,9},
+                {1,3,5,7},
+                {8,10,11,12,13,14,15,16,17,18,19}
+            },
+            run(20,
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9}),
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9}),
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19})));
+
+        assertEq(new short[][]{
+                {0,1,2,3,5,7,9},
+                {10,11,12,13,15,17,19},
+                {4,6,8,14,16,18}
+            },
+            run(20,
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9}),
+                createAssignor(new short[]{10,11,12,13,14,15,16,17,18,19}),
+                createAssignor(new short[]{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19})));
     }
 
     static void assertEq(short[][] exp, short[][] act) {
