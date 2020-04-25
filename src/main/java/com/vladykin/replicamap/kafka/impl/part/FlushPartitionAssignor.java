@@ -34,8 +34,6 @@ public class FlushPartitionAssignor extends AllowedOnlyPartitionAssignor {
 
         if (allowedPartitions != null)
             configs.putIfAbsent(ALLOWED_PARTS, allowedPartitions);
-        else
-            configs.remove(ALLOWED_PARTS);
 
         configs.putIfAbsent(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, Arrays.asList(
             FlushPartitionAssignor.class, // This one must go first to have higher priority.

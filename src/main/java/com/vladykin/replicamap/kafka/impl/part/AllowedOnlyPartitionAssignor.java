@@ -65,7 +65,7 @@ public class AllowedOnlyPartitionAssignor extends AbstractPartitionAssignor impl
 
             parts = partsArr;
         }
-        if (parts instanceof long[]) {
+        else if (parts instanceof long[]) {
             long[] partsLong = (long[])parts;
             short[] partsArr = new short[partsLong.length];
 
