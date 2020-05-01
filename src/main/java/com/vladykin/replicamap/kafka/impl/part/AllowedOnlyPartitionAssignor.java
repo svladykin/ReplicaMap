@@ -156,7 +156,7 @@ public class AllowedOnlyPartitionAssignor extends AbstractPartitionAssignor impl
     // @Override
     @SuppressWarnings("unused")
     public short version() {
-        return 1;
+        return 2;
     }
 
     // @Override
