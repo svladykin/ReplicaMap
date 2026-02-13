@@ -3,12 +3,13 @@ package com.vladykin.replicamap.holder;
 import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.TestMap;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import org.junit.jupiter.api.Test;
+
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,7 +24,7 @@ class MapsHolderTest {
     void testSingle() {
         MapsHolderSingle h = new MapsHolderSingle();
 
-        assertNull(h.get());
+        assertNull(h.ref.get());
 
         Object dfltId = h.getDefaultMapId();
 
@@ -37,7 +38,7 @@ class MapsHolderTest {
 
         h.close();
 
-        assertNull(h.get());
+        assertNull(h.ref.get());
     }
 
     @Test
@@ -57,11 +58,11 @@ class MapsHolderTest {
         assertNotSame(rs, rl);
         assertSame(rs, h.getMapById(1, TestMap::new));
         assertSame(rl, h.getMapById(2, TestMap::new));
-        assertEquals(2, h.size());
+        assertEquals(2, h.maps.size());
 
         h.close();
 
-        assertTrue(h.isEmpty());
+        assertTrue(h.maps.isEmpty());
     }
 
     @Test

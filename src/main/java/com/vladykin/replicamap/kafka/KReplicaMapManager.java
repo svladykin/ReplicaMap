@@ -6,46 +6,25 @@ import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.holder.MapsHolder;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
-import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
+import com.vladykin.replicamap.kafka.impl.serde.DataKeySerializer;
+import com.vladykin.replicamap.kafka.impl.serde.DataValueSerializer;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.MapUpdate;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
-import com.vladykin.replicamap.kafka.impl.msg.OpMessageDeserializer;
-import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
+import com.vladykin.replicamap.kafka.impl.serde.OpMessageDeserializer;
+import com.vladykin.replicamap.kafka.impl.serde.OpMessageSerializer;
 import com.vladykin.replicamap.kafka.impl.part.AllowedOnlyPartitioner;
 import com.vladykin.replicamap.kafka.impl.part.FlushPartitionAssignor;
 import com.vladykin.replicamap.kafka.impl.part.NeverPartitioner;
-import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import com.vladykin.replicamap.kafka.impl.worker.Worker;
 import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.worker.flush.FlushWorker;
 import com.vladykin.replicamap.kafka.impl.worker.ops.OpsWorker;
-import java.security.SecureRandom;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
-import java.util.Queue;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
-import java.util.concurrent.atomic.LongAdder;
-import java.util.function.BiFunction;
-import java.util.function.Supplier;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Partitioner;
@@ -57,6 +36,25 @@ import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.function.BiFunction;
+import java.util.function.Supplier;
 
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.NEW;
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.RUNNING;
@@ -72,7 +70,6 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_SER
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
@@ -87,12 +84,9 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.PARTITIONER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.assignPartitionsRoundRobin;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.check;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.checkPositive;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.generateUniqueNodeId;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.getMacAddresses;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.parseIntSet;
 import static java.util.stream.Collectors.toList;
@@ -100,7 +94,7 @@ import static java.util.stream.Collectors.toList;
 /**
  * Manages all {@link ReplicaMap} instances attached to a Kafka data topic.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class KReplicaMapManager implements ReplicaMapManager {
     private static final Logger log = LoggerFactory.getLogger(KReplicaMapManager.class);
@@ -110,8 +104,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected static final String SUFFIX = "_replicamap";
 
-    protected final long clientId;
-    protected final String clientIdHex;
+    protected final UUID clientId;
 
     protected final KReplicaMapManagerConfig cfg;
 
@@ -121,9 +114,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected final Semaphore opsSemaphore;
     protected final boolean mapsCheckPrecondition;
-    protected final long opsSendTimeout;
+    protected final Duration opsSendTimeout;
     protected final int flushPeriodOps;
-    protected final long flushMaxPollTimeout;
     protected final String flushConsumerGroupId;
     protected final String dataTransactionalId;
 
@@ -133,7 +125,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final Producer<Object,OpMessage> opsProducer;
     protected final Producer<Object,FlushRequest> flushProducer;
 
-    protected final Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
     protected final List<FlushQueue> flushQueues;
 
     protected final List<FlushWorker> flushWorkers;
@@ -179,12 +170,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         checkPositive(maxActiveOps, OPS_MAX_PARALLEL);
         opsSemaphore = new Semaphore(maxActiveOps);
 
-        opsSendTimeout = cfg.getLong(OPS_SEND_TIMEOUT_MS);
+        opsSendTimeout = Duration.ofMillis(cfg.getLong(OPS_SEND_TIMEOUT_MS));
         checkPositive(opsSendTimeout, OPS_SEND_TIMEOUT_MS);
-
-        flushMaxPollTimeout = cfg.getLong(FLUSH_MAX_POLL_TIMEOUT_MS);
-        if (flushMaxPollTimeout < MIN_POLL_TIMEOUT_MS)
-            throw new ReplicaMapException(FLUSH_MAX_POLL_TIMEOUT_MS + " must not be less that " + MIN_POLL_TIMEOUT_MS);
 
         flushPeriodOps = cfg.getInt(FLUSH_PERIOD_OPS);
         checkPositive(flushPeriodOps, FLUSH_PERIOD_OPS);
@@ -198,8 +185,10 @@ public class KReplicaMapManager implements ReplicaMapManager {
         flushConsumerGroupId = flushTopic + SUFFIX;
         dataTransactionalId = dataTopic + SUFFIX;
 
-        clientId = ifNull(cfg.getLong(CLIENT_ID), this::generateClientId);
-        clientIdHex = Long.toHexString(clientId);
+        String clientIdString = cfg.getString(CLIENT_ID);
+        clientId = clientIdString != null && !clientIdString.isBlank() ?
+                UUID.fromString(clientIdString) :
+                generateClientId();
 
         allowedPartitions = resolveAllowedPartitions();
 
@@ -226,7 +215,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
             flushProducer = newKafkaProducerFlush();
             flushQueues = new ArrayList<>(totalPartitions);
-            cleanQueue = newCleanQueue();
 
             for (int part = 0; part < totalPartitions; part++)
                 flushQueues.add(newFlushQueue(new TopicPartition(dataTopic, part)));
@@ -250,7 +238,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
             if (log.isDebugEnabled()) {
                 log.debug("ReplicaMap manager for topics [{}, {}, {}] is created, client id: {}",
-                    dataTopic, opsTopic, flushTopic, clientIdHex);
+                    dataTopic, opsTopic, flushTopic, clientId);
             }
         }
         catch (Exception e) {
@@ -325,10 +313,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return new LazyList<>(size);
     }
 
-    protected Queue<ConsumerRecord<Object,FlushNotification>> newCleanQueue() {
-        return new ConcurrentLinkedQueue<>();
-    }
-
     protected FlushQueue newFlushQueue(TopicPartition dataPart) {
         return new FlushQueue(dataPart);
     }
@@ -343,14 +327,10 @@ public class KReplicaMapManager implements ReplicaMapManager {
             opsTopic,
             flushTopic,
             workerId,
-            flushConsumerGroupId,
-            opsProducer,
             flushQueues,
-            cleanQueue,
             opsSteadyFut,
             receivedFlushRequests,
             successfulFlushes,
-            flushMaxPollTimeout,
             allowedPartitions,
             newLazyList(parts),
             this::newKafkaProducerData,
@@ -375,7 +355,6 @@ public class KReplicaMapManager implements ReplicaMapManager {
             flushProducer,
             flushPeriodOps,
             flushQueues,
-            cleanQueue,
             this::applyReceivedUpdate,
             sentFlushRequests,
             receivedUpdates,
@@ -388,12 +367,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
         return assignPartitionsRoundRobin(workerId, allWorkers, totalPartitions, allowedPartitions);
     }
 
-    protected long generateClientId() {
-        return generateUniqueNodeId(
-            System.currentTimeMillis(),
-            getMacAddresses(),
-            new SecureRandom()
-        );
+    protected UUID generateClientId() {
+        return UUID.randomUUID();
     }
 
     /**
@@ -653,7 +628,19 @@ public class KReplicaMapManager implements ReplicaMapManager {
         configureAllProducers(proCfg);
         configureProducerData(proCfg, part);
 
-        return newKafkaProducer(proCfg, null, null);
+        return newKafkaProducer(proCfg,
+            newDataKeySerializer(proCfg),
+            newDataValueSerializer(proCfg));
+    }
+
+    protected Serializer<Object> newDataKeySerializer(Map<String, Object> proCfg) {
+        return new DataKeySerializer<>(newKeySerializer(proCfg));
+    }
+
+    protected Serializer<Object> newDataValueSerializer(Map<String, Object> proCfg) {
+        Serializer<Object> valueSer = newValueSerializer(proCfg);
+        OpMessageSerializer<Object> opMsgSer = new OpMessageSerializer<>(valueSer, null);
+        return new DataValueSerializer<>(valueSer, opMsgSer);
     }
 
     protected Producer<Object,OpMessage> newKafkaProducerOps() {
@@ -793,7 +780,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         if (!casState(NEW, STARTING))
             throw new IllegalStateException("The state is not " + NEW + ", actual state: " + getState());
 
-        log.info("Starting for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientIdHex);
+        log.info("Starting for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientId);
 
         for (OpsWorker worker : opsWorkers)
             worker.start();
@@ -806,24 +793,24 @@ public class KReplicaMapManager implements ReplicaMapManager {
 
     protected ReplicaMapManager onWorkersSteady(Void ignore, Throwable ex) {
         if (ex == null && casState(STARTING, RUNNING)) {
-            log.info("Started for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientIdHex);
+            log.info("Started for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientId);
 
             return this;
         }
 
         Utils.close(this);
         throw new ReplicaMapException("Failed to start for topics [" +
-            dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + clientIdHex, ex);
+            dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + clientId, ex);
     }
 
     @Override
-    public <K,V> KReplicaMap<K,V> getMap(Object mapId) {
+    public <K,V,M extends ReplicaMap<K,V>> M getMap(Object mapId) {
         checkRunning();
         return getMapById(mapId);
     }
 
     @Override
-    public <K, V> KReplicaMap<K,V> getMap() {
+    public <K,V,M extends ReplicaMap<K,V>> M getMap() {
         checkRunning();
         return getMapById(maps.getDefaultMapId());
     }
@@ -851,7 +838,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         }
 
         log.info("Stopping for topics [{}, {}, {}], client id {}",
-            dataTopic, opsTopic, flushTopic, clientIdHex);
+            dataTopic, opsTopic, flushTopic, clientId);
 
         try {
             doStop();
@@ -862,10 +849,10 @@ public class KReplicaMapManager implements ReplicaMapManager {
             stoppedFut.completeExceptionally(e);
 
             throw new ReplicaMapException("Failed to stop for topics [" +
-                dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + clientIdHex, e);
+                dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + clientId, e);
         }
 
-        log.info("Stopped for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientIdHex);
+        log.info("Stopped for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientId);
     }
 
     protected void doStop() {
@@ -884,16 +871,16 @@ public class KReplicaMapManager implements ReplicaMapManager {
         Utils.close(maps);
     }
 
-    protected <K,V> KReplicaMap<K,V> getMapById(Object mapId) {
-        return (KReplicaMap<K,V>)maps.getMapById(mapId, this::newReplicaMap);
+    protected <K,V,M extends ReplicaMap<K,V>> M getMapById(Object mapId) {
+        return (M)maps.getMapById(mapId, this::newReplicaMap);
     }
 
     protected <K,V> KReplicaMap<K,V> newReplicaMap(Object mapId, Map<K,V> map) {
         return map instanceof NavigableMap ?
             new KReplicaNavigableMap<>(this, mapId, (NavigableMap<K,V>)map,
-                opsSemaphore, mapsCheckPrecondition, opsSendTimeout, TimeUnit.MILLISECONDS) :
+                opsSemaphore, mapsCheckPrecondition, opsSendTimeout) :
             new KReplicaMap<>(this, mapId, map,
-                opsSemaphore, mapsCheckPrecondition, opsSendTimeout, TimeUnit.MILLISECONDS);
+                opsSemaphore, mapsCheckPrecondition, opsSendTimeout);
     }
 
     protected <K,V> ProducerRecord<Object,OpMessage> newMapUpdateRecord(
@@ -940,14 +927,14 @@ public class KReplicaMapManager implements ReplicaMapManager {
         String topic,
         int part,
         long offset,
-        long clientId,
+        UUID clientId,
         long opId,
         byte updateType,
         K key,
         V exp,
         V upd,
         BiFunction<?,?,?> function,
-        Box<V> updatedValueBox
+        java.util.function.Consumer<V> updatedValueBox
     ) {
 //        trace.trace("applyReceivedUpdate {} offset={}, key={}, val={}",
 //            new TopicPartition(topic, part), offset, key, upd);
@@ -962,7 +949,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         KReplicaMap<K,V> map = getMapById(mapId);
 
         return map.onReceiveUpdate(
-            clientId == this.clientId,
+            this.clientId.equals(clientId),
             opId,
             updateType,
             key,
@@ -984,7 +971,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
     @Override
     public String toString() {
         return "KReplicaMapManager{" +
-            "clientId=" + clientIdHex +
+            "clientId=" + clientId +
             ", dataTopic='" + dataTopic + '\'' +
             ", opsTopic='" + opsTopic + '\'' +
             ", flushTopic='" + flushTopic + '\'' +

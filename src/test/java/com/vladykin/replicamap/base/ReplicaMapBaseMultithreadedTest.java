@@ -3,6 +3,9 @@ package com.vladykin.replicamap.base;
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapListener;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,8 +33,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -45,29 +46,30 @@ public class ReplicaMapBaseMultithreadedTest {
     static final ThreadLocal<Boolean> canSendFunction = new ThreadLocal<>();
 
     public static <T> List<CompletableFuture<T>> executeThreads(int threads, Executor exec, Callable<T> call) {
-        List<CompletableFuture<T>> futures = new ArrayList<>();
-
+        var futures = new ArrayList<CompletableFuture<T>>();
         for (int t = 0; t < threads; t++) {
-            CompletableFuture<T> fut = new CompletableFuture<>();
-
-            exec.execute(() -> {
-                try {
-                    fut.complete(call.call());
-                }
-                catch (Throwable e) {
-                    fut.completeExceptionally(e);
-
-                    if (e instanceof Error)
-                        throw (Error)e;
-
-                    throw new RuntimeException(e);
-                }
-            });
-
-            futures.add(fut);
+            futures.add(executeThread(exec, call));
         }
-
         return futures;
+    }
+
+    public static <T> CompletableFuture<T> executeThread(Executor exec, Callable<T> call) {
+        var fut = new CompletableFuture<T>();
+
+        exec.execute(() -> {
+            try {
+                fut.complete(call.call());
+            }
+            catch (Throwable e) {
+                fut.completeExceptionally(e);
+
+                if (e instanceof Error)
+                    throw (Error)e;
+
+                throw new RuntimeException(e);
+            }
+        });
+        return fut;
     }
 
     @BeforeEach

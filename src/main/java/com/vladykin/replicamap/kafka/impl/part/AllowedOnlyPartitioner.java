@@ -2,16 +2,17 @@ package com.vladykin.replicamap.kafka.impl.part;
 
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
-import java.util.Arrays;
-import java.util.Map;
 import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.Cluster;
 
+import java.util.Arrays;
+import java.util.Map;
+
 /**
  * {@link Partitioner} that checks for having only allowed partitions.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class AllowedOnlyPartitioner implements Partitioner {
     public static final String DELEGATE = AllowedOnlyPartitioner.class.getName() + ".delegate";

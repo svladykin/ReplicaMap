@@ -3,14 +3,6 @@ package com.vladykin.replicamap.kafka;
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
@@ -23,6 +15,15 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerLeaksTest.CollectingMockConsumer.consumers;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerLeaksTest.CollectingMockProducer.producers;
@@ -167,7 +168,7 @@ class KReplicaMapManagerLeaksTest {
             CollectingMockConsumer<Object,OpMessage> c = new CollectingMockConsumer<>();
 
             if (failOnLoadData)
-                c.setException(new KafkaException("ops"));
+                c.setPollException(new KafkaException("ops"));
 
             return c;
         }

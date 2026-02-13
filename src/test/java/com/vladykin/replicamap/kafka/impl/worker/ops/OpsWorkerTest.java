@@ -5,27 +5,16 @@ import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.MapUpdate;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
-import com.vladykin.replicamap.kafka.impl.msg.OpMessageSerializer;
-import com.vladykin.replicamap.kafka.impl.util.Box;
+import com.vladykin.replicamap.kafka.impl.serde.OpMessageSerializer;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
 import com.vladykin.replicamap.kafka.impl.worker.flush.FlushWorker;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Queue;
-import java.util.Random;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.LongAdder;
-import java.util.function.BiFunction;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.clients.producer.MockProducer;
+import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.header.internals.RecordHeader;
@@ -35,6 +24,19 @@ import org.apache.kafka.common.serialization.LongSerializer;
 import org.apache.kafka.common.serialization.Serializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
+import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
 
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_REQUEST;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
@@ -52,10 +54,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SuppressWarnings({"unchecked", "ArraysAsListWithZeroOrOneArgument", "FieldCanBeLocal", "UnusedReturnValue"})
+@SuppressWarnings({"unchecked", "FieldCanBeLocal", "UnusedReturnValue"})
 public class OpsWorkerTest {
-    public static final long CLIENT1_ID = 111;
-    public static final long CLIENT2_ID = 222;
+    public static final UUID CLIENT1_ID = UUID.randomUUID();
+    public static final UUID CLIENT2_ID = UUID.randomUUID();
 
     public static final String TOPIC_DATA = "data";
     public static final String TOPIC_OPS = "ops";
@@ -68,7 +70,6 @@ public class OpsWorkerTest {
     MockConsumer<Object,OpMessage> opsConsumer;
     MockProducer<Object,FlushRequest> flushProducer;
     List<FlushQueue> flushQueues;
-    Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
     OpsWorker opsWorker;
     TopicPartition dataPart;
     TopicPartition opsPart;
@@ -84,13 +85,13 @@ public class OpsWorkerTest {
         dataPart = new TopicPartition(TOPIC_DATA, 0);
 
         flushQueues = singletonList(new FlushQueue(null));
-        cleanQueue = new ConcurrentLinkedQueue<>();
-
         dataConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
         opsConsumer = new MockConsumer<>(OffsetResetStrategy.NONE);
 
         Serializer<?> longSer = new LongSerializer();
-        flushProducer = new MockProducer(true, longSer,
+        Partitioner partitioner = null;
+
+        flushProducer = new MockProducer(true, partitioner, longSer,
             new OpMessageSerializer<>(longSer, null));
 
         opsConsumer.assign(singleton(opsPart));
@@ -105,7 +106,6 @@ public class OpsWorkerTest {
             flushProducer,
             FLUSH_MAX_OPS,
             flushQueues,
-            cleanQueue,
             this::applyReceivedUpdate,
             new LongAdder(),
             new LongAdder(),
@@ -115,43 +115,20 @@ public class OpsWorkerTest {
     }
 
     protected <K, V> boolean applyReceivedUpdate(String topic, int part, long offset,
-        long clientId, long opId, byte updateType, K key, V exp, V upd,
-        BiFunction<?,?,?> function, Box<V> updatedValueBox) {
+        UUID clientId, long opId, byte updateType, K key, V exp, V upd,
+        BiFunction<?,?,?> function, Consumer<V> updatedValueBox) {
         appliedUpdates.incrementAndGet();
         return true;
     }
 
-    static ConsumerRecord<Object,OpMessage> newPutRecord(long clientId, long offset) {
+    static ConsumerRecord<Object,OpMessage> newPutRecord(UUID clientId, long offset) {
         Random rnd = ThreadLocalRandom.current();
         return new ConsumerRecord<>(TOPIC_OPS, 0,
             offset, rnd.nextInt(10), new MapUpdate(OP_PUT, clientId, 0, null, rnd.nextInt(10), null));
     }
 
-    protected ConsumerRecord<Object,OpMessage> addPutRecord(long clientId, long offset) {
-        ConsumerRecord<Object,OpMessage> rec = newPutRecord(clientId, offset);
-        opsConsumer.addRecord(rec);
-        return rec;
-    }
-
-    public static ConsumerRecord<Object,FlushNotification> newFlushNotification(long clientId, long flushOffsetData, long flushOffsetOps,  long offset) {
-        return new ConsumerRecord<>(
-            TOPIC_OPS, 0, offset, null, new FlushNotification(clientId, flushOffsetData, flushOffsetOps));
-    }
-
-    protected ConsumerRecord<Object,FlushNotification> addFlushNotification(long flushOffsetData, long flushOffsetOps, long offset) {
-        ConsumerRecord<Object,FlushNotification> rec = newFlushNotification(OpsWorkerTest.CLIENT2_ID, flushOffsetData, flushOffsetOps, offset);
-        opsConsumer.addRecord(Utils.cast(rec));
-        return rec;
-    }
-
-    @Test
-    void testForwardCompatibility() {
-        TopicPartition p = new TopicPartition(TOPIC_OPS, 0);
-        opsWorker.flushQueues.get(p.partition()).setMaxOffset(0L);
-        opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 1L, null,
-            new MapUpdate((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
-        opsWorker.applyOpsTopicRecords(p, asList(new ConsumerRecord<>(TOPIC_OPS, p.partition(), 2L, "key",
-            new MapUpdate((byte)'Z', CLIENT1_ID, 100500, null, null, null))));
+    public static ConsumerRecord<Object,FlushNotification> newFlushNotification(UUID clientId, long flushOffsetOps, long offset) {
+        return new ConsumerRecord<>(TOPIC_OPS, 0, offset, null, new FlushNotification(clientId, flushOffsetOps));
     }
 
     @Test
@@ -163,30 +140,27 @@ public class OpsWorkerTest {
     @SuppressWarnings("ConstantConditions")
     @Test
     void testApplyOpsTopicRecords() {
-        opsWorker.flushQueues.get(opsPart.partition()).setMaxOffset(1000);
+        opsWorker.flushQueues.get(opsPart.partition()).initUnflushedOpsOffset(1000);
 
         opsWorker.applyOpsTopicRecords(opsPart, Arrays.asList(
             newPutRecord(CLIENT1_ID, 1001),
             newPutRecord(CLIENT2_ID, 1002),
             newPutRecord(CLIENT1_ID, 1003),
-            Utils.cast(newFlushNotification(CLIENT1_ID, 100500, 1003, 1004)),
+            Utils.cast(newFlushNotification(CLIENT1_ID, 1003, 1004)),
             newPutRecord(CLIENT1_ID, 1005),
             newPutRecord(CLIENT2_ID, 1006),
             newPutRecord(CLIENT1_ID, 1007),
-            Utils.cast(newFlushNotification(CLIENT2_ID, 200700, 1007, 1008)),
+            Utils.cast(newFlushNotification(CLIENT2_ID, 1007, 1008)),
             newPutRecord(CLIENT1_ID, 1009),
             newPutRecord(CLIENT1_ID, 1010)
         ));
 
         assertEquals(8, appliedUpdates.get());
-        assertEquals(1, cleanQueue.size());
-        assertEquals(200700, cleanQueue.poll().value().getFlushOffsetData());
+//        assertEquals(1, cleanQueue.size());
 
         assertEquals(1, flushProducer.history().size());
         FlushRequest flushReq = flushProducer.history().get(0).value();
-        assertEquals(1010, flushReq.getFlushOffsetOps());
-
-        assertEquals(200700, opsWorker.lastFlushNotifications.get(opsPart).getFlushOffsetData());
+        assertEquals(1010, flushReq.getOpsOffset());
     }
 
     @Test
@@ -203,9 +177,9 @@ public class OpsWorkerTest {
         assertThrows(ReplicaMapException.class, () -> opsWorker.loadDataForPartition(dataPart));
 
         dataConsumer.addRecord(new ConsumerRecord<>(TOPIC_DATA, 0, ++offset,
-            NO_TIMESTAMP, TimestampType.NO_TIMESTAMP_TYPE, null, NULL_SIZE, NULL_SIZE,"e", "E",
+            NO_TIMESTAMP, TimestampType.NO_TIMESTAMP_TYPE, NULL_SIZE, NULL_SIZE,"e", "E",
             new RecordHeaders(singleton(new RecordHeader(FlushWorker.OPS_OFFSET_HEADER,
-                Utils.serializeVarlong(777888))))));
+                Utils.serializeVarlong(777888)))), Optional.empty()));
         dataConsumer.updateEndOffsets(singletonMap(dataPart, offset + 1));
 
         assertEquals(777888, opsWorker.loadDataForPartition(dataPart));
@@ -254,7 +228,7 @@ public class OpsWorkerTest {
         CompletableFuture<Void> steadyFut = opsWorker.getSteadyFuture();
 
         assertFalse(steadyFut.isDone());
-        opsWorker.flushQueues.get(opsPart.partition()).setMaxOffset(49);
+        opsWorker.flushQueues.get(opsPart.partition()).initUnflushedOpsOffset(49);
         assertFalse(opsWorker.processOpsRecords(new ConsumerRecords<>(singletonMap(opsPart, asList(
             newPutRecord(CLIENT2_ID, 50),
             newPutRecord(CLIENT2_ID, 51)
@@ -297,7 +271,7 @@ public class OpsWorkerTest {
         FlushRequest flushReq = prepFlushReq.value();
         assertEquals(OP_FLUSH_REQUEST, flushReq.getOpType());
         assertEquals(CLIENT1_ID, flushReq.getClientId());
-        assertEquals(60, flushReq.getFlushOffsetOps());
+        assertEquals(60, flushReq.getOpsOffset());
     }
 
     @Test
@@ -308,9 +282,9 @@ public class OpsWorkerTest {
         dataConsumer.addRecord(new ConsumerRecord<>(TOPIC_DATA, 0, 102L, "c", "C"));
         dataConsumer.addRecord(new ConsumerRecord<>(TOPIC_DATA, 0, 103L, "d", "D"));
         dataConsumer.addRecord(new ConsumerRecord<>(TOPIC_DATA, 0, 104L,
-            NO_TIMESTAMP, TimestampType.NO_TIMESTAMP_TYPE, null, NULL_SIZE, NULL_SIZE,"e", "E",
+            NO_TIMESTAMP, TimestampType.NO_TIMESTAMP_TYPE, NULL_SIZE, NULL_SIZE,"e", "E",
             new RecordHeaders(singleton(new RecordHeader(FlushWorker.OPS_OFFSET_HEADER,
-                Utils.serializeVarlong(999888L))))));
+                Utils.serializeVarlong(999888L)))), Optional.empty()));
 
         dataConsumer.updateEndOffsets(singletonMap(dataPart, 105L));
 

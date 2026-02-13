@@ -1,25 +1,6 @@
 package com.vladykin.replicamap.kafka.impl.util;
 
 import com.vladykin.replicamap.ReplicaMapException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.net.NetworkInterface;
-import java.nio.ByteBuffer;
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Enumeration;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.concurrent.CompletableFuture;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -34,69 +15,44 @@ import org.apache.kafka.common.utils.ByteUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
 import static java.util.Collections.singleton;
 
 /**
  * Utility methods.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
-@SuppressWarnings("JavaReflectionMemberAccess")
 public final class Utils {
 //    public static final Logger trace = LoggerFactory.getLogger(Utils.class.getName() + ".trace");
 
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
 
-    private static final Method POLL;
+    public static final Duration MIN_POLL_TIMEOUT = Duration.ofMillis(5);
 
-    static {
-        Method poll = null;
-        try {
-            poll = Consumer.class.getMethod("poll", Duration.class);
-        }
-        catch (NoSuchMethodException e) {
-            // no-op
-        }
-        POLL = poll;
-    }
+    public static final int UUID_SIZE_BYTES = 2 * Long.BYTES;
+    public static final int NULL_ARRAY_LENGTH = -1;
 
-    private static final Duration[] MILLIS = new Duration[5000];
+    public static <K,V> ConsumerRecords<K,V> poll(Consumer<K,V> c, Duration timeout) {
+        if (timeout.compareTo(MIN_POLL_TIMEOUT) < 0) // "poll" may often produce empty results and break tests for small timeouts
+            timeout = MIN_POLL_TIMEOUT;
 
-    public static final long MIN_POLL_TIMEOUT_MS = 5;
-
-    public static Duration millis(long ms) {
-        return duration(MILLIS, ms, ChronoUnit.MILLIS);
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    private static Duration duration(Duration[] cache, long x, ChronoUnit u) {
-        if (x >= cache.length)
-            return Duration.of(x, u);
-
-        Duration d = cache[(int)x];
-        if (d == null)
-            cache[(int)x] = d = Duration.of(x, u);
-        return d;
-    }
-
-    @SuppressWarnings("unchecked")
-    public static <K,V> ConsumerRecords<K,V> poll(Consumer<K,V> c, long timeoutMs) {
-        if (timeoutMs < MIN_POLL_TIMEOUT_MS) // "poll" may often produce empty results and break tests for small timeouts
-            throw new IllegalArgumentException("Too small duration: " + timeoutMs);
-
-        if (POLL != null) {
-            try { // Since Kafka 2.0.0 it is the recommended way to poll.
-                return (ConsumerRecords<K,V>)POLL.invoke(c, millis(timeoutMs));
-            }
-            catch (IllegalAccessException e) {
-                throw new IllegalStateException(e);
-            }
-            catch (InvocationTargetException e) {
-                throw (RuntimeException)e.getCause();
-            }
-        }
-
-        return c.poll(timeoutMs);
+        return c.poll(timeout);
     }
 
     public static <X> X ifNull(X x, X dflt) {
@@ -119,90 +75,6 @@ public final class Utils {
         return (ProducerRecord<K,V>)result;
     }
 
-    public static List<byte[]> getMacAddresses() {
-        List<byte[]> macs = new ArrayList<>();
-        Enumeration<NetworkInterface> ifaces = null;
-
-        try {
-            ifaces = NetworkInterface.getNetworkInterfaces();
-        }
-        catch (Exception e) {
-            log.warn("Failed to get network interfaces.", e);
-        }
-
-        if (ifaces != null) {
-            while (ifaces.hasMoreElements()) {
-                NetworkInterface iface = ifaces.nextElement();
-                byte[] macAddr = null;
-
-                try {
-                    if (iface != null && !iface.isLoopback() && !iface.isPointToPoint() && !iface.isVirtual())
-                        macAddr = iface.getHardwareAddress();
-                }
-                catch (Exception e) {
-                    log.warn("Failed to get MAC address.", e);
-                }
-
-                if (macAddr != null && macAddr.length > 0)
-                    macs.add(macAddr);
-            }
-        }
-
-        return macs;
-    }
-
-    /**
-     * Generates unique 8 bytes node id for a small cluster.
-     * Takes 4 bytes from the current time, 1 byte hash from macs and 3 random bytes.
-     * This gives very low practical probability of clashes for small clusters
-     * even if there are multiple nodes started on the same host:
-     *   timestamp part gives ~50 days precision (have to hit the same millisecond for a clash);
-     *   mac hash rarely clashes for small clusters (~5% probability of 1 clash for 10 hosts, ~32% for 20 hosts);
-     *   for resolving time/mac clashes there are 3 random bytes (useful when running tests with multiple nodes
-     *       on a single host).
-     *
-     * @param currentTimeMillis Current timestamp in milliseconds.
-     * @param macs List of mac addresses.
-     * @param secureRnd Secure random.
-     * @return Unique 8 byte node id.
-     */
-    public static long generateUniqueNodeId(long currentTimeMillis, List<byte[]> macs, Random secureRnd) {
-        Utils.requireNonNull(secureRnd, "secureRnd");
-
-        // Drop higher 32 bits, they change too rare.
-        // The remaining lower 32 bits give around 50 days precision.
-        long time = currentTimeMillis & 0xFFFFFFFFL;
-
-        long rnd;
-        if (macs == null || macs.isEmpty())
-            rnd = secureRnd.nextInt(); // take 4 random bytes if we do not have macs
-        else {
-            long mac = macHash1(macs) & 0xFF;
-            rnd = secureRnd.nextInt(0x1000000); // take 3 random bytes
-            rnd |= mac << 24; // concatenate mac + rnd into 4 bytes
-        }
-
-        return (time << 32) | rnd;
-    }
-
-    public static byte rotateRight(byte b, int shift) {
-        assert shift >= 0: shift;
-        shift = shift & 7;
-
-        int x = b & 0xFF;
-        return (byte)((x << (8 - shift)) | (x >>> shift));
-    }
-
-    public static byte macHash1(List<byte[]> macs) {
-        byte mac = 0;
-        int i = 0;
-        for (byte[] macAddr : macs) {
-            for (byte b : macAddr)
-                mac ^= rotateRight(b, i++);
-        }
-        return mac;
-    }
-
     public static void close(Iterable<? extends AutoCloseable> cs) {
         if (cs == null)
             return;
@@ -220,12 +92,18 @@ public final class Utils {
                 if (isInterrupted(e))
                     Thread.currentThread().interrupt();
                 else
-                    log.error("Failed to close " + c, e);
+                    log.error("Failed to close {}", c, e);
             }
         }
     }
 
-    public static boolean isInterrupted(Exception e) {
+    public static boolean isInterrupted(Throwable e) {
+        if (e == null)
+            return false;
+
+        if (e instanceof ReplicaMapException)
+            return isInterrupted(e.getCause());
+
         return e instanceof InterruptedException ||
                e instanceof InterruptException ||
                e instanceof WakeupException;
@@ -260,6 +138,11 @@ public final class Utils {
 
     public static void checkPositive(long x, String varName) {
         if (x <= 0)
+            throw new ReplicaMapException(varName + " must be positive");
+    }
+
+    public static void checkPositive(Duration x, String varName) {
+        if (x.isNegative() || x.isZero())
             throw new ReplicaMapException(varName + " must be positive");
     }
 
@@ -391,6 +274,61 @@ public final class Utils {
 
         assert buf.remaining() == 0;
         return buf.array();
+    }
+
+    public static int getArrayLength(byte[] arr) {
+        return arr == null ? NULL_ARRAY_LENGTH : arr.length;
+    }
+
+    public static byte[] readByteArray(ByteBuffer buf) {
+        int len = ByteUtils.readVarint(buf);
+
+        if (len == NULL_ARRAY_LENGTH)
+            return null;
+
+        byte[] arr = new byte[len];
+
+        if (len != 0)
+            buf.get(arr);
+
+        return arr;
+    }
+
+    public static void writeByteArray(byte[] arr, ByteBuffer buf) {
+        if (arr == null) {
+            ByteUtils.writeVarint(NULL_ARRAY_LENGTH, buf);
+        } else {
+            ByteUtils.writeVarint(arr.length, buf);
+            buf.put(arr);
+        }
+    }
+
+    public static UUID readUuid(ByteBuffer buf) {
+        assert buf.order() == ByteOrder.BIG_ENDIAN;
+
+        long msb = buf.getLong();
+        long lsb = buf.getLong();
+        return new UUID(msb, lsb);
+    }
+
+    public static void writeUuid(UUID id, ByteBuffer buf) {
+        assert buf.order() == ByteOrder.BIG_ENDIAN;
+
+        long msb = id.getMostSignificantBits();
+        long lsb = id.getLeastSignificantBits();
+
+        buf.putLong(msb);
+        buf.putLong(lsb);
+    }
+
+    public static byte[] serializeUuid(UUID id) {
+        byte[] bytes = new byte[UUID_SIZE_BYTES];
+        writeUuid(id, ByteBuffer.wrap(bytes));
+        return bytes;
+    }
+
+    public static UUID deserializeUuid(byte[] bytes) {
+        return readUuid(ByteBuffer.wrap(bytes));
     }
 
     public static short[] deserializeShortArray(ByteBuffer buf) {

@@ -2,6 +2,14 @@ package com.vladykin.replicamap.kafka;
 
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.ReplicaMapException;
+import org.apache.kafka.clients.producer.Partitioner;
+import org.apache.kafka.common.Cluster;
+import org.apache.kafka.common.Configurable;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
+import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -15,13 +23,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
 import java.util.stream.Collectors;
-import org.apache.kafka.clients.producer.Partitioner;
-import org.apache.kafka.common.Cluster;
-import org.apache.kafka.common.Configurable;
-import org.apache.kafka.common.serialization.IntegerDeserializer;
-import org.apache.kafka.common.serialization.IntegerSerializer;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.ALLOWED_PARTITIONS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.ALLOWED_PARTITIONS_RESOLVER;
@@ -29,7 +30,6 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_S
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_DESERIALIZER_CLASS;
@@ -59,7 +59,6 @@ class KReplicaMapManagerSimpleShardingTest {
         HashMap<String,Object> cfg = new HashMap<>();
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
         cfg.put(FLUSH_PERIOD_OPS, 2);
-        cfg.put(FLUSH_MAX_POLL_TIMEOUT_MS, 5000L);
 
         cfg.put(OPS_WORKERS, 3);
         cfg.put(FLUSH_WORKERS, 2);

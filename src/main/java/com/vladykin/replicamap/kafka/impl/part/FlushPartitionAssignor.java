@@ -1,17 +1,16 @@
 package com.vladykin.replicamap.kafka.impl.part;
 
 import com.vladykin.replicamap.kafka.impl.util.Utils;
-import java.util.Arrays;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.TopicPartition;
+
 import java.util.List;
 import java.util.Map;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.RangeAssignor;
-import org.apache.kafka.common.TopicPartition;
 
 /**
  * Partition assignor that assigns only allowed partitions.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class FlushPartitionAssignor extends AllowedOnlyPartitionAssignor {
 
@@ -35,10 +34,7 @@ public class FlushPartitionAssignor extends AllowedOnlyPartitionAssignor {
         if (allowedPartitions != null)
             configs.putIfAbsent(ALLOWED_PARTS, allowedPartitions);
 
-        configs.putIfAbsent(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, Arrays.asList(
-            FlushPartitionAssignor.class, // This one must go first to have higher priority.
-            RangeAssignor.class // This is for backward compatibility with previous versions.
-        ));
+        configs.putIfAbsent(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, List.of(FlushPartitionAssignor.class));
     }
 
     @Override

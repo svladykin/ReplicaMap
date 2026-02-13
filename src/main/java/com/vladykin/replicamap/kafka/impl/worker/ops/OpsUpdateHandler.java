@@ -1,20 +1,21 @@
 package com.vladykin.replicamap.kafka.impl.worker.ops;
 
-import com.vladykin.replicamap.kafka.impl.util.Box;
+import java.util.UUID;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 
 public interface OpsUpdateHandler {
     <K,V> boolean applyReceivedUpdate(
         String topic,
         int part,
         long offset,
-        long clientId,
+        UUID clientId,
         long opId,
         byte updateType,
         K key,
         V exp,
         V upd,
         BiFunction<?,?,?> function,
-        Box<V> updatedValueBox
+        Consumer<V> updatedValueBox
     );
 }

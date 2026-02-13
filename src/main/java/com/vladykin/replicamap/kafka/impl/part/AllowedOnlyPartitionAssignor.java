@@ -1,6 +1,12 @@
 package com.vladykin.replicamap.kafka.impl.part;
 
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import org.apache.kafka.clients.consumer.internals.AbstractPartitionAssignor;
+import org.apache.kafka.common.Configurable;
+import org.apache.kafka.common.TopicPartition;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
@@ -16,16 +22,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
-import org.apache.kafka.clients.consumer.internals.AbstractPartitionAssignor;
-import org.apache.kafka.common.Configurable;
-import org.apache.kafka.common.TopicPartition;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Partition assignor that assigns only allowed partitions.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class AllowedOnlyPartitionAssignor extends AbstractPartitionAssignor implements Configurable {
     private static final Logger log = LoggerFactory.getLogger(AllowedOnlyPartitionAssignor.class);

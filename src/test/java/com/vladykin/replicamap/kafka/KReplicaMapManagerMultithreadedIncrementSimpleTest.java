@@ -4,6 +4,18 @@ import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.holder.MapsHolderSingle;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.common.PartitionInfo;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
+import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.LongSerializer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -17,21 +29,10 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.IntegerDeserializer;
-import org.apache.kafka.common.serialization.IntegerSerializer;
-import org.apache.kafka.common.serialization.LongDeserializer;
-import org.apache.kafka.common.serialization.LongSerializer;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DATA_TOPIC;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
@@ -61,7 +62,6 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
 
         cfg.put(FLUSH_PERIOD_OPS, 30);
-        cfg.put(FLUSH_MAX_POLL_TIMEOUT_MS, 5);
 
         cfg.put(DATA_TOPIC, "data");
         cfg.put(OPS_TOPIC, "ops");
@@ -214,9 +214,10 @@ class KReplicaMapManagerMultithreadedIncrementSimpleTest {
                     dataConsumer.seek(part, oldOffset);
 
                     long miniStart = System.nanoTime();
+                    Duration pollTimeout = Duration.ofSeconds(1);
 
                     for (;;) {
-                        ConsumerRecords<Object,Object> data = Utils.poll(dataConsumer, 1000);
+                        ConsumerRecords<Object,Object> data = Utils.poll(dataConsumer, pollTimeout);
 
                         if (!data.isEmpty())
                             break;

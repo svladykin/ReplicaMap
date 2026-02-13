@@ -4,3 +4,7 @@ build/
 .idea/
 .attach_pid*
 log.txt
+.claude
+CLAUDE.md
+GEMINI.md
+AGENTS.md

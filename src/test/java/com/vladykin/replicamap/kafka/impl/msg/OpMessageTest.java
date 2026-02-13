@@ -4,16 +4,21 @@ import com.vladykin.replicamap.kafka.TestDeserializer;
 import com.vladykin.replicamap.kafka.TestSerializer;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.function.BiFunction;
+import com.vladykin.replicamap.kafka.impl.serde.OpMessageDeserializer;
+import com.vladykin.replicamap.kafka.impl.serde.OpMessageSerializer;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serializer;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.BiFunction;
+
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_REQUEST;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.UUID_SIZE_BYTES;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -34,7 +39,7 @@ class OpMessageTest {
         ser.configure(null, false);
         des.configure(null, false);
 
-        long clientId = 1;
+        UUID clientId = UUID.randomUUID();
 
         String v1 = "abcxyz";
         String v2 = "qwerty";
@@ -42,17 +47,17 @@ class OpMessageTest {
 
         OpMessage msg = new MapUpdate((byte)1, clientId, 1, v1, v2, function);
         byte[] msgBytes = ser.serialize(null, msg);
-        assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 6 + 1 + 1, msgBytes.length);
+        assertEquals(1 + UUID_SIZE_BYTES + 1 + 1 + 6 + 1 + 6 + 1 + 1, msgBytes.length);
         assertEqualsFull(msg, des.deserialize(null, msgBytes));
 
         msg = new MapUpdate((byte)1, clientId, 1, null, v2, function);
         msgBytes = ser.serialize(null, msg);
-        assertEquals(1 + 1 + 1 + 1 + 0 + 1 + 6 + 1 + 1, msgBytes.length);
+        assertEquals(1 + UUID_SIZE_BYTES + 1 + 1 + 0 + 1 + 6 + 1 + 1, msgBytes.length);
         assertEqualsFull(msg, des.deserialize(null, msgBytes));
 
         msg = new MapUpdate((byte)1, clientId, 1, v1, null, null);
         msgBytes = ser.serialize(null, msg);
-        assertEquals(1 + 1 + 1 + 1 + 6 + 1 + 0 + 1 + 0, msgBytes.length);
+        assertEquals(1 + UUID_SIZE_BYTES + 1 + 1 + 6 + 1 + 0 + 1 + 0, msgBytes.length);
         assertEqualsFull(msg, des.deserialize(null, msgBytes));
 
         // compatibility
@@ -82,22 +87,20 @@ class OpMessageTest {
         OpMessageSerializer<Void> ser = new OpMessageSerializer<>((TestSerializer<Void>)(topic, msg) -> null, null);
         OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((TestDeserializer<Void>)(topic, msgBytes) -> null, null);
 
-        long clientId = 5;
+        UUID clientId = UUID.randomUUID();
         long flushOffsetOps = 7;
-        long cleanOffsetOps = 11;
 
-        FlushRequest msg = new FlushRequest(clientId, flushOffsetOps, cleanOffsetOps);
+        FlushRequest msg = new FlushRequest(clientId, flushOffsetOps);
 
         byte[] msgBytes = ser.serialize(null, msg);
-        assertEquals(1 + 1 + 1 + 1 + 1, msgBytes.length);
+        assertEquals(1 + UUID_SIZE_BYTES + 1, msgBytes.length);
 
         FlushRequest msgx = (FlushRequest)des.deserialize(null, msgBytes);
         assertEqualsFull(msg, msgx);
 
         assertEquals(OP_FLUSH_REQUEST, msgx.getOpType());
         assertEquals(clientId, msgx.getClientId());
-        assertEquals(flushOffsetOps, msgx.getFlushOffsetOps());
-        assertEquals(cleanOffsetOps, msgx.getCleanOffsetOps());
+        assertEquals(flushOffsetOps, msgx.getOpsOffset());
     }
 
     @Test
@@ -105,22 +108,20 @@ class OpMessageTest {
         OpMessageSerializer<Void> ser = new OpMessageSerializer<>((TestSerializer<Void>)(topic, msg) -> null, null);
         OpMessageDeserializer<Void> des = new OpMessageDeserializer<>((TestDeserializer<Void>)(topic, msgBytes) -> null, null);
 
-        long clientId = 5;
+        UUID clientId = UUID.randomUUID();
         long flushOffsetOps = 7;
-        long flushOffsetData = 9;
 
-        FlushNotification msg = new FlushNotification(clientId, flushOffsetData, flushOffsetOps);
+        FlushNotification msg = new FlushNotification(clientId, flushOffsetOps);
 
         byte[] msgBytes = ser.serialize(null, msg);
-        assertEquals(1 + 1 + 1 + 1 + 1, msgBytes.length);
+        assertEquals(1 + UUID_SIZE_BYTES + 1, msgBytes.length);
 
         FlushNotification msgx = (FlushNotification)des.deserialize(null, msgBytes);
         assertEqualsFull(msg, msgx);
 
         assertEquals(OP_FLUSH_NOTIFICATION, msgx.getOpType());
         assertEquals(clientId, msgx.getClientId());
-        assertEquals(flushOffsetOps, msgx.getFlushOffsetOps());
-        assertEquals(flushOffsetData, msgx.getFlushOffsetData());
+        assertEquals(flushOffsetOps, msgx.getOpsOffset());
     }
 
     static class ConfigurableCloseable {

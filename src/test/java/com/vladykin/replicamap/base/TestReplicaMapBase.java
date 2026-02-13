@@ -1,9 +1,10 @@
 package com.vladykin.replicamap.base;
 
 import com.vladykin.replicamap.ReplicaMapManager;
+
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
@@ -14,7 +15,7 @@ public abstract class TestReplicaMapBase<K, V> extends ReplicaMapBase<K, V> {
         Map<K,V> map,
         Semaphore maxActiveOps
     ) {
-        this(id, map, maxActiveOps, true, Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        this(id, map, maxActiveOps, true, Duration.ofNanos(Long.MAX_VALUE));
     }
 
     public TestReplicaMapBase(
@@ -22,10 +23,9 @@ public abstract class TestReplicaMapBase<K, V> extends ReplicaMapBase<K, V> {
         Map<K,V> map,
         Semaphore maxActiveOps,
         boolean checkPrecondition,
-        long sendTimeout,
-        TimeUnit timeUnit
+        Duration sendTimeout
     ) {
-        super(id, map, maxActiveOps, checkPrecondition, sendTimeout, timeUnit);
+        super(id, map, maxActiveOps, checkPrecondition, sendTimeout);
     }
 
     @Override

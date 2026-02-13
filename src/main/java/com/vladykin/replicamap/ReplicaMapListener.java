@@ -9,7 +9,7 @@ package com.vladykin.replicamap;
  * @see ReplicaMap#setListener(ReplicaMapListener)
  * @see ReplicaMap#casListener(ReplicaMapListener, ReplicaMapListener)
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public interface ReplicaMapListener<K,V> {
     /**

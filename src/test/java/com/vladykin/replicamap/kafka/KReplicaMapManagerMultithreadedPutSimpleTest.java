@@ -3,6 +3,13 @@ package com.vladykin.replicamap.kafka;
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import org.apache.kafka.common.serialization.IntegerDeserializer;
+import org.apache.kafka.common.serialization.IntegerSerializer;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.LongSerializer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -15,12 +22,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
-import org.apache.kafka.common.serialization.IntegerDeserializer;
-import org.apache.kafka.common.serialization.IntegerSerializer;
-import org.apache.kafka.common.serialization.LongDeserializer;
-import org.apache.kafka.common.serialization.LongSerializer;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;

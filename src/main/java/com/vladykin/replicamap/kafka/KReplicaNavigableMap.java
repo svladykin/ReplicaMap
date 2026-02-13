@@ -1,14 +1,15 @@
 package com.vladykin.replicamap.kafka;
 
 import com.vladykin.replicamap.ReplicaNavigableMap;
+
+import java.time.Duration;
 import java.util.NavigableMap;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Implementation of {@link ReplicaNavigableMap} over Kafka.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class KReplicaNavigableMap<K,V> extends KReplicaMap<K,V> implements ReplicaNavigableMap<K,V> {
     public KReplicaNavigableMap(
@@ -17,10 +18,9 @@ public class KReplicaNavigableMap<K,V> extends KReplicaMap<K,V> implements Repli
         NavigableMap<K,V> map,
         Semaphore opsSemaphore,
         boolean checkPrecondition,
-        long sendTimeout,
-        TimeUnit timeUnit
+        Duration sendTimeout
     ) {
-        super(mgr, id, map, opsSemaphore, checkPrecondition, sendTimeout, timeUnit);
+        super(mgr, id, map, opsSemaphore, checkPrecondition, sendTimeout);
     }
 
     @Override

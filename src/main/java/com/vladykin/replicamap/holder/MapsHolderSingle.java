@@ -1,6 +1,7 @@
 package com.vladykin.replicamap.holder;
 
 import com.vladykin.replicamap.ReplicaMap;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -10,9 +11,12 @@ import static com.vladykin.replicamap.base.ReplicaMapBase.interruptRunningOps;
 /**
  * Convenience holder implementation that contains only a single map.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
-public class MapsHolderSingle extends AtomicReference<ReplicaMap<?,?>> implements MapsHolder {
+public class MapsHolderSingle implements MapsHolder {
+
+    protected final AtomicReference<ReplicaMap<?,?>> ref = new AtomicReference<>();
+
     /**
      * Create new inner map to wrap with {@link ReplicaMap}.
      * Override this method to create custom inner map.
@@ -29,14 +33,14 @@ public class MapsHolderSingle extends AtomicReference<ReplicaMap<?,?>> implement
         if (mapId != getDefaultMapId())
             throw new IllegalArgumentException("Unexpected map id: " + mapId);
 
-        ReplicaMap<K,V> map = (ReplicaMap<K,V>)get();
+        ReplicaMap<K,V> map = (ReplicaMap<K,V>)ref.get();
 
         if (map == null) {
             Map<K,V> innerMap = createInnerMap();
             map = factory.createReplicaMap(mapId, innerMap);
 
-            if (!compareAndSet(null, map))
-                return (ReplicaMap<K,V>)get();
+            if (!ref.compareAndSet(null, map))
+                return (ReplicaMap<K,V>)ref.get();
         }
 
         return map;
@@ -54,6 +58,6 @@ public class MapsHolderSingle extends AtomicReference<ReplicaMap<?,?>> implement
 
     @Override
     public void close() {
-        interruptRunningOps(getAndSet(null));
+        interruptRunningOps(ref.getAndSet(null));
     }
 }

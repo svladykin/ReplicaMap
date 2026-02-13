@@ -3,16 +3,17 @@ package com.vladykin.replicamap.kafka;
 import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.base.ReplicaMapBase;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 /**
  * Implementation of {@link ReplicaMap} over Kafka.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class KReplicaMap<K,V> extends ReplicaMapBase<K,V> {
     protected final KReplicaMapManager manager;
@@ -23,10 +24,9 @@ public class KReplicaMap<K,V> extends ReplicaMapBase<K,V> {
         Map<K,V> map,
         Semaphore opsSemaphore,
         boolean checkPrecondition,
-        long sendTimeout,
-        TimeUnit timeUnit
+        Duration sendTimeout
     ) {
-        super(id, map, opsSemaphore, checkPrecondition, sendTimeout, timeUnit);
+        super(id, map, opsSemaphore, checkPrecondition, sendTimeout);
         this.manager = Utils.requireNonNull(manager, "mgr");
     }
 

@@ -5,6 +5,9 @@ import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.holder.MapsHolderMulti;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.Map;
@@ -18,8 +21,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static com.vladykin.replicamap.kafka.KReplicaMapManager.State.RUNNING;

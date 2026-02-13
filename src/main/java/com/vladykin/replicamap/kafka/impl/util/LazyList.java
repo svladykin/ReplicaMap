@@ -7,7 +7,7 @@ import java.util.function.IntFunction;
 /**
  * Thread-safe list allowing to lazily initialize elements and reset them.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class LazyList<T> implements AutoCloseable {
     protected final AtomicReferenceArray<CompletableFuture<T>> arr;

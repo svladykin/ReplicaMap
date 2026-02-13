@@ -5,18 +5,9 @@ import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.msg.MapUpdate;
 import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
-import com.vladykin.replicamap.kafka.impl.util.Box;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import com.vladykin.replicamap.kafka.impl.worker.Worker;
 import com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.LongAdder;
-import java.util.stream.Collectors;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -29,10 +20,20 @@ import org.apache.kafka.common.header.Header;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.stream.Collectors;
+
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REMOVE_ANY;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT_MS;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT;
 import static com.vladykin.replicamap.kafka.impl.worker.flush.FlushWorker.OPS_OFFSET_HEADER;
 import static java.util.Collections.singleton;
 
@@ -40,12 +41,12 @@ import static java.util.Collections.singleton;
  * Loads the initial state from the `data` topic and then
  * polls the `ops` topic and applies the updates to the inner map.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class OpsWorker extends Worker implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(OpsWorker.class);
 
-    protected final long clientId;
+    protected final UUID clientId;
 
     protected final String dataTopic;
     protected final String opsTopic;
@@ -59,7 +60,6 @@ public class OpsWorker extends Worker implements AutoCloseable {
 
     protected final int flushPeriodOps;
     protected final List<FlushQueue> flushQueues;
-    protected final Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
 
     protected final OpsUpdateHandler updateHandler;
 
@@ -67,15 +67,13 @@ public class OpsWorker extends Worker implements AutoCloseable {
     protected Map<TopicPartition,Long> endOffsetsOps;
     protected int maxAllowedSteadyLag;
 
-    protected final Map<TopicPartition,FlushNotification> lastFlushNotifications = new HashMap<>();
-
     protected final LongAdder sentFlushRequests;
     protected final LongAdder receivedUpdates;
     protected final LongAdder receivedDataRecords;
     protected final LongAdder receivedFlushNotifications;
 
     public OpsWorker(
-        long clientId,
+        UUID clientId,
         String dataTopic,
         String opsTopic,
         String flushTopic,
@@ -86,15 +84,13 @@ public class OpsWorker extends Worker implements AutoCloseable {
         Producer<Object,FlushRequest> flushProducer,
         int flushPeriodOps,
         List<FlushQueue> flushQueues,
-        Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue,
         OpsUpdateHandler updateHandler,
         LongAdder sentFlushRequests,
         LongAdder receivedUpdates,
         LongAdder receivedDataRecords,
         LongAdder receivedFlushNotifications
     ) {
-        super("replicamap-ops-" + dataTopic + "-" +
-            Long.toHexString(clientId), workerId);
+        super("replicamap-ops-" + dataTopic + "-" + workerId + "-" + clientId);
 
         if (assignedParts == null || assignedParts.isEmpty())
             throw new ReplicaMapException("Ops worker " + workerId + " received 0 partitions.");
@@ -112,7 +108,6 @@ public class OpsWorker extends Worker implements AutoCloseable {
         this.flushProducer = flushProducer;
         this.flushPeriodOps = flushPeriodOps;
         this.flushQueues = flushQueues;
-        this.cleanQueue = cleanQueue;
         this.updateHandler = updateHandler;
         this.sentFlushRequests = sentFlushRequests;
         this.receivedUpdates = receivedUpdates;
@@ -158,7 +153,7 @@ public class OpsWorker extends Worker implements AutoCloseable {
         ConsumerRecord<Object,Object> lastDataRec = null;
 
         for (;;) {
-            ConsumerRecords<Object,Object> recs = Utils.poll(dataConsumer, MIN_POLL_TIMEOUT_MS);
+            ConsumerRecords<Object,Object> recs = Utils.poll(dataConsumer, MIN_POLL_TIMEOUT);
 
             if (recs.isEmpty()) {
                 // With read_committed endOffset means LSO.
@@ -181,95 +176,84 @@ public class OpsWorker extends Worker implements AutoCloseable {
         Object val = dataRec.value();
         byte opType = val == null ? OP_REMOVE_ANY : OP_PUT;
 
+        UUID zero = new UUID(0,0);
+
         receivedDataRecords.increment();
         updateHandler.applyReceivedUpdate(dataRec.topic(), dataRec.partition(), dataRec.offset(),
-            0L, 0L, opType, key, null, val, null, null);
+            zero, 0L, opType, key, null, val, null, null);
     }
 
     protected void applyOpsTopicRecords(TopicPartition opsPart, List<ConsumerRecord<Object,OpMessage>> partRecs) {
-        FlushQueue flushQueue = flushQueues.get(opsPart.partition());
+        var flushQueue = flushQueues.get(opsPart.partition());
+        var updatedValue = new UpdatedValue();
 
-        int lastIndex = partRecs.size() - 1;
-        Box<Object> updatedValueBox = new Box<>();
-
-        for (int i = 0; i <= lastIndex; i++) {
-            updatedValueBox.clear();
-            ConsumerRecord<Object,OpMessage> rec = partRecs.get(i);
+        for (var rec : partRecs) {
+            updatedValue.clear();
 
             if (log.isTraceEnabled())
                 log.trace("Applying op to partition {}, steady: {}, record: {}", opsPart, isSteady(), rec);
 
+            long offset = rec.offset();
             Object key = rec.key();
             OpMessage op = rec.value();
-            long opClientId = op.getClientId();
+            UUID opClientId = op.getClientId();
             byte opType = op.getOpType();
 
+            FlushNotification flushNotification = null;
             boolean updated = false;
-            boolean needClean = false;
-            boolean needFlush = opClientId == clientId && rec.offset() > 0 && rec.offset() % flushPeriodOps == 0;
 
             if (key == null) {
-                if (opType == OP_FLUSH_NOTIFICATION) {
-                    FlushNotification flush = (FlushNotification)op;
-                    receivedFlushNotifications.increment();
+                assert opType == OP_FLUSH_NOTIFICATION : opType;
+                flushNotification = (FlushNotification) op;
+                receivedFlushNotifications.increment();
 
-                    FlushNotification old = lastFlushNotifications.get(opsPart);
-                    // Notifications can arrive out of order, just ignore the outdated ones.
-                    if (old == null || old.getFlushOffsetOps() < flush.getFlushOffsetOps()) {
-                        // If someone else has successfully flushed the data, we need to cleanup our flush queue.
-                        needClean = opClientId != clientId;
-                        lastFlushNotifications.put(opsPart, flush);
-                        log.debug("Received flush notification for partition {}: {}", opsPart, rec);
-                    }
-                }
-                else // Forward compatibility: there are may be new message types.
-                    log.warn("Unexpected op type: {}", (char)op.getOpType());
-            }
-            else {
-                MapUpdate updateOp = (MapUpdate)op;
+                log.debug("Received flush notification for partition {}: {}", opsPart, rec);
+            } else {
+                var updateOp = (MapUpdate) op;
                 receivedUpdates.increment();
 
                 updated = updateHandler.applyReceivedUpdate(
-                    rec.topic(),
-                    rec.partition(),
-                    rec.offset(),
-                    opClientId,
-                    updateOp.getOpId(),
-                    opType,
-                    key,
-                    updateOp.getExpectedValue(),
-                    updateOp.getUpdatedValue(),
-                    updateOp.getFunction(),
-                    updatedValueBox);
+                        rec.topic(),
+                        rec.partition(),
+                        offset,
+                        opClientId,
+                        updateOp.getOpId(),
+                        opType,
+                        key,
+                        updateOp.getExpectedValue(),
+                        updateOp.getUpdatedValue(),
+                        updateOp.getFunction(),
+                        updatedValue);
 
 //                trace.trace("applyOpsTopicRecords updated={}, needFlush={}, key={}, val={}",
 //                    updated, needFlush, key, updatedValueBox.get());
             }
 
-            flushQueue.add(
-                updated ? key : null,
-                updatedValueBox.get(),
-                rec.offset(),
-                needClean || needFlush || i == lastIndex);
+            long oldMaxAddedOffset = flushQueue.addOpsRecord(key, updatedValue.value, offset, updated, flushNotification);
 
-            if (needFlush) {
-                FlushNotification lastFlush = lastFlushNotifications.get(opsPart);
-                long lastCleanOffsetOps = lastFlush == null ? -1L : lastFlush.getFlushOffsetOps();
-                sendFlushRequest(opsPart, rec.offset(), lastCleanOffsetOps);
-            }
-            else if (needClean)
-                sendCleanRequest(opsPart, Utils.cast(rec));
+            if (needFlush(opClientId, oldMaxAddedOffset, offset))
+                sendFlushRequest(opsPart, offset);
         }
     }
 
-    protected void sendCleanRequest(TopicPartition opsPart, ConsumerRecord<Object,FlushNotification> rec) {
-        log.debug("Sending clean request for partition {}: {}", opsPart, rec);
-        cleanQueue.add(rec);
+    protected boolean needFlush(UUID opClientId, long oldMaxAddedOffset, long recOffset) {
+        if (clientId.equals(opClientId)) {
+            assert recOffset > oldMaxAddedOffset;
+
+            // Most of the time we will have just one or two iterations here because of skipped commit offsets,
+            // we may have more iterations when kafka tx failed, and we skip multiple partially committed records,
+            // but that would be an exceptional case.
+            for (long offset = oldMaxAddedOffset + 1; offset <= recOffset; offset++) {
+                if (offset % flushPeriodOps == 0)
+                    return offset != 0;
+            }
+        }
+        return false;
     }
 
-    protected void sendFlushRequest(TopicPartition opsPart, long flushOffsetOps, long lastCleanOffsetOps) {
+    protected void sendFlushRequest(TopicPartition opsPart, long opsOffset) {
         ProducerRecord<Object,FlushRequest> rec = new ProducerRecord<>(flushTopic, opsPart.partition(),
-            null, newFlushRequest(flushOffsetOps, lastCleanOffsetOps));
+            null, newFlushRequest(opsOffset));
 
         log.debug("Sending flush request for partition {}: {}", opsPart, rec);
 
@@ -279,8 +263,8 @@ public class OpsWorker extends Worker implements AutoCloseable {
         });
     }
 
-    protected FlushRequest newFlushRequest(long flushOffsetOps, long lastCleanOffsetOps) {
-        return new FlushRequest(clientId, flushOffsetOps, lastCleanOffsetOps);
+    protected FlushRequest newFlushRequest(long opsOffset) {
+        return new FlushRequest(clientId, opsOffset);
     }
 
     protected void seekOpsOffsets(Map<TopicPartition,Long> opsOffsets) {
@@ -297,17 +281,19 @@ public class OpsWorker extends Worker implements AutoCloseable {
 //            trace.trace("seek offset={}, part={}", offset, part);
 
             opsConsumer.seek(part, offset);
-            flushQueues.get(part.partition()).setMaxOffset(offset - 1); // the last processed offset is expected here
+            flushQueues.get(part.partition()).initUnflushedOpsOffset(offset - 1); // the last processed offset is expected here
 
             checkInterrupted();
         }
     }
 
     protected void processOps() {
+        Duration pollTimeout = Duration.ofSeconds(1);
+
         while (!isInterrupted()) {
             ConsumerRecords<Object,OpMessage> recs;
             try {
-                recs = Utils.poll(opsConsumer, 1000);
+                recs = Utils.poll(opsConsumer, pollTimeout);
             }
             catch (InterruptException | WakeupException e) {
                 if (log.isDebugEnabled())
@@ -413,5 +399,18 @@ public class OpsWorker extends Worker implements AutoCloseable {
     public void close() {
         Utils.close(dataConsumer);
         Utils.close(opsConsumer);
+    }
+
+    protected static class UpdatedValue implements java.util.function.Consumer<Object> {
+        protected Object value;
+
+        @Override
+        public void accept(Object o) {
+            value = o;
+        }
+
+        public void clear() {
+            value = null;
+        }
     }
 }

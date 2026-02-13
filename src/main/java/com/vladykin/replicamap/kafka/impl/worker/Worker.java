@@ -2,50 +2,46 @@ package com.vladykin.replicamap.kafka.impl.worker;
 
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
-import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Abstract worker.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public abstract class Worker implements Runnable {
     private static final Logger log = LoggerFactory.getLogger(Worker.class);
 
-    protected static final AtomicReferenceFieldUpdater<Worker, Thread> THREAD =
-        AtomicReferenceFieldUpdater.newUpdater(Worker.class, Thread.class, "thread");
-    protected static final AtomicIntegerFieldUpdater<Worker> INTERRUPTED =
-        AtomicIntegerFieldUpdater.newUpdater(Worker.class, "interrupted");
-
-    protected final int workerId;
-    protected final String group;
+    protected final String name;
 
     protected volatile Thread thread;
-    protected volatile int interrupted;
 
-    public Worker(String group, int workerId) {
-        this.group = group;
-        this.workerId = workerId;
+    protected final AtomicBoolean started = new AtomicBoolean();
+    protected final AtomicBoolean interrupted = new AtomicBoolean();
+
+    public Worker(String name) {
+        this.name = name;
     }
 
     public String getName() {
-        return group + "-" + workerId;
+        return name;
     }
 
     protected Thread newThread() {
         Thread th = new Thread(this, getName());
         th.setDaemon(true);
-        th.setUncaughtExceptionHandler((thread, error) -> log.error("Worker died: " + thread.getName(), error));
+        th.setUncaughtExceptionHandler((thread, error) -> log.error("Worker died: {}", thread.getName(), error));
         return th;
     }
 
     public void start() {
-        if (!THREAD.compareAndSet(this, null, newThread()))
+        if (started.getAndSet(true))
             throw new IllegalStateException("Worker already was started: " + getName());
 
+        thread = newThread();
         thread.start();
     }
 
@@ -64,7 +60,7 @@ public abstract class Worker implements Runnable {
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
-                log.error("Worker failed: " + getName(), e);
+                log.error("Worker failed: {}", getName(), e);
         }
         finally {
             log.debug("Worker stopped: {}", getName());
@@ -79,7 +75,7 @@ public abstract class Worker implements Runnable {
     }
 
     public boolean interrupt() {
-        if (INTERRUPTED.compareAndSet(this, 0, 1)) {
+        if (interrupted.compareAndSet(false, true)) {
             interruptThread();
 
             return true;
@@ -94,7 +90,7 @@ public abstract class Worker implements Runnable {
     }
 
     public boolean isInterrupted() {
-        if (interrupted != 0)
+        if (interrupted.get())
             return true;
 
         Thread th = thread;

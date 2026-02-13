@@ -1,32 +1,36 @@
 package com.vladykin.replicamap.kafka.impl.worker.flush;
 
-import java.util.ArrayDeque;
-import java.util.HashMap;
-import java.util.OptionalLong;
-import java.util.concurrent.Semaphore;
-import java.util.stream.LongStream;
+import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
+import com.vladykin.replicamap.kafka.impl.util.NonReentrantLock;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+
 /**
  * The queue that collects all the updated keys and values to be flushed.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class FlushQueue {
     private static final Logger log = LoggerFactory.getLogger(FlushQueue.class);
 
-    protected final Semaphore lock = new Semaphore(1);
-    protected final ArrayDeque<MiniRecord> queue = new ArrayDeque<>();
+    protected static final long NOT_INITIALIZED = -2;
 
     protected final TopicPartition dataPart;
+    protected final NonReentrantLock lock = new NonReentrantLock();
 
-    protected long maxAddOffset = Long.MIN_VALUE;
-    protected long maxCleanOffset = -1;
+    protected final ArrayDeque<UpdateRec> unflushedUpdates = new ArrayDeque<>();
+    protected long maxAddedOpsOffset = NOT_INITIALIZED;
 
-    protected final ThreadLocal<ArrayDeque<MiniRecord>> threadLocalQueue =
-        ThreadLocal.withInitial(ArrayDeque::new);
+    protected final ArrayDeque<FlushRequestRec> flushRequests = new ArrayDeque<>();
 
     public FlushQueue(TopicPartition dataPart) {
         this.dataPart = dataPart;
@@ -38,267 +42,275 @@ public class FlushQueue {
 
     @Override
     public String toString() {
-        return "FlushQueue{" +
-            "dataPart=" + dataPart +
-            ", locked=" + (lock.availablePermits() == 0) +
-            '}';
-    }
-
-    /**
-     * @return Size of the internal queue.
-     */
-    public int size() {
-        lock.acquireUninterruptibly();
-        try {
-            return queue.size();
+        if (!lock.tryLock()) {
+            return "FlushQueue{" +
+                    "dataPart=" + dataPart +
+                    '}';
         }
-        finally {
-            lock.release();
+        try (lock) {
+            return "FlushQueue{" +
+                    "dataPart=" + dataPart +
+                    ", unflushedUpdates=" + unflushedUpdates.size() +
+                    ", maxFlushedOpsOffset=" + getMaxFlushedOpsOffset() +
+                    ", maxUnflushedOpsOffset=" + maxAddedOpsOffset +
+                    ", flushRequests=" + flushRequests.size() +
+                    '}';
         }
     }
 
     /**
-     * @param key Key or {@code null} if it is not an update or unsuccessful update attempt.
-     * @param value Value.
-     * @param offset Offset.
-     * @param waitLock If {@code true} then current thread will wait for the lock acquisition,
-     *                 if {@code false} and lock acquisition failed, then operation is allowed
-     *                 to store the record into thread local buffer.
+     * @return Size of the internal unflushed updates queue.
      */
-    public void add(Object key, Object value, long offset, boolean waitLock) {
-        ArrayDeque<MiniRecord> tlq = threadLocalQueue.get();
-
-        if (!lock(waitLock)) {
-            tlq.add(new MiniRecord(key, value, offset));
-            return;
+    public int unflushedUpdatesSize() {
+        lock.lock();
+        try (lock) {
+            return unflushedUpdates.size();
         }
+    }
 
-        try {
-            for (;;) {
-                MiniRecord r = tlq.poll();
+    public long addOpsRecord(
+        Object key,
+        Object value,
+        long offset,
+        boolean successfulUpdate,
+        FlushNotification flushNotification
+    ) {
+        lock.lock();
+        try (lock) {
+            long oldMaxUnflushedOpsOffset = maxAddedOpsOffset;
 
-                if (r == null)
-                    break;
-
-                addRecord(r);
+            if (oldMaxUnflushedOpsOffset == NOT_INITIALIZED || offset <= oldMaxUnflushedOpsOffset) {
+                throw new IllegalStateException(
+                        oldMaxUnflushedOpsOffset == NOT_INITIALIZED ?
+                            "Need to init maxUnflushedOffset." :
+                            "Record offset " + offset + " is not greater than max " + oldMaxUnflushedOpsOffset);
             }
+            maxAddedOpsOffset = offset;
 
-            addRecord(new MiniRecord(key, value, offset));
-        }
-        finally {
-            lock.release();
+            if (flushNotification != null) {
+                log.trace("For partition {} processing flush notification {}", dataPart, flushNotification);
+
+                // Cleanup all the flushed updates from the queue.
+                // Here we have all the flushed updates because we get the notification from the same ops partition,
+                // e.g. all the needed updates are guaranteed to reside in the log before that notification gets into the log.
+                cleanupFlushedUpdates(flushNotification.getOpsOffset());
+            } else if (successfulUpdate) {
+                var rec = new UpdateRec(key, value, offset);
+                log.trace("For partition {} adding update record: {}", dataPart, rec);
+                unflushedUpdates.addLast(rec);
+            }
+            cleanupFlushRequests();
+            return oldMaxUnflushedOpsOffset;
         }
     }
 
+    protected long getMaxFlushedOpsOffset() {
+        assert maxAddedOpsOffset != NOT_INITIALIZED;
+        return unflushedUpdates.isEmpty() ? maxAddedOpsOffset : (unflushedUpdates.peek().offset - 1);
+    }
+
     /**
-     * Setup the max offset before adding records.
+     * Set up the unflushed ops offset before adding records.
      *
      * @param offset Offset.
      */
-    public void setMaxOffset(long offset) {
-        if (offset < -1)
+    public void initUnflushedOpsOffset(long offset) {
+        if (offset <= NOT_INITIALIZED)
             throw new IllegalArgumentException("Illegal offset: " + offset);
 
-        lock.acquireUninterruptibly();
-        try {
-            if (maxAddOffset != Long.MIN_VALUE)
-                throw new IllegalStateException("Max offset is already set: " + maxAddOffset);
+        lock.lock();
+        try (lock) {
+            if (maxAddedOpsOffset != NOT_INITIALIZED)
+                throw new IllegalStateException("Max offset is already set: " + maxAddedOpsOffset);
 
-            maxAddOffset = offset;
-        }
-        finally {
-            lock.release();
+            maxAddedOpsOffset = offset;
         }
     }
 
-    protected void addRecord(MiniRecord rec) {
-        if (maxAddOffset == Long.MIN_VALUE)
-            throw new IllegalStateException("Need to setup max offset: " + maxAddOffset);
+    protected void cleanupFlushedUpdates(long flushedOpsOffset) {
+        UpdateRec updateRec;
+        while ((updateRec = unflushedUpdates.peekFirst()) != null && updateRec.offset <= flushedOpsOffset)
+            unflushedUpdates.pollFirst();
+    }
 
-        long nextOffset = maxAddOffset + 1;
+    protected void cleanupFlushRequests() {
+        cleanupFlushRequests(getMaxFlushedOpsOffset());
+    }
 
-        if (nextOffset != rec.offset()) // check that we do not miss any records
-            throw new IllegalStateException("Expected record offset " + nextOffset + ", actual " + rec.offset());
+    protected void cleanupFlushRequests(long maxFlushedOpsOffset) {
+        FlushRequestRec firstFlushReq;
+        while ((firstFlushReq = flushRequests.peekFirst()) != null && firstFlushReq.opsOffset <= maxFlushedOpsOffset)
+            flushRequests.pollFirst(); // Drop all the old flush requests that are below minUnflushedOpsOffset.
+    }
 
-        maxAddOffset = nextOffset;
-
-        if (rec.key() == null) // non-update record
+    protected void appendNewFlushRequests(List<ConsumerRecord<Object, FlushRequest>> newFlushRequests, long maxFlushedOpsOffset) {
+        if (newFlushRequests.isEmpty())
             return;
 
-        if (log.isTraceEnabled())
-            log.trace("For partition {} add record: {}", dataPart, rec);
+        var lastFlushReq = flushRequests.peekLast();
+        long lastAddedFlushReqOpsOffset = -1;
 
-        queue.add(rec);
-    }
+        if (lastFlushReq != null)
+            lastAddedFlushReqOpsOffset = lastFlushReq.opsOffset;
 
-    protected boolean lock(boolean waitLock) {
-        if (waitLock) {
-            lock.acquireUninterruptibly();
-            return true;
+        for (var rec : newFlushRequests) {
+            long opsOffset = rec.value().getOpsOffset();
+
+            // Bump the out-of-order flush request ops offset to the current max to keep the queue
+            // in strict ascending order and use the latest flush request record offset for commit.
+            if (opsOffset < lastAddedFlushReqOpsOffset)
+                opsOffset = lastAddedFlushReqOpsOffset;
+
+            if (opsOffset > maxFlushedOpsOffset) {
+                if (opsOffset == lastAddedFlushReqOpsOffset)
+                    flushRequests.pollLast(); // Avoid duplicates.
+
+                assert flushRequests.isEmpty() || flushRequests.getLast().offset < rec.offset();
+                flushRequests.addLast(new FlushRequestRec(opsOffset, rec.offset()));
+                lastAddedFlushReqOpsOffset = opsOffset;
+            }
         }
-        return lock.tryAcquire();
     }
 
     /**
-     * Collects records to the given batch.
-     * Does not modify the state.
-     *
-     * @param maxOffsets Max offsets to collect (inclusive). The stream is expected to be sorted.
      * @return Collected batch.
      */
-    public Batch collect(LongStream maxOffsets) {
-        lock.acquireUninterruptibly();
-        try {
-            if (queue.isEmpty())
+    public Batch collectBatch(List<ConsumerRecord<Object, FlushRequest>> newFlushRequests) {
+        lock.lock();
+        try (lock) {
+            if (maxAddedOpsOffset == NOT_INITIALIZED)
+                throw new IllegalStateException("Need to init maxUnflushedOpsOffset.");
+
+            long maxFlushedOpsOffset = getMaxFlushedOpsOffset();
+            cleanupFlushRequests(maxFlushedOpsOffset);
+            appendNewFlushRequests(newFlushRequests, maxFlushedOpsOffset);
+
+            if (unflushedUpdates.isEmpty() || flushRequests.isEmpty())
                 return null;
 
-            OptionalLong maxOffsetOptional = maxOffsets
-                .filter(offset -> offset <= maxAddOffset)
-                .max();
+            long maxReadyOpsOffset = -1;
+            long maxReadyFlushOffset = -1;
 
-            if (!maxOffsetOptional.isPresent())
-                return null;
-
-            long maxOffset = maxOffsetOptional.getAsLong();
-            long minOffset = queue.peek().offset();
-
-            if (minOffset > maxOffset)
-                return null;
-
-            Batch dataBatch = new Batch(minOffset, maxOffset, maxCleanOffset);
-
-            for (MiniRecord rec : queue) {
-                if (rec.offset() > maxOffset)
+            for (var flushReq : flushRequests) {
+                if (flushReq.opsOffset > maxAddedOpsOffset)
                     break;
 
-                dataBatch.put(rec.key(), rec.value());
+                maxReadyOpsOffset = flushReq.opsOffset;
+                assert maxReadyOpsOffset >= maxFlushedOpsOffset; // We clear earlier and do not add more like this.
+
+                maxReadyFlushOffset = flushReq.offset;
             }
 
+            if (maxReadyOpsOffset == -1)
+                return null;
+
+            var dataBatch = new Batch(maxReadyOpsOffset, maxReadyFlushOffset);
+
+            for (var rec : unflushedUpdates) {
+                if (rec.offset > maxReadyOpsOffset)
+                    break;
+
+                dataBatch.put(rec.key, rec.value);
+            }
             return dataBatch;
         }
-        finally {
-            lock.release();
+    }
+
+    public void resetFlushRequests() {
+        lock.lock();
+        try (lock) {
+            flushRequests.clear();
         }
     }
 
-    /**
-     * Cleans the flush queue until the given max offset.
-     * @param maxOffset Max offset.
-     * @param reason The context of this cleaning.
-     * @return Actual number of cleaned events.
-     */
-    public long clean(long maxOffset, String reason) {
-        lock.acquireUninterruptibly();
-        try {
-            if (maxCleanOffset >= maxOffset)
-                return 0;
+    public class Batch implements Iterable<Map.Entry<Object,Object>> {
+        protected final long opsOffset;
+        protected final long flushRequestOffset;
 
-//            trace.trace("clean {} {} maxOffset={}, maxCleanOffset={}, maxAddOffset={}",
-//                reason, dataPart, maxOffset, maxCleanOffset, maxAddOffset);
+        protected final Map<Object,Object> data = new HashMap<>();
 
-            for (;;) {
-                MiniRecord rec = queue.peek();
-
-                if (rec == null || rec.offset() > maxOffset)
-                    break;
-
-                queue.poll();
-            }
-
-            long cleanedCnt = maxOffset - maxCleanOffset;
-
-            if (log.isDebugEnabled()) {
-                log.debug("For partition {} clean maxCleanOffset: {} -> {}, reason: {}",
-                    dataPart, maxCleanOffset, maxOffset, reason);
-            }
-
-            maxCleanOffset = maxOffset;
-
-            if (maxCleanOffset > maxAddOffset) {
-                assert queue.isEmpty();
-
-                if (log.isDebugEnabled())
-                    log.debug("For partition {} clean maxAddOffset: {} -> {}", dataPart, maxAddOffset, maxCleanOffset);
-
-                maxAddOffset = maxCleanOffset;
-            }
-
-            return cleanedCnt;
-        }
-        finally {
-            lock.release();
-        }
-    }
-
-    public static class Batch extends HashMap<Object,Object> {
-        protected final long minOffset;
-        protected final long maxOffset;
-        protected final long maxCleanOffset;
-
-        public Batch(long minOffset, long maxOffset, long maxCleanOffset) {
-            this.minOffset = minOffset;
-            this.maxOffset = maxOffset;
-            this.maxCleanOffset = maxCleanOffset;
+        protected Batch(long opsOffset, long flushRequestOffset) {
+            this.opsOffset = opsOffset;
+            this.flushRequestOffset = flushRequestOffset;
         }
 
-        public int getCollectedAll() {
-            return (int)Math.max(0, maxOffset - maxCleanOffset);
-        }
-
-        public long getMinOffset() {
-            return minOffset;
-        }
-
-        public long getMaxOffset() {
-            return maxOffset;
-        }
-
-        public long getMaxCleanOffset() {
-            return maxCleanOffset;
+        public long getFlushRequestOffset() {
+            return flushRequestOffset;
         }
 
         @Override
         public String toString() {
             return "Batch{" +
-                "minOffset=" + getMinOffset() +
-                ", maxOffset=" + getMaxOffset() +
-                ", maxCleanOffset=" + getMaxCleanOffset() +
-                ", collectedAll=" + getCollectedAll() +
-                ", size=" + size() +
-                ", map=" + super.toString() +
+                "opsOffset=" + opsOffset +
+                ", flushOffset=" + flushRequestOffset +
+                ", size=" + data.size() +
+                ", data=" + data +
                 '}';
+        }
+
+        public void put(Object key, Object value) {
+            data.put(key, value);
+        }
+
+        public int commit() {
+            lock.lock();
+            try (lock) {
+                int cleaned = Math.toIntExact(opsOffset - getMaxFlushedOpsOffset());
+                cleanupFlushedUpdates(opsOffset);
+                cleanupFlushRequests();
+                return cleaned;
+            }
+        }
+
+        @Override
+        public Iterator<Map.Entry<Object, Object>> iterator() {
+            return data.entrySet().iterator();
+        }
+
+        public int size() {
+            return data.size();
         }
     }
 
-    protected static class MiniRecord {
+    protected static class UpdateRec {
+        protected final long offset;
         protected final Object key;
         protected final Object value;
-        protected final long offset;
 
-        public MiniRecord(Object key, Object value, long offset) {
+        protected UpdateRec(Object key, Object value, long offset) {
+            assert key != null: "key is null";
+            assert offset >= 0 : offset;
             this.key = key;
             this.value = value;
             this.offset = offset;
         }
 
-        public Object key() {
-            return key;
+        @Override
+        public String toString() {
+            return "UpdateRec{" +
+                    "offset=" + offset +
+                    ", key=" + key +
+                    ", value=" + value +
+                    '}';
         }
+    }
 
-        public Object value() {
-            return value;
-        }
+    protected static class FlushRequestRec {
+        protected final long offset;
+        protected final long opsOffset;
 
-        public long offset() {
-            return offset;
+        protected FlushRequestRec(long opsOffset, long offset) {
+            assert opsOffset >= 0: "opsOffset: " + opsOffset;
+            assert offset >= 0 : "offset: " + offset;
+            this.opsOffset = opsOffset;
+            this.offset = offset;
         }
 
         @Override
         public String toString() {
-            return "MiniRecord{" +
-                "key=" + key +
-                ", value=" + value +
-                ", offset=" + offset +
+            return "FlushRequestRec{" +
+                    "offset=" + offset +
+                    ", opsOffset=" + opsOffset +
                 '}';
         }
     }

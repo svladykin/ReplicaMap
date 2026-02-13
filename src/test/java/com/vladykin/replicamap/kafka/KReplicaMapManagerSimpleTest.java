@@ -8,6 +8,11 @@ import com.vladykin.replicamap.ReplicaMapListener;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -16,10 +21,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
-import org.apache.kafka.clients.admin.AdminClient;
-import org.apache.kafka.clients.admin.NewTopic;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_DESERIALIZER_CLASS;
@@ -27,7 +28,6 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_SER
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
-import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_POLL_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
@@ -76,7 +76,6 @@ class KReplicaMapManagerSimpleTest {
         HashMap<String,Object> cfg = new HashMap<>();
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
         cfg.put(FLUSH_PERIOD_OPS, 4);
-        cfg.put(FLUSH_MAX_POLL_TIMEOUT_MS, 10L);
 
         cfg.put(COMPUTE_SERIALIZER_CLASS, JoinStringsSerializer.class);
         cfg.put(COMPUTE_DESERIALIZER_CLASS, JoinStringsDeserializer.class);
@@ -123,7 +122,7 @@ class KReplicaMapManagerSimpleTest {
         assertTrue(utils.consumeAllRecordsFromTopic(flushTopic).isEmpty());
     }
 
-    @SuppressWarnings({"Convert2MethodRef", "ResultOfMethodCallIgnored"})
+    @SuppressWarnings({"Convert2MethodRef"})
     @Test
     void testSimple() throws Exception {
         JoinStringsSerializer.canSerialize = false;

@@ -3,15 +3,16 @@ package com.vladykin.replicamap.kafka;
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.ReplicaMapManager;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.TreeMap;
-import java.util.concurrent.TimeUnit;
 import org.apache.kafka.common.serialization.LongDeserializer;
 import org.apache.kafka.common.serialization.LongSerializer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.concurrent.TimeUnit;
 
 public class FlowersTest {
     @RegisterExtension

@@ -3,11 +3,12 @@ package com.vladykin.replicamap.kafka;
 import com.salesforce.kafka.test.KafkaTestUtils;
 import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
 import com.vladykin.replicamap.ReplicaMapException;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.createTopics;

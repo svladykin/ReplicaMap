@@ -1,39 +1,24 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
+import java.util.Objects;
+import java.util.UUID;
+
 /**
  * Notification message about successful flush.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class FlushNotification extends OpMessage {
 
-    protected final long flushOffsetData;
-    protected final long flushOffsetOps;
+    protected final long opsOffset;
 
-    public FlushNotification(long clientId, long flushOffsetData, long flushOffsetOps) {
+    public FlushNotification(UUID clientId, long opsOffset) {
         super(OP_FLUSH_NOTIFICATION, clientId);
-
-        this.flushOffsetData = flushOffsetData;
-        this.flushOffsetOps = flushOffsetOps;
+        this.opsOffset = opsOffset;
     }
 
-    @SuppressWarnings("unused")
-    FlushNotification(long clientId, long flushOffsetData, long flushOffsetOps, long ignore) { // Backward compatibility.
-        this(clientId, flushOffsetData, flushOffsetOps);
-    }
-
-    /**
-     * @return Offset of the last flushed data record.
-     */
-    public long getFlushOffsetData() {
-        return flushOffsetData;
-    }
-
-    /**
-     * @return Offset of the last flushed operation.
-     */
-    public long getFlushOffsetOps() {
-        return flushOffsetOps;
+    public long getOpsOffset() {
+        return opsOffset;
     }
 
     @Override
@@ -43,29 +28,26 @@ public class FlushNotification extends OpMessage {
 
         FlushNotification that = (FlushNotification)o;
 
-        if (flushOffsetData != that.flushOffsetData) return false;
-        if (flushOffsetOps != that.flushOffsetOps) return false;
+        return opType == that.opType &&
+                opsOffset == that.opsOffset &&
+                Objects.equals(clientId, that.clientId);
 
-        if (opType != that.opType) return false;
-        return clientId == that.clientId;
     }
 
     @Override
     public int hashCode() {
         int result = opType;
-        result = 31 * result + Long.hashCode(clientId);
-        result = 31 * result + Long.hashCode(flushOffsetData);
-        result = 31 * result + Long.hashCode(flushOffsetOps);
+        result = 31 * result + clientId.hashCode();
+        result = 31 * result + Long.hashCode(opsOffset);
         return result;
     }
 
     @Override
     public String toString() {
         return "FlushNotification{" +
-            "flushOffsetData=" + flushOffsetData +
-            ", flushOffsetOps=" + flushOffsetOps +
-            ", clientId=" + Long.toHexString(clientId) +
-            ", opType=" + (char)opType +
+                "opType=" + (char)opType +
+                ", clientId=" + clientId +
+                ", opsOffset=" + opsOffset +
             '}';
     }
 }

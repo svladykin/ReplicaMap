@@ -4,26 +4,9 @@ import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
-import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import com.vladykin.replicamap.kafka.impl.worker.Worker;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.LongAdder;
-import java.util.function.IntFunction;
-import java.util.function.Supplier;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -40,8 +23,20 @@ import org.apache.kafka.common.header.internals.RecordHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT_MS;
+import java.time.Duration;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.function.IntFunction;
+import java.util.function.Supplier;
+
 import static java.util.Collections.singleton;
 import static java.util.Collections.singletonMap;
 import static java.util.stream.Collectors.toList;
@@ -50,77 +45,61 @@ import static java.util.stream.Collectors.toList;
  * Processes flush requests (flushes the collected updates to the `data` topic)
  * and clean requests (cleans the flush queue).
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class FlushWorker extends Worker implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(FlushWorker.class);
 
     public static final String OPS_OFFSET_HEADER = "replicamap.ops";
 
-    protected final long clientId;
+    protected final UUID clientId;
 
     protected final String dataTopic;
     protected final String opsTopic;
     protected final String flushTopic;
 
-    protected final String flushConsumerGroupId;
     protected final LazyList<Consumer<Object,FlushRequest>> flushConsumers;
     protected final Supplier<Consumer<Object,FlushRequest>> flushConsumerFactory;
 
     protected final LazyList<Producer<Object,Object>> dataProducers;
     protected final IntFunction<Producer<Object,Object>> dataProducerFactory;
 
-    protected final Producer<Object,OpMessage> opsProducer;
-
-    protected final Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue;
     protected final List<FlushQueue> flushQueues;
 
     protected final CompletableFuture<ReplicaMapManager> opsSteadyFut;
 
-    protected final long maxPollTimeout;
-
-    protected final Map<TopicPartition,UnprocessedFlushRequests> unprocessedFlushRequests = new HashMap<>();
     protected final short[] allowedPartitions;
-    protected final Set<TopicPartition> assignedPartitions = Collections.newSetFromMap(new ConcurrentHashMap<>());
+    protected Set<TopicPartition> assignedPartitions = new HashSet<>();
 
     protected final LongAdder receivedFlushRequests;
     protected final LongAdder successfulFlushes;
 
     public FlushWorker(
-        long clientId,
+        UUID clientId,
         String dataTopic,
         String opsTopic,
         String flushTopic,
         int workerId,
-        String flushConsumerGroupId,
-        Producer<Object,OpMessage> opsProducer,
         List<FlushQueue> flushQueues,
-        Queue<ConsumerRecord<Object,FlushNotification>> cleanQueue,
         CompletableFuture<ReplicaMapManager> opsSteadyFut,
         LongAdder receivedFlushRequests,
         LongAdder successfulFlushes,
-        long maxPollTimeout,
         short[] allowedPartitions,
         LazyList<Producer<Object,Object>> dataProducers,
         IntFunction<Producer<Object,Object>> dataProducerFactory,
         LazyList<Consumer<Object,FlushRequest>> flushConsumers,
         Supplier<Consumer<Object,FlushRequest>> flushConsumerFactory
     ) {
-        super("replicamap-flush-" + dataTopic + "-" +
-            Long.toHexString(clientId), workerId);
+        super("replicamap-flush-" + dataTopic + "-" + workerId + "-" + clientId);
 
         this.clientId = clientId;
         this.dataTopic = dataTopic;
         this.opsTopic = opsTopic;
         this.flushTopic = flushTopic;
-        this.flushConsumerGroupId = flushConsumerGroupId;
-        this.opsProducer = opsProducer;
         this.flushQueues = flushQueues;
-        this.cleanQueue = cleanQueue;
         this.opsSteadyFut = opsSteadyFut;
         this.receivedFlushRequests = receivedFlushRequests;
         this.successfulFlushes = successfulFlushes;
-        this.maxPollTimeout = maxPollTimeout;
         this.allowedPartitions = allowedPartitions;
         this.dataProducers = dataProducers;
         this.dataProducerFactory = dataProducerFactory;
@@ -136,14 +115,12 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
     @Override
     protected void doRun() throws Exception {
-        long pollTimeoutMs = MIN_POLL_TIMEOUT_MS;
+        // Need shorter time to periodically check incoming ops in the flush queues,
+        // at the same time do not want to burn cpu.
+        var pollTimeout = Duration.ofMillis(20);
 
-        while (!isInterrupted()) {
-            boolean flushed = processFlushRequests(pollTimeoutMs);
-            boolean cleaned = processCleanRequests();
-
-            pollTimeoutMs = updatePollTimeout(pollTimeoutMs, flushed, cleaned);
-        }
+        while (!isInterrupted())
+            processFlushRequests(pollTimeout);
     }
 
     @Override
@@ -152,57 +129,10 @@ public class FlushWorker extends Worker implements AutoCloseable {
         super.interruptThread();
     }
 
-    protected long updatePollTimeout(long pollTimeoutMs, boolean flushed, boolean cleaned) {
-        return flushed || cleaned ? MIN_POLL_TIMEOUT_MS : Math.min(pollTimeoutMs * 2, maxPollTimeout);
-    }
-
-    protected boolean processCleanRequests() {
-        for (int cnt = 0;; cnt++) {
-            ConsumerRecord<Object,FlushNotification> cleanRequest = cleanQueue.poll();
-
-            if (cleanRequest == null || isInterrupted())
-                return cnt > 0;
-
-            FlushNotification op = cleanRequest.value();
-            assert op.getOpType() == OP_FLUSH_NOTIFICATION && op.getClientId() != clientId: op;
-
-            long flushOffsetOps = op.getFlushOffsetOps();
-            int part = cleanRequest.partition();
-
-            FlushQueue flushQueue = flushQueues.get(part);
-            long cleanedCnt = flushQueue.clean(flushOffsetOps, "processCleanRequests");
-
-            if (log.isDebugEnabled()) {
-                log.debug("Processed clean request for partition {}, flushQueueSize: {}, cleanedCnt: {}, clean request: {}",
-                    new TopicPartition(cleanRequest.topic(), cleanRequest.partition()), cleanedCnt,
-                    flushQueue.size(), cleanRequest);
-            }
-        }
-    }
-
-    protected void clearUnprocessedFlushRequestsUntil(TopicPartition flushPart, long maxOffsetOps) {
-        UnprocessedFlushRequests flushReqs = unprocessedFlushRequests.get(flushPart);
-        if (flushReqs != null && !flushReqs.isEmpty())
-            flushReqs.clearUntil(maxOffsetOps);
-        // Do not remove empty flushReqs from unprocessedFlushRequests,
-        // otherwise we will reload flush history each time.
-    }
-
-    protected boolean awaitOpsWorkersSteady(long pollTimeoutMs) throws ExecutionException, InterruptedException {
-        try {
-            opsSteadyFut.get(pollTimeoutMs, TimeUnit.MILLISECONDS);
-            return true;
-        }
-        catch (TimeoutException e) {
-            return false;
-        }
-    }
-
-    protected boolean processFlushRequests(long pollTimeoutMs) throws InterruptedException, ExecutionException {
+    protected void processFlushRequests(Duration pollTimeout) throws InterruptedException, ExecutionException {
         // We start consuming flush requests only when the ops workers are steady,
         // because otherwise we may have not enough data to flush.
-        if (!awaitOpsWorkersSteady(pollTimeoutMs))
-            return false;
+        opsSteadyFut.get();
 
         Consumer<Object,FlushRequest> flushConsumer;
         try {
@@ -210,47 +140,31 @@ public class FlushWorker extends Worker implements AutoCloseable {
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
-                log.error("Failed to create flush consumer for topic: " + flushTopic, e);
+                log.error("Failed to create flush consumer for topic: {}", flushTopic, e);
 
-            return false;
+            return;
         }
 
         ConsumerRecords<Object,FlushRequest> recs;
         try {
             try {
-                recs = Utils.poll(flushConsumer, pollTimeoutMs);
+                recs = Utils.poll(flushConsumer, pollTimeout);
             }
             catch (NoOffsetForPartitionException e) {
                 initFlushConsumerOffset(flushConsumer, e); // Needed when it is a new empty flush topic.
-                recs = Utils.poll(flushConsumer, pollTimeoutMs);
-            }
-
-            // Add new records to unprocessed set and load history if it is the first flush for the partition.
-            for (TopicPartition flushPart : recs.partitions()) {
-                // Ignore disallowed partitions, they usually should not come except the mixed ReplicaMap versions case.
-                if (isAllowedPartition(flushPart))
-                    collectUnprocessedFlushRequests(flushConsumer, flushPart, recs.records(flushPart));
+                recs = Utils.poll(flushConsumer, pollTimeout);
             }
         }
         catch (Exception e) {
             if (!Utils.isInterrupted(e))
-                log.error("Failed to poll flush consumer for topic: " + flushTopic, e);
+                log.error("Failed to poll flush consumer for topic: {}", flushTopic, e);
 
             resetAll(flushConsumer);
-            return false;
+            return;
         }
 
-        boolean flushed = false;
-
-        // Try process the unprocessed set.
-        for (Map.Entry<TopicPartition,UnprocessedFlushRequests> entry : unprocessedFlushRequests.entrySet())
-             flushed |= flushPartition(flushConsumer, entry.getKey(), entry.getValue());
-
-        return flushed;
-    }
-
-    protected boolean isAllowedPartition(TopicPartition part) {
-        return allowedPartitions == null || Utils.contains(allowedPartitions, (short)part.partition());
+        for (var flushPart : assignedPartitions)
+            flushPartition(flushConsumer, flushPart, recs.records(flushPart));
     }
 
     protected void initFlushConsumerOffset(
@@ -268,42 +182,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
         }
     }
 
-    protected void collectUnprocessedFlushRequests(
-        Consumer<Object,FlushRequest> flushConsumer,
-        TopicPartition flushPart,
-        List<ConsumerRecord<Object,FlushRequest>> flushReqsList
-    ) {
-        if (flushReqsList.isEmpty())
-            return;
-
-        UnprocessedFlushRequests flushReqs = unprocessedFlushRequests.get(flushPart);
-
-        // If it is the first batch of records for this partition we need to initialize the processing for it.
-        if (flushReqs == null) {
-            long firstRecOffset = flushReqsList.get(0).offset();
-            boolean loadLastCommittedFlushReq = firstRecOffset > 0;
-
-            flushReqs = new UnprocessedFlushRequests(flushPart, firstRecOffset, !loadLastCommittedFlushReq);
-            unprocessedFlushRequests.put(flushPart, flushReqs);
-
-            if (loadLastCommittedFlushReq) {
-                // We seek for the previous record which is the last committed flush request to make sure that
-                // there will be no issues if the subsequent flush requests will arrive out of order.
-                flushConsumer.seek(flushPart, firstRecOffset - 1);
-                return;
-            }
-        }
-
-        int cnt = flushReqsList.size();
-        if (!flushReqs.isInitialized()) cnt--; // Ignore the last committed flush request.
-        receivedFlushRequests.add(cnt);
-
-        flushReqs.addFlushRequests(flushReqsList);
-    }
-
     protected void resetAll(Consumer<Object,FlushRequest> flushConsumer) {
-        assignedPartitions.clear();
-        unprocessedFlushRequests.clear();
+        assignedPartitions = new HashSet<>();
 
         for (int part = 0; part < dataProducers.size(); part++)
             resetDataProducer(new TopicPartition(flushTopic, part));
@@ -311,62 +191,41 @@ public class FlushWorker extends Worker implements AutoCloseable {
         flushConsumers.reset(0, flushConsumer);
     }
 
-    protected boolean flushPartition(
+    protected void flushPartition(
         Consumer<Object,FlushRequest> flushConsumer,
         TopicPartition flushPart,
-        UnprocessedFlushRequests flushReqs
+        List<ConsumerRecord<Object, FlushRequest>> newFlushRequests
     ) {
-        if (flushReqs.isEmpty())
-            return false;
+        if (!newFlushRequests.isEmpty())
+            receivedFlushRequests.add(newFlushRequests.size());
 
         // Here we must not modify any local state until transaction is successfully committed.
         int part = flushPart.partition();
         FlushQueue flushQueue = flushQueues.get(part);
         TopicPartition dataPart = flushQueue.getDataPartition();
 
-        log.debug("Processing flush requests for partition {}: {}", dataPart, flushReqs);
+        log.debug("Processing flush requests for partition {}: {}", dataPart, newFlushRequests);
 
-        flushQueue.clean(flushReqs.getMaxCleanOffsetOps(), "flushPartitionBegin");
-        FlushQueue.Batch dataBatch = flushQueue.collect(flushReqs.getFlushOffsetOpsStream());
-
-        if (dataBatch == null || dataBatch.isEmpty()) {
-            // Check if we are too far behind.
-            if (flushReqs.size() > 1) // TODO add to config
-                resetAll(flushConsumer);
-
-            return false; // Not enough data.
-        }
-
-        long flushOffsetOps = dataBatch.getMaxOffset();
-        OffsetAndMetadata flushConsumerOffset = flushReqs.getFlushConsumerOffsetToCommit(flushOffsetOps);
-
-        int dataBatchSize = dataBatch.size();
-        int collectedAll = dataBatch.getCollectedAll();
-
-        if (log.isDebugEnabled()) {
-            log.debug("Collected batch for partition {}, dataBatchSize: {}, collectedAll: {}" +
-                    ", flushConsumerOffset: {}, flushOffsetOps: {}",
-                dataPart, dataBatchSize, collectedAll, flushConsumerOffset, flushOffsetOps);
-        }
+        var dataBatch = flushQueue.collectBatch(newFlushRequests);
+        if (dataBatch == null)
+            return;
 
         Producer<Object,Object> dataProducer;
         long flushOffsetData;
 
         try {
             dataProducer = dataProducers.get(part, null);
-            flushOffsetData = flushTx(dataProducer, dataBatch, flushPart, flushConsumerOffset, flushOffsetOps);
+            flushOffsetData = flushTx(dataProducer, dataBatch, flushPart, flushConsumer);
         }
         catch (Exception e) {
             boolean fenced = e instanceof ProducerFencedException;
 
             if (fenced || Utils.isInterrupted(e)) {
-                log.warn("Failed to flush data for partition {}, flushConsumerOffset: {}" +
-                        ", flushOffsetOps: {}, flushQueueSize: {}, reason: {}",
-                    dataPart, flushConsumerOffset, flushOffsetOps, flushQueue.size(), Utils.getMessage(e));
+                log.warn("Failed to flush data for partition {}, flushQueueSize: {}, reason: {}",
+                    dataPart, flushQueue.unflushedUpdatesSize(), Utils.getMessage(e));
             }
             else {
-                log.error("Failed to flush data for partition " + dataPart + ", flushConsumerOffset: " + flushConsumerOffset +
-                    ", flushOffsetOps: " + flushOffsetOps + ", exception:", e);
+                log.error("Failed to flush data for partition {}, exception:", dataPart, e);
             }
 
             if (fenced)
@@ -374,51 +233,42 @@ public class FlushWorker extends Worker implements AutoCloseable {
             else
                 resetAll(flushConsumer);
 
-            return false; // No other handling, the next flush will be our retry.
+            return; // No other handling, the next flush will be our retry.
         }
 
         if (log.isDebugEnabled()) {
-            log.debug("Committed tx for partition {}, flushOffsetData: {}, flushOffsetOps: {}, dataProducer: {}, dataBatch: {}",
-                dataPart, flushOffsetData, flushOffsetOps, dataProducer, dataBatch);
+            log.debug("Committed tx for partition {}, flushOffsetData: {}, dataProducer: {}, dataBatch: {}",
+                dataPart, flushOffsetData, dataProducer, dataBatch);
         }
 
-        clearUnprocessedFlushRequestsUntil(flushPart, flushOffsetOps);
-
-        if (flushQueue.clean(flushOffsetOps, "flushPartitionEnd") > 0) {
-            sendFlushNotification(dataPart, flushOffsetData, flushOffsetOps);
-
-            if (log.isDebugEnabled()) {
-                log.debug("Successfully flushed {} data records for partition {}, flushOffsetOps: {}" +
-                        ", flushOffsetData: {}, flushQueueSize: {}",
-                    dataBatchSize, dataPart, flushOffsetOps, flushOffsetData, flushQueue.size());
-            }
-        }
-
+        dataBatch.commit();
         successfulFlushes.increment();
-        return true;
     }
 
     protected long flushTx(
         Producer<Object,Object> dataProducer,
         FlushQueue.Batch dataBatch,
         TopicPartition flushPart,
-        OffsetAndMetadata flushConsumerOffset,
-        long flushOffsetOps
+        Consumer<Object,FlushRequest> flushConsumer
     ) throws ExecutionException, InterruptedException {
-        assert !dataBatch.isEmpty();
-
         int part = flushPart.partition();
         Future<RecordMetadata> lastDataRecMetaFut = null;
 
         int i = 0;
+        int batchSize = dataBatch.size();
 
         dataProducer.beginTransaction();
-        for (Map.Entry<Object,Object> entry : dataBatch.entrySet()) {
+        for (Map.Entry<Object,Object> entry : dataBatch) {
             lastDataRecMetaFut = dataProducer.send(new ProducerRecord<>(
                 dataTopic, part, entry.getKey(), entry.getValue(),
-                ++i != dataBatch.size() ? null : newOpsOffsetHeader(flushOffsetOps)));
+                ++i != batchSize ? null : newOpsOffsetHeader(dataBatch.opsOffset)));
         }
-        dataProducer.sendOffsetsToTransaction(singletonMap(flushPart, flushConsumerOffset), flushConsumerGroupId);
+
+        // Send flush notification as part of tx.
+        dataProducer.send(new ProducerRecord<>(opsTopic, part, null, newFlushNotification(dataBatch.opsOffset)));
+
+        var flushConsumerOffset = new OffsetAndMetadata(dataBatch.getFlushRequestOffset() + 1); // We need to commit the offset of the next record, thus + 1.
+        dataProducer.sendOffsetsToTransaction(singletonMap(flushPart, flushConsumerOffset), flushConsumer.groupMetadata());
         dataProducer.commitTransaction();
 
         // We check that the batch is not empty, thus we have to have the last record non-null here.
@@ -433,24 +283,8 @@ public class FlushWorker extends Worker implements AutoCloseable {
         return singleton(new RecordHeader(OPS_OFFSET_HEADER, Utils.serializeVarlong(offset)));
     }
 
-    protected void sendFlushNotification(TopicPartition dataPart, long flushOffsetData, long flushOffsetOps) {
-        ProducerRecord<Object,OpMessage> flushNotification = new ProducerRecord<>(opsTopic, dataPart.partition(), null,
-            newFlushNotification(flushOffsetData, flushOffsetOps));
-
-        if (log.isDebugEnabled())
-            log.debug("Sending flush notification for partition {}: {}", dataPart, flushNotification);
-
-        try {
-            opsProducer.send(flushNotification);
-        }
-        catch (Exception e) {
-            if (!Utils.isInterrupted(e))
-                log.error("Failed to send flush notification for partition " + dataPart + ": " + flushNotification, e);
-        }
-    }
-
-    protected FlushNotification newFlushNotification(long flushOffsetData, long flushOffsetOps) {
-        return new FlushNotification(clientId, flushOffsetData, flushOffsetOps);
+    protected FlushNotification newFlushNotification(long opsOffset) {
+        return new FlushNotification(clientId, opsOffset);
     }
 
     protected Producer<Object,Object> newDataProducer(int part) {
@@ -465,11 +299,11 @@ public class FlushWorker extends Worker implements AutoCloseable {
         return c;
     }
 
-    protected void clearUnprocessedFlushRequests(Collection<TopicPartition> flushPartitions) {
+    protected void resetFlushRequests(Collection<TopicPartition> flushPartitions) {
         log.debug("Clearing unprocessed flush requests for partitions: {}", flushPartitions);
 
         for (TopicPartition part : flushPartitions)
-            unprocessedFlushRequests.remove(part);
+            flushQueues.get(part.partition()).resetFlushRequests();
     }
 
     protected void initDataProducers(Collection<TopicPartition> flushPartitions) {
@@ -510,8 +344,6 @@ public class FlushWorker extends Worker implements AutoCloseable {
 
         if (dataProducer != null)
             dataProducers.reset(part, dataProducer);
-
-        unprocessedFlushRequests.remove(flushPart);
     }
 
     /**
@@ -525,7 +357,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
                 return;
 
             log.debug("Flush partitions assigned: {}", partitions);
-            clearUnprocessedFlushRequests(partitions);
+            resetFlushRequests(partitions);
             initDataProducers(partitions);
             assignedPartitions.addAll(partitions);
         }
@@ -536,7 +368,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
                 return;
 
             log.debug("Flush partitions revoked: {}", partitions);
-            clearUnprocessedFlushRequests(partitions);
+            resetFlushRequests(partitions);
             resetDataProducers(partitions);
             assignedPartitions.removeAll(partitions);
         }

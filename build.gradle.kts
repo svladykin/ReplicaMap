@@ -13,26 +13,28 @@ repositories {
     mavenCentral()
 }
 
-val kafkaVersion = if (!project.hasProperty("kafkaVersion")) "1.0.0"
+val kafkaVersion = if (!project.hasProperty("kafkaVersion")) "3.9.1"
                    else project.property("kafkaVersion") as String
 
 println("Using kafkaVersion: $kafkaVersion")
 
 dependencies {
     implementation("org.apache.kafka", "kafka-clients", kafkaVersion)
+    implementation("org.slf4j", "slf4j-api", "1.7.36")
 
-    testImplementation("org.junit.jupiter", "junit-jupiter", "5.4.1")
-    testImplementation("com.salesforce.kafka.test", "kafka-junit5", "3.2.1")
+    testImplementation("org.junit.jupiter", "junit-jupiter", "5.10.1")
+    testImplementation("com.salesforce.kafka.test", "kafka-junit5", "3.2.5")
 
-    testRuntimeOnly("org.apache.kafka", "kafka_2.12", kafkaVersion) {
+    testRuntimeOnly("org.junit.platform", "junit-platform-launcher")
+    testRuntimeOnly("org.apache.kafka", "kafka_2.13", kafkaVersion) {
         exclude("org.slf4j")
     }
-    testRuntimeOnly("org.slf4j", "slf4j-simple", "1.7.26")
+    testRuntimeOnly("org.slf4j", "slf4j-simple", "1.7.36")
 }
 
-configure<JavaPluginConvention> {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
 }
 
 tasks {
@@ -42,13 +44,13 @@ tasks {
         }
     }
 
-    val sourcesJar by creating(Jar::class) {
+    val sourcesJar by registering(Jar::class) {
         dependsOn(JavaPlugin.CLASSES_TASK_NAME)
         archiveClassifier.set("sources")
         from(sourceSets["main"].allSource)
     }
 
-    val javadocJar by creating(Jar::class) {
+    val javadocJar by registering(Jar::class) {
         dependsOn(JavaPlugin.JAVADOC_TASK_NAME)
         archiveClassifier.set("javadoc")
         from(javadoc.get().destinationDir)
@@ -80,7 +82,7 @@ publishing {
                 developers {
                     developer {
                         id.set("svladykin")
-                        name.set("Sergi Vladykin")
+                        name.set("Sergei Vladykin")
                         email.set("sergi.vladykin@gmail.com")
                     }
                 }
@@ -102,12 +104,8 @@ tasks.named<Test>("test") {
     }
 //    filter {
 //        includeTest(
-//                "com.vladykin.replicamap.kafka.KReplicaMapManagerMultithreadedWindowTest",
-//                "testMultithreadedSlidingWindowWithRestart"
-//        )
-//        includeTest(
-//                "com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleShardingTest",
-//                "testSimpleSharding"
+//                "com.vladykin.replicamap.kafka.impl.worker.flush.FlushWorkerTest",
+//                "testProcessFlushRequests"
 //        )
 //    }
 }

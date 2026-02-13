@@ -2,14 +2,16 @@ package com.vladykin.replicamap;
 
 import com.vladykin.replicamap.holder.MapsHolder;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
  * The component that manages replicated maps lifecycle.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public interface ReplicaMapManager extends AutoCloseable {
     /**
@@ -66,14 +68,14 @@ public interface ReplicaMapManager extends AutoCloseable {
      * @return Map.
      * @see MapsHolder#getMapId(Object)
      */
-    <K,V> ReplicaMap<K,V> getMap(Object mapId);
+    <K,V,M extends ReplicaMap<K,V>> M getMap(Object mapId);
 
     /**
      * Get the default map instance.
-     * May throw an exception if not supported.
      *
      * @return Default map.
      * @see MapsHolder#getDefaultMapId()
+     * @throws UnsupportedOperationException If there is no default map.
      */
-    <K,V> ReplicaMap<K,V> getMap();
+    <K,V,M extends ReplicaMap<K,V>> M getMap();
 }

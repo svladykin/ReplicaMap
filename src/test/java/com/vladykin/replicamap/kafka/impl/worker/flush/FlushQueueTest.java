@@ -1,302 +1,260 @@
 package com.vladykin.replicamap.kafka.impl.worker.flush;
 
-import com.vladykin.replicamap.kafka.impl.util.Utils;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Random;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.LongStream;
+import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
 
-import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue.NOT_INITIALIZED;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FlushQueueTest {
+
+    private static final String DATA_TOPIC = "data_topic";
+    private static final String FLUSH_TOPIC = "flush_topic";
+    private static final int PART = 5;
+    private static final UUID CLIENT_ID = new UUID(0,0);
+
     @Test
     void testSimple() {
-        FlushQueue q = new FlushQueue(null);
-        q.setMaxOffset(-1);
+        var dataPart = new TopicPartition(DATA_TOPIC, PART);
+        var q = new FlushQueue(dataPart);
 
-        assertEquals(-1, q.maxCleanOffset);
-        assertEquals(-1, q.maxAddOffset);
-        assertEquals(0, q.queue.size());
+        assertEquals(dataPart, q.getDataPartition());
+        assertEquals(NOT_INITIALIZED, q.maxAddedOpsOffset);
 
-        q.add(1,null, 0, false);
+        q.initUnflushedOpsOffset(-1);
 
-        assertEquals(-1, q.maxCleanOffset);
-        assertEquals(0, q.maxAddOffset);
-        assertEquals(1, q.queue.size());
+        assertEquals(-1, q.getMaxFlushedOpsOffset());
+        assertEquals(-1, q.maxAddedOpsOffset);
+        assertEquals(0, q.unflushedUpdates.size());
 
-        FlushQueue.Batch batch = q.collect(stream(1));
+        assertEquals(-1, q.addOpsRecord(1,"v", 0, true, null));
+
+        assertEquals(-1, q.getMaxFlushedOpsOffset());
+        assertEquals(0, q.maxAddedOpsOffset);
+        assertEquals(1, q.unflushedUpdates.size());
+
+        long flushOffset = -1;
+
+        // Empty flush requests -> noop.
+        var batch = q.collectBatch(newFlushRequests(++flushOffset));
         assertNull(batch);
+        assertTrue(q.flushRequests.isEmpty());
+        assertEquals(-1, q.getMaxFlushedOpsOffset());
+        assertEquals(0, q.maxAddedOpsOffset);
+        assertEquals(1, q.unflushedUpdates.size());
 
-        batch = q.collect(stream(0));
-        int collectedAll = batch.getCollectedAll();
+        // Too high flush request -> no batch, but saved the flush request for the future.
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 1));
+        assertNull(batch);
+        assertEquals(1, q.flushRequests.size());
+        assertEquals(flushOffset, q.flushRequests.getLast().offset);
+        assertEquals(1, q.flushRequests.getLast().opsOffset);
+        assertEquals(-1, q.getMaxFlushedOpsOffset());
+        assertEquals(0, q.maxAddedOpsOffset);
+        assertEquals(1, q.unflushedUpdates.size());
 
-        assertEquals(1, q.size());
+        // Too high duplicate flush request -> no batch, but saved the flush request for the future with the new offset.
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 1));
+        assertNull(batch);
+        assertEquals(1, q.flushRequests.size());
+        assertEquals(flushOffset, q.flushRequests.getLast().offset);
+        assertEquals(1, q.flushRequests.getLast().opsOffset);
+        assertEquals(-1, q.getMaxFlushedOpsOffset());
+        assertEquals(0, q.maxAddedOpsOffset);
+        assertEquals(1, q.unflushedUpdates.size());
+
+        // Unsuccessful update -> will cause flush but the value is old.
+        assertEquals(0, q.addOpsRecord(1,"z", 1, false, null));
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 1));
         assertEquals(1, batch.size());
-        assertEquals(1, collectedAll);
+        assertEquals(1, q.flushRequests.size());
+        assertEquals(flushOffset, q.flushRequests.getLast().offset);
+        assertEquals(1, q.flushRequests.getLast().opsOffset);
+        assertEquals(-1, q.getMaxFlushedOpsOffset());
+        assertEquals(1, q.maxAddedOpsOffset);
+        assertEquals(1, q.unflushedUpdates.size());
 
-        q.clean(0, "");
-
-        assertEquals(0, q.maxCleanOffset);
-        assertEquals(0, q.maxAddOffset);
-        assertEquals(0, q.queue.size());
-
-        q.add(1,null, 1, false);
-        q.add(2,null, 2, false);
-        q.add(3,null, 3, false);
-        q.add(4,null, 4, false);
-
-        assertEquals(0, q.maxCleanOffset);
-        assertEquals(4, q.maxAddOffset);
-        assertEquals(4, q.queue.size());
-
-        q.add(null,null, 5, false);
-
-        assertEquals(0, q.maxCleanOffset);
-        assertEquals(5, q.maxAddOffset);
-        assertEquals(4, q.queue.size());
-
-        q.add(null,null, 6, false);
-
-        assertEquals(0, q.maxCleanOffset);
-        assertEquals(6, q.maxAddOffset);
-        assertEquals(4, q.queue.size());
-
-        q.add(7,null, 7, false);
-
-        assertEquals(0, q.maxCleanOffset);
-        assertEquals(7, q.maxAddOffset);
-        assertEquals(5, q.queue.size());
-
-        batch = q.collect(stream(7));
-        collectedAll = batch.getCollectedAll();
-
-        assertEquals(7, collectedAll);
-        assertEquals(5, batch.size());
-        assertEquals(new HashSet<>(Arrays.asList(1,2,3,4,7)), batch.keySet());
-
-        assertEquals(0, q.maxCleanOffset);
-        assertEquals(7, q.maxAddOffset);
-        assertEquals(5, q.queue.size());
-
-        q.clean(batch.getMaxOffset(), "");
-
-        assertEquals(7, q.maxCleanOffset);
-        assertEquals(7, q.maxAddOffset);
-        assertEquals(0, q.queue.size());
-
-        assertThrows(IllegalStateException.class, () ->
-            q.add(8,null, 7, true));
-
-        assertEquals(7, q.maxCleanOffset);
-        assertEquals(7, q.maxAddOffset);
-        assertEquals(0, q.queue.size());
-
-        q.add(9,null, 8, true);
-
-        assertEquals(7, q.maxCleanOffset);
-        assertEquals(8, q.maxAddOffset);
-        assertEquals(1, q.queue.size());
-
-         q.clean(6, "");
-
-        assertEquals(7, q.maxCleanOffset);
-        assertEquals(8, q.maxAddOffset);
-        assertEquals(1, q.queue.size());
-
-        System.out.println(q);
-
-        q.clean(10, "");
-
-        assertEquals(10, q.maxCleanOffset);
-        assertEquals(10, q.maxAddOffset);
-        assertEquals(0, q.queue.size());
+        assertEquals(2, batch.commit());
+        assertEquals(0, q.flushRequests.size());
+        assertEquals(1, q.getMaxFlushedOpsOffset());
+        assertEquals(1, q.maxAddedOpsOffset);
+        assertEquals(0, q.unflushedUpdates.size());
     }
 
-    LongStream stream(long... x) {
-        return LongStream.of(x);
-    }
-
-    @Test
-    public void testThreadLocalBuffer() {
-        FlushQueue q = new FlushQueue(null);
-
-        q.setMaxOffset(0);
-
-        q.lock.acquireUninterruptibly();
-
-        q.add(1,null, 1, false);
-        q.add(1,null, 2, false);
-        q.add(1,null, 3, false);
-
-        assertEquals(-1, q.maxCleanOffset);
-        assertEquals(0, q.maxAddOffset);
-        assertEquals(0, q.queue.size());
-
-        q.lock.release();
-
-        q.add(1,null, 4, true);
-
-        assertEquals(-1, q.maxCleanOffset);
-        assertEquals(4, q.maxAddOffset);
-        assertEquals(4, q.queue.size());
-    }
-
-    @Test
-    void testMultithreaded() throws Exception {
-        ExecutorService exec = Executors.newCachedThreadPool();
-
-        try {
-            AtomicLong allAddedCnt = new AtomicLong();
-            AtomicLong allCleanedCnt = new AtomicLong();
-            AtomicLong lastAddedOffset = new AtomicLong(-1);
-
-            FlushQueue q = new FlushQueue(null);
-            q.setMaxOffset(-1);
-
-            for (int j = 0; j < 50; j++) {
-                CyclicBarrier start = new CyclicBarrier(3);
-
-                CompletableFuture<Object> addFut = executeThreads(1, exec, () -> {
-                    Random rnd = ThreadLocalRandom.current();
-
-                    start.await();
-
-                    int cnt = 500_000;
-                    for (int i = 1; i <= cnt; i++) {
-                        boolean update = i == cnt || rnd.nextInt(10) == 0;
-                        boolean waitLock = i == cnt || rnd.nextInt(20) == 0;
-
-                        q.add(update ? i : null,null, lastAddedOffset.incrementAndGet(), waitLock);
-
-                        allAddedCnt.incrementAndGet();
-                    }
-
-                    return null;
-                }).get(0);
-
-                CompletableFuture<?> cleanFut = Utils.allOf(executeThreads(2, exec, () -> {
-                    start.await();
-
-                    while (!addFut.isDone() || q.size() > 0) {
-                        FlushQueue.Batch batch = q.collect(stream(lastAddedOffset.get()));
-
-                        if (batch == null)
-                            continue;
-
-                        int collectedAll = batch.getCollectedAll();
-                        assertTrue(collectedAll >= batch.size());
-
-                        long cleanedCnt = q.clean(batch.getMaxOffset(), "");
-
-                        allCleanedCnt.addAndGet(cleanedCnt);
-                    }
-
-                    return null;
-                }));
-
-                addFut.get(3, TimeUnit.SECONDS);
-                cleanFut.get(3, TimeUnit.SECONDS);
-
-//                assertEquals(updatesAddedCnt.get(), updatesCollectedCnt.get());
-                assertEquals(allAddedCnt.get(), allCleanedCnt.get());
-                assertTrue(q.queue.isEmpty());
-                assertEquals(q.maxAddOffset, q.maxCleanOffset);
-                System.out.println("iteration " + j + " OK");
-            }
+    private List<ConsumerRecord<Object, FlushRequest>> newFlushRequests(long startFlushOffset, long... opsOffsets) {
+        assertTrue(startFlushOffset >= 0);
+        var list = new ArrayList<ConsumerRecord<Object, FlushRequest>>();
+        for (long opsOffset : opsOffsets) {
+            assertTrue(opsOffset >= 0);
+            list.add(new ConsumerRecord<>(FLUSH_TOPIC, PART, startFlushOffset++, null, new FlushRequest(CLIENT_ID, opsOffset)));
         }
-        finally {
-            exec.shutdownNow();
-            assertTrue(exec.awaitTermination(3, TimeUnit.SECONDS));
-        }
+        return list;
     }
 
     @Test
-    void testCollect() {
-        FlushQueue q = new FlushQueue(null);
-        q.setMaxOffset(1000);
+    void testBatch() {
+        var dataPart = new TopicPartition(DATA_TOPIC, PART);
+        var q = new FlushQueue(dataPart);
 
-        FlushQueue.Batch batch = q.collect(stream(1000L));
+        assertEquals(dataPart, q.getDataPartition());
+        assertEquals(NOT_INITIALIZED, q.maxAddedOpsOffset);
 
+        q.initUnflushedOpsOffset(-1);
+
+        assertEquals(-1, q.getMaxFlushedOpsOffset());
+        assertEquals(-1, q.maxAddedOpsOffset);
+        assertEquals(0, q.unflushedUpdates.size());
+
+        assertEquals(-1, q.addOpsRecord("A","v", 10, true, null));
+        assertEquals(10, q.addOpsRecord("A","V", 11, false, null));
+        assertEquals(11, q.addOpsRecord("B","b", 12, true, null));
+
+        assertEquals(9, q.getMaxFlushedOpsOffset());
+        assertEquals(12, q.maxAddedOpsOffset);
+        assertEquals(2, q.unflushedUpdates.size());
+
+        assertEquals(12, q.addOpsRecord("C","c", 14, true, null));
+        assertEquals(14, q.addOpsRecord("D","d", 17, true, null));
+        assertEquals(17, q.addOpsRecord("D",null, 19, true, null));
+
+        assertEquals(9, q.getMaxFlushedOpsOffset());
+        assertEquals(19, q.maxAddedOpsOffset);
+        assertEquals(5, q.unflushedUpdates.size());
+
+        long flushOffset = 1000;
+
+        var batch = q.collectBatch(newFlushRequests(++flushOffset, 9));
         assertNull(batch);
+        assertTrue(q.flushRequests.isEmpty());
 
-        q.add(1, 0, 1001, true);
-        q.add(2, 0, 1002, true);
-        q.add(null, null, 1003, true);
-        q.add(3, 0, 1004, true);
-        q.add(4, 0, 1005, true);
-
-        batch = q.collect(stream(1000L));
-
-        assertNull(batch);
-
-        batch = q.collect(stream(1001L));
-
-        assertEquals(1001, batch.getMinOffset());
-        assertEquals(1001, batch.getMaxOffset());
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 10));
         assertEquals(1, batch.size());
-        assertTrue(batch.containsKey(1));
+        assertEquals(Map.of("A", "v"), batch.data);
+        assertEquals(1, q.flushRequests.size());
 
-        batch = q.collect(stream(1003L));
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 11));
+        assertEquals(1, batch.size());
+        assertEquals(Map.of("A", "v"), batch.data);
+        assertEquals(2, q.flushRequests.size());
 
-        assertEquals(1001, batch.getMinOffset());
-        assertEquals(1003, batch.getMaxOffset());
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 12));
         assertEquals(2, batch.size());
-        assertTrue(batch.containsKey(1));
-        assertTrue(batch.containsKey(2));
+        assertEquals(Map.of("A", "v", "B", "b"), batch.data);
+        assertEquals(3, q.flushRequests.size());
 
-        batch = q.collect(stream(1001, 1003L));
-
-        assertEquals(1001, batch.getMinOffset());
-        assertEquals(1003, batch.getMaxOffset());
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 13));
         assertEquals(2, batch.size());
-        assertTrue(batch.containsKey(1));
-        assertTrue(batch.containsKey(2));
+        assertEquals(Map.of("A", "v", "B", "b"), batch.data);
+        assertEquals(4, q.flushRequests.size());
 
-
-        batch = q.collect(stream(1004L));
-
-        assertEquals(1001, batch.getMinOffset());
-        assertEquals(1004, batch.getMaxOffset());
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 14));
         assertEquals(3, batch.size());
-        assertTrue(batch.containsKey(1));
-        assertTrue(batch.containsKey(2));
-        assertTrue(batch.containsKey(3));
+        assertEquals(Map.of("A", "v", "B", "b", "C", "c"), batch.data);
+        assertEquals(5, q.flushRequests.size());
 
-
-        batch = q.collect(stream(1005L));
-
-        assertEquals(1001, batch.getMinOffset());
-        assertEquals(1005, batch.getMaxOffset());
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 17));
         assertEquals(4, batch.size());
-        assertTrue(batch.containsKey(1));
-        assertTrue(batch.containsKey(2));
-        assertTrue(batch.containsKey(3));
-        assertTrue(batch.containsKey(4));
+        assertEquals(Map.of("A", "v", "B", "b", "C", "c", "D", "d"), batch.data);
+        assertEquals(6, q.flushRequests.size());
 
-        batch = q.collect(stream(1006L));
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 18));
+        assertEquals(4, batch.size());
+        assertEquals(Map.of("A", "v", "B", "b", "C", "c", "D", "d"), batch.data);
+        assertEquals(7, q.flushRequests.size());
 
-        assertNull(batch);
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 19));
+        assertEquals(4, batch.size());
+        var map = new HashMap<>(Map.of("A", "v", "B", "b", "C", "c"));
+        map.put("D", null); // Remove op.
+        assertEquals(map, batch.data);
+        assertEquals(8, q.flushRequests.size());
+
+        batch = q.collectBatch(newFlushRequests(++flushOffset, 20));
+        assertEquals(4, batch.size());
+        map = new HashMap<>(Map.of("A", "v", "B", "b", "C", "c"));
+        map.put("D", null); // Remove op.
+        assertEquals(map, batch.data);
+        assertEquals(9, q.flushRequests.size());
+    }
+
+    @Test
+    void testFlushNotification() {
+        var dataPart = new TopicPartition(DATA_TOPIC, PART);
+        var q = new FlushQueue(dataPart);
+
+        assertEquals(dataPart, q.getDataPartition());
+        assertEquals(NOT_INITIALIZED, q.maxAddedOpsOffset);
+
+        q.initUnflushedOpsOffset(-1);
+
+        assertEquals(-1, q.getMaxFlushedOpsOffset());
+        assertEquals(-1, q.maxAddedOpsOffset);
+        assertEquals(0, q.unflushedUpdates.size());
+
+        assertEquals(-1, q.addOpsRecord(1,"v", 0, true, null));
+        assertEquals(0, q.addOpsRecord(1,"V", 1, false, null));
+        assertEquals(1, q.addOpsRecord(2,"x", 2, true, null));
+
+        assertEquals(-1, q.getMaxFlushedOpsOffset());
+        assertEquals(2, q.maxAddedOpsOffset);
+        assertEquals(2, q.unflushedUpdates.size());
+
+        assertEquals(2, q.addOpsRecord(null, null, 3, false,
+                new FlushNotification(CLIENT_ID, 2)));
+
+        assertEquals(3, q.getMaxFlushedOpsOffset());
+        assertEquals(3, q.maxAddedOpsOffset);
+        assertEquals(0, q.unflushedUpdates.size());
+
+        assertEquals(3, q.addOpsRecord(1,"A", 10, true, null));
+        assertEquals(10, q.addOpsRecord(1,"B", 15, true, null));
+        assertEquals(15, q.addOpsRecord(2,"X", 20, true, null));
+
+        assertEquals(9, q.getMaxFlushedOpsOffset());
+        assertEquals(20, q.maxAddedOpsOffset);
+        assertEquals(3, q.unflushedUpdates.size());
+
+        assertEquals(20, q.addOpsRecord(null, null, 21, false,
+                new FlushNotification(CLIENT_ID, 15)));
+
+        assertEquals(19, q.getMaxFlushedOpsOffset());
+        assertEquals(21, q.maxAddedOpsOffset);
+        assertEquals(1, q.unflushedUpdates.size());
+
+        assertEquals(21, q.addOpsRecord(null, null, 22, false,
+                new FlushNotification(CLIENT_ID, 19)));
+
+        assertEquals(19, q.getMaxFlushedOpsOffset());
+        assertEquals(22, q.maxAddedOpsOffset);
+        assertEquals(1, q.unflushedUpdates.size());
+
+        assertEquals(22, q.addOpsRecord(null, null, 23, false,
+                new FlushNotification(CLIENT_ID, 21)));
+
+        assertEquals(23, q.getMaxFlushedOpsOffset());
+        assertEquals(23, q.maxAddedOpsOffset);
+        assertEquals(0, q.unflushedUpdates.size());
     }
 
     @Test
     void testChecks() {
         FlushQueue q = new FlushQueue(null);
 
-        assertThrows(IllegalStateException.class, () -> q.add("key", "val", 7, true));
-        assertThrows(IllegalArgumentException.class, () -> q.setMaxOffset(-2));
-        q.setMaxOffset(-1);
-        assertThrows(IllegalStateException.class, () -> q.setMaxOffset(5));
+        assertThrows(IllegalStateException.class, () -> q.addOpsRecord("key", "val", 7, true, null));
+        assertThrows(IllegalArgumentException.class, () -> q.initUnflushedOpsOffset(-2));
+        q.initUnflushedOpsOffset(-1);
+        assertThrows(IllegalStateException.class, () -> q.initUnflushedOpsOffset(5));
     }
 }

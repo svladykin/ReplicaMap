@@ -2,13 +2,6 @@ package com.vladykin.replicamap.kafka;
 
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import com.vladykin.replicamap.kafka.impl.worker.flush.FlushWorker;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Future;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -22,13 +15,21 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
-import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT_MS;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Future;
+
+import static com.vladykin.replicamap.kafka.impl.util.Utils.MIN_POLL_TIMEOUT;
 import static java.util.Collections.singleton;
 
 /**
  * Convenience tools.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 @SuppressWarnings({"ArraysAsListWithZeroOrOneArgument", "SwitchStatementWithTooFewBranches"})
 public class KReplicaMapTools {
@@ -157,7 +158,7 @@ public class KReplicaMapTools {
         boolean reachedZero = false;
 
         for (int step = 1;;) {
-            ConsumerRecords<byte[],byte[]> recs = Utils.poll(consumer, MIN_POLL_TIMEOUT_MS);
+            ConsumerRecords<byte[],byte[]> recs = Utils.poll(consumer, MIN_POLL_TIMEOUT);
 
             if (recs.isEmpty()) {
                 endOffset = Utils.endOffset(consumer, dataPart); // With read_committed endOffset means LSO.

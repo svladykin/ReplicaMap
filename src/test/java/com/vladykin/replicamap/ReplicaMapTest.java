@@ -1,6 +1,8 @@
 package com.vladykin.replicamap;
 
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import org.junit.jupiter.api.Test;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -18,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
-import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static org.junit.jupiter.api.Assertions.assertEquals;

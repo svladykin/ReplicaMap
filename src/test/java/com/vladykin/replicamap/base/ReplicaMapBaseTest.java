@@ -2,6 +2,9 @@ package com.vladykin.replicamap.base;
 
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapListener;
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,7 +18,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
-import org.junit.jupiter.api.Test;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.interruptRunningOps;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
@@ -269,7 +271,7 @@ class ReplicaMapBaseTest {
         Semaphore maxActiveOps = new Semaphore(10);
 
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>(
-            'x', map, maxActiveOps, false, Long.MAX_VALUE, TimeUnit.NANOSECONDS
+            'x', map, maxActiveOps, false, Duration.ofNanos(Long.MAX_VALUE)
         ) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
@@ -325,7 +327,7 @@ class ReplicaMapBaseTest {
     @Test
     void testSendTimeoutOnAcquirePermit() throws InterruptedException {
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
-            new Semaphore(0), true, 1, TimeUnit.MILLISECONDS) {
+            new Semaphore(0), true, Duration.ofMillis(1)) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 throw new  IllegalStateException();
@@ -430,7 +432,7 @@ class ReplicaMapBaseTest {
     @Test
     void testForwardCompatibility() {
         TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
-            new Semaphore(10), true, 1, TimeUnit.MILLISECONDS) {
+            new Semaphore(10), true, Duration.ofMillis(1)) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 throw new  IllegalStateException();

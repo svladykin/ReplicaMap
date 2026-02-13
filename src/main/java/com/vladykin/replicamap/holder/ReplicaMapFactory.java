@@ -1,6 +1,7 @@
 package com.vladykin.replicamap.holder;
 
 import com.vladykin.replicamap.ReplicaMap;
+
 import java.util.Map;
 
 @FunctionalInterface

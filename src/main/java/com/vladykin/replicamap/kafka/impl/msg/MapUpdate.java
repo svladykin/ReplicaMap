@@ -1,12 +1,13 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.BiFunction;
 
 /**
  * Map update operation message.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class MapUpdate extends OpMessage {
 
@@ -17,7 +18,7 @@ public class MapUpdate extends OpMessage {
 
     public MapUpdate(
         byte opType,
-        long clientId,
+        UUID clientId,
         long opId,
         Object expValue,
         Object updValue,
@@ -54,19 +55,19 @@ public class MapUpdate extends OpMessage {
 
         MapUpdate that = (MapUpdate)o;
 
-        if (opId != that.opId) return false;
-        if (!Objects.equals(expValue, that.expValue)) return false;
-        if (!Objects.equals(updValue, that.updValue)) return false;
-        if (!Objects.equals(function, that.function)) return false;
+        return opId == that.opId &&
+                opType == that.opType &&
+                Objects.equals(clientId, that.clientId) &&
+                Objects.equals(expValue, that.expValue) &&
+                Objects.equals(updValue, that.updValue) &&
+                Objects.equals(function, that.function);
 
-        if (opType != that.opType) return false;
-        return clientId == that.clientId;
     }
 
     @Override
     public int hashCode() {
         int result = opType;
-        result = 31 * result + Long.hashCode(clientId);
+        result = 31 * result + clientId.hashCode();
         result = 31 * result + Long.hashCode(opId);
         result = 31 * result + (expValue != null ? expValue.hashCode() : 0);
         result = 31 * result + (updValue != null ? updValue.hashCode() : 0);
@@ -77,12 +78,12 @@ public class MapUpdate extends OpMessage {
     @Override
     public String toString() {
         return "MapUpdateMessage{" +
-            "opId=" + opId +
-            ", expValue=" + expValue +
-            ", updValue=" + updValue +
-            ", function=" + function +
-            ", clientId=" + Long.toHexString(clientId) +
-            ", opType=" + (char)opType +
+                "opType=" + (char)opType +
+                ", clientId=" + clientId +
+                ", opId=" + opId +
+                ", expValue=" + expValue +
+                ", updValue=" + updValue +
+                ", function=" + function +
             '}';
     }
 }

@@ -3,7 +3,6 @@ package com.vladykin.replicamap.kafka;
 import com.vladykin.replicamap.holder.MapsHolderSingle;
 import com.vladykin.replicamap.kafka.impl.part.KeyBytesPartitioner;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
-import java.util.Map;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
@@ -11,6 +10,8 @@ import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
+
+import java.util.Map;
 
 import static java.util.Collections.emptyList;
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
@@ -24,7 +25,7 @@ import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
 /**
  * Configuration for {@link KReplicaMapManager}.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String BOOTSTRAP_SERVERS = CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
@@ -49,7 +50,6 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String OPS_WORKERS = "ops.workers";
     public static final String FLUSH_TOPIC = "flush.topic";
     public static final String FLUSH_PERIOD_OPS = "flush.period.ops";
-    public static final String FLUSH_MAX_POLL_TIMEOUT_MS = "flush.max.poll.timeout.ms";
     public static final String FLUSH_WORKERS = "flush.workers";
     public static final String MAPS_HOLDER = "maps.holder";
     public static final String MAPS_CHECK_PRECONDITION = "maps.check.precondition";
@@ -60,7 +60,7 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String DEFAULT_FLUSH_TOPIC_SUFFIX = "_flush";
 
     private static final ConfigDef CONFIG = new ConfigDef()
-        .define(CLIENT_ID, LONG, null, HIGH,
+        .define(CLIENT_ID, STRING, null, HIGH,
             "Unique client id, must be different for each map manager instance. " +
                 "If not set, it will be generated automatically.")
         .define(DATA_TOPIC, STRING, DEFAULT_DATA_TOPIC, HIGH,
@@ -77,8 +77,6 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
             "Kafka topic for flush requests.")
         .define(FLUSH_PERIOD_OPS, INT, 3000, HIGH,
             "A number of operations after which a client should issue a flush request.")
-        .define(FLUSH_MAX_POLL_TIMEOUT_MS, LONG, 50L, HIGH,
-            "Max poll timeout for a flusher in milliseconds.")
         .define(FLUSH_WORKERS, INT, Math.max(1, Utils.cpus() / 6), HIGH,
             "Number of workers periodically flushing the updated key-value pairs to the data topic.")
         .define(MAPS_HOLDER, CLASS, MapsHolderSingle.class, HIGH,

@@ -1,7 +1,8 @@
 package com.vladykin.replicamap.kafka;
 
-import java.util.Map;
 import org.apache.kafka.common.serialization.Serializer;
+
+import java.util.Map;
 
 public interface TestSerializer<T> extends Serializer<T> { // For compatibility with older clients.
     @Override

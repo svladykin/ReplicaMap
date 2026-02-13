@@ -11,7 +11,7 @@ import java.util.SortedMap;
 /**
  * Replicated {@link NavigableMap} with async operations.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public interface ReplicaNavigableMap<K,V> extends ReplicaMap<K,V>, NavigableMap<K,V> {
     @Override

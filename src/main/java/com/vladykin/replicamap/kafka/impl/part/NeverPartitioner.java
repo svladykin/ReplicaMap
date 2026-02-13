@@ -1,13 +1,14 @@
 package com.vladykin.replicamap.kafka.impl.part;
 
-import java.util.Map;
 import org.apache.kafka.clients.producer.Partitioner;
 import org.apache.kafka.common.Cluster;
+
+import java.util.Map;
 
 /**
  * To make sure that partitions are always set explicitly.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class NeverPartitioner implements Partitioner {
     @Override

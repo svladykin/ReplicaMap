@@ -1,9 +1,11 @@
 package com.vladykin.replicamap.kafka.impl.msg;
 
+import java.util.UUID;
+
 /**
  * Operation message base class.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public abstract class OpMessage {
     // List of message types.
@@ -24,10 +26,12 @@ public abstract class OpMessage {
     public static final byte OP_FLUSH_REQUEST = 'f';
     public static final byte OP_FLUSH_NOTIFICATION = 'F';
 
-    protected final long clientId;
+    public static final byte OP_TX = 't';
+
+    protected final UUID clientId;
     protected final byte opType;
 
-    public OpMessage(byte opType, long clientId) {
+    public OpMessage(byte opType, UUID clientId) {
         this.opType = opType;
         this.clientId = clientId;
     }
@@ -36,7 +40,7 @@ public abstract class OpMessage {
         return opType;
     }
 
-    public long getClientId() {
+    public UUID getClientId() {
         return clientId;
     }
 }

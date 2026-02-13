@@ -1,5 +1,7 @@
 package com.vladykin.replicamap.kafka.impl.worker;
 
+import org.junit.jupiter.api.Test;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -7,7 +9,6 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -27,7 +28,7 @@ class WorkerTest {
         List<Worker> workers = new ArrayList<>();
 
         for (int i = 0; i < threads; i++) {
-            Worker w = new Worker("testGroup", i) {
+            Worker w = new Worker("testGroup" + i) {
                 @Override
                 protected void doRun() throws Exception {
                     start.await();
@@ -66,7 +67,7 @@ class WorkerTest {
     void testWorkerFailure() throws InterruptedException {
         AtomicBoolean executed = new AtomicBoolean();
 
-        Worker w = new Worker("testGroup", 1) {
+        Worker w = new Worker("testGroup" + 1) {
             @Override
             protected void doRun() {
                 executed.set(true);

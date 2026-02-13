@@ -5,6 +5,13 @@ import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.holder.MapsHolderSingle;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import org.apache.kafka.clients.consumer.Consumer;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.LongDeserializer;
+import org.apache.kafka.common.serialization.LongSerializer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -28,12 +35,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
 import java.util.function.ToLongFunction;
-import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.serialization.LongDeserializer;
-import org.apache.kafka.common.serialization.LongSerializer;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
@@ -110,7 +111,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
         IntFunction<KReplicaMapManager> managersFactory =  (mgrId) -> {
             KReplicaMapManager manager = new KReplicaMapManager(getDefaultConfig());
             manager.start(120, SECONDS);
-            System.out.println("started: " + mgrId + " " +  Long.toHexString(manager.clientId));
+            System.out.println("started: " + mgrId + " " +  manager.clientId);
             return manager;
         };
 
@@ -155,7 +156,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                         try {
                             // Periodically restart managers, but keep some always running.
                             if (!nonStop.contains(mgrId) && rnd.nextInt(restartPeriod) == 0) {
-                                System.out.println("stopping: " + mgrId + " " +  Long.toHexString(m.clientId));
+                                System.out.println("stopping: " + mgrId + " " +  m.clientId);
                                 managers.reset(mgrId, m);
                                 continue;
                             }
@@ -246,7 +247,7 @@ public class KReplicaMapManagerMultithreadedWindowTest {
                     // If we provide a consistent comparator, we may hang on a wrong maximum.
                     // Thus we randomize, so that we always make progress.
                     return ThreadLocalRandom.current().nextBoolean() ? -1 : 1;
-                }, 120, SECONDS, m -> "\n" + Long.toHexString(m.getManager().clientId) + "  " + m.unwrap().toString());
+                }, 120, SECONDS, m -> "\n" + m.getManager().clientId + "  " + m.unwrap().toString());
 
                 awaitPositive(KReplicaMapManager::getSuccessfulFlushes, ms);
 

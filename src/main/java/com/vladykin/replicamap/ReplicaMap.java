@@ -2,6 +2,7 @@ package com.vladykin.replicamap;
 
 import com.vladykin.replicamap.holder.MapsHolder;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
@@ -15,7 +16,7 @@ import java.util.function.Function;
 /**
  * Replicated {@link ConcurrentMap} with async operations.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
     /**
@@ -38,7 +39,6 @@ public interface ReplicaMap<K,V> extends ConcurrentMap<K,V> {
 
     /**
      * Gets the underlying map that actually stores the data.
-     *
      * The returned map must not be updated directly,
      * only through {@link ReplicaMap} methods.
      * Use this method at your own risk.

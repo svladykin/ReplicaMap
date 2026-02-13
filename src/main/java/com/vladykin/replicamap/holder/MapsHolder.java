@@ -12,7 +12,7 @@ import com.vladykin.replicamap.kafka.KReplicaMapManagerConfig;
  * @see MapsHolderSingle
  * @see MapsHolderMulti
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public interface MapsHolder extends AutoCloseable {
     /**

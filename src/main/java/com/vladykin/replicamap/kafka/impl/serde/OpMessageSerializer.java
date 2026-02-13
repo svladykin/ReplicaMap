@@ -1,23 +1,29 @@
-package com.vladykin.replicamap.kafka.impl.msg;
+package com.vladykin.replicamap.kafka.impl.serde;
 
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
+import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
+import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
+import com.vladykin.replicamap.kafka.impl.msg.MapUpdate;
+import com.vladykin.replicamap.kafka.impl.msg.OpMessage;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
-import java.nio.ByteBuffer;
-import java.util.Map;
-import java.util.function.BiFunction;
 import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.common.utils.ByteUtils;
 
+import java.nio.ByteBuffer;
+import java.util.Map;
+import java.util.function.BiFunction;
+
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_NOTIFICATION;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_FLUSH_REQUEST;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.NULL_ARRAY_LENGTH;
+import static com.vladykin.replicamap.kafka.impl.util.Utils.UUID_SIZE_BYTES;
 
 /**
  * Operation message serializer.
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public class OpMessageSerializer<V> implements Serializer<OpMessage> {
-    public static final int NULL_ARRAY_LENGTH = -1;
 
     protected final Serializer<V> valSer;
     protected final ComputeSerializer funSer;
@@ -60,16 +66,15 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
         byte[] fun = funVal == null ? null : funSer.serialize(topic, funVal);
 
         int opTypeSize = 1;
-        int clientIdSize = ByteUtils.sizeOfVarlong(opMsg.getClientId());
         int opIdSize = ByteUtils.sizeOfVarlong(opMsg.getOpId());
-        int expLen = arrayLength(exp);
-        int updLen = arrayLength(upd);
-        int funLen = arrayLength(fun);
+        int expLen = Utils.getArrayLength(exp);
+        int updLen = Utils.getArrayLength(upd);
+        int funLen = Utils.getArrayLength(fun);
         int expLenSize = ByteUtils.sizeOfVarint(expLen);
         int updLenSize = ByteUtils.sizeOfVarint(updLen);
         int funLenSize = ByteUtils.sizeOfVarint(funLen);
 
-        int resultLen = opTypeSize + clientIdSize + opIdSize + expLenSize + updLenSize + funLenSize;
+        int resultLen = opTypeSize + UUID_SIZE_BYTES + opIdSize + expLenSize + updLenSize + funLenSize;
 
         if (expLen > 0)
             resultLen += expLen;
@@ -82,68 +87,44 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
         ByteBuffer buf = ByteBuffer.wrap(result);
 
         buf.put(opMsg.getOpType());
-        ByteUtils.writeVarlong(opMsg.getClientId(), buf);
+        Utils.writeUuid(opMsg.getClientId(), buf);
         ByteUtils.writeVarlong(opMsg.getOpId(), buf);
-        writeByteArray(buf, exp);
-        writeByteArray(buf, upd);
-        writeByteArray(buf, fun);
+        Utils.writeByteArray(exp, buf);
+        Utils.writeByteArray(upd, buf);
+        Utils.writeByteArray(fun, buf);
 
         assert buf.remaining() == 0;
-
         return result;
     }
 
     protected byte[] serializeFlushRequest(FlushRequest flushMsg) {
         int opTypeSize = 1;
-        int clientIdSize = ByteUtils.sizeOfVarlong(flushMsg.getClientId());
-        int flushOffsetOpsSize = ByteUtils.sizeOfVarlong(flushMsg.getFlushOffsetOps());
-        int cleanOffsetOpsSize = ByteUtils.sizeOfVarlong(flushMsg.getCleanOffsetOps());
+        int opsOffsetSize = ByteUtils.sizeOfVarlong(flushMsg.getOpsOffset());
 
-        byte[] result = new byte[opTypeSize + clientIdSize + 1 + flushOffsetOpsSize + cleanOffsetOpsSize];
+        byte[] result = new byte[opTypeSize + UUID_SIZE_BYTES + opsOffsetSize];
         ByteBuffer buf = ByteBuffer.wrap(result);
 
         buf.put(flushMsg.getOpType());
-        ByteUtils.writeVarlong(flushMsg.getClientId(), buf);
-        ByteUtils.writeVarlong(0L, buf); // Backward compatibility.
-        ByteUtils.writeVarlong(flushMsg.getFlushOffsetOps(), buf);
-        ByteUtils.writeVarlong(flushMsg.getCleanOffsetOps(), buf);
+        Utils.writeUuid(flushMsg.getClientId(), buf);
+        ByteUtils.writeVarlong(flushMsg.getOpsOffset(), buf);
 
         assert buf.remaining() == 0;
-
         return result;
     }
 
     protected byte[] serializeFlushNotification(FlushNotification flushMsg) {
         int opTypeSize = 1;
-        int clientIdSize = ByteUtils.sizeOfVarlong(flushMsg.getClientId());
-        int flushOffsetDataSize = ByteUtils.sizeOfVarlong(flushMsg.getFlushOffsetData());
-        int flushOffsetOpsSize = ByteUtils.sizeOfVarlong(flushMsg.getFlushOffsetOps());
+        int flushOffsetOpsSize = ByteUtils.sizeOfVarlong(flushMsg.getOpsOffset());
 
-        byte[] result = new byte[opTypeSize + clientIdSize + flushOffsetDataSize + flushOffsetOpsSize + 1];
+        byte[] result = new byte[opTypeSize + UUID_SIZE_BYTES + flushOffsetOpsSize];
         ByteBuffer buf = ByteBuffer.wrap(result);
 
         buf.put(flushMsg.getOpType());
-        ByteUtils.writeVarlong(flushMsg.getClientId(), buf);
-        ByteUtils.writeVarlong(flushMsg.getFlushOffsetData(), buf);
-        ByteUtils.writeVarlong(flushMsg.getFlushOffsetOps(), buf);
-        ByteUtils.writeVarlong(0L, buf); // Backward compatibility.
+        Utils.writeUuid(flushMsg.getClientId(), buf);
+        ByteUtils.writeVarlong(flushMsg.getOpsOffset(), buf);
 
         assert buf.remaining() == 0;
-
         return result;
-    }
-
-    protected int arrayLength(byte[] arr) {
-        return arr == null ? NULL_ARRAY_LENGTH : arr.length;
-    }
-
-    protected void writeByteArray(ByteBuffer buf, byte[] arr) {
-        if (arr == null) {
-            ByteUtils.writeVarint(NULL_ARRAY_LENGTH, buf);
-        } else {
-            ByteUtils.writeVarint(arr.length, buf);
-            buf.put(arr);
-        }
     }
 
     @Override

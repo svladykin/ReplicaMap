@@ -4,6 +4,10 @@ import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapListener;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -18,8 +22,6 @@ import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.OpState.FINISHED;
 import static com.vladykin.replicamap.base.ReplicaMapBase.OpState.SENDING;
@@ -41,7 +43,7 @@ import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_REPLACE_EXACT;
  * @see #onReceiveUpdate
  * @see #canSendFunction(BiFunction)
  *
- * @author Sergi Vladykin http://vladykin.com
+ * @author Sergei Vladykin http://vladykin.com
  */
 public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
     private static final Logger log = LoggerFactory.getLogger(ReplicaMapBase.class);
@@ -60,8 +62,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
     protected final ConcurrentMap<OpKey<K>,AsyncOp<Object,?,?>> ops = new ConcurrentHashMap<>();
     protected volatile long lastOpId;
     protected final Semaphore opsSemaphore;
-    protected final long sendTimeout;
-    protected final TimeUnit timeUnit;
+    protected final Duration sendTimeout;
     protected final boolean checkPrecondition;
 
     protected volatile ReplicaMapListener<K,V> listener;
@@ -71,15 +72,13 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         Map<K,V> map,
         Semaphore opsSemaphore,
         boolean checkPrecondition,
-        long sendTimeout,
-        TimeUnit timeUnit
+        Duration sendTimeout
     ) {
         this.id = id;
         this.map = Utils.requireNonNull(map, "map");
         this.opsSemaphore = Utils.requireNonNull(opsSemaphore, "opsSemaphore");
         this.checkPrecondition = checkPrecondition;
-        this.sendTimeout = sendTimeout;
-        this.timeUnit = Utils.requireNonNull(timeUnit, "timeUnit");
+        this.sendTimeout = Utils.requireNonNull(sendTimeout, "sendTimeout");
     }
 
     @Override
@@ -331,7 +330,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         }
         catch (Exception e) {
             ex = e;
-            log.error("Failed to apply received update for key: " + key, e);
+            log.error("Failed to apply received update for key: {}", key, e);
             throw new ReplicaMapException("Unrecoverable error in map: " + id, e);
         }
         finally {
@@ -448,7 +447,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         Exception ex;
 
         try {
-            if (opsSemaphore.tryAcquire(sendTimeout, timeUnit))
+            if (opsSemaphore.tryAcquire(sendTimeout.toNanos(), TimeUnit.NANOSECONDS))
                 return true;
 
             ex = new TimeoutException();
@@ -472,7 +471,6 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
             ", opsSemaphorePermits=" + opsSemaphore.availablePermits() +
             ", opsSemaphoreQueue=" + opsSemaphore.getQueueLength() +
             ", sendTimeout=" + sendTimeout +
-            ", timeUnit=" + timeUnit +
             ", listener=" + listener +
             '}';
     }
