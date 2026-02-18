@@ -1,8 +1,7 @@
 # ReplicaMap: Key-value Kafka Database
 [![Release](https://jitpack.io/v/com.vladykin/replicamap.svg)](https://jitpack.io/#com.vladykin/replicamap)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/svladykin/replicamap/blob/master/LICENSE)
-[![Build Status](https://travis-ci.org/svladykin/replicamap.svg?branch=master)](https://travis-ci.org/svladykin/replicamap)
-![Coverage](https://img.shields.io/badge/coverage-92%25-green)
+![Coverage](https://img.shields.io/badge/coverage-93%25-green)
 
 ### All the buzzwords description: 
 
@@ -42,7 +41,7 @@ Think of it as a Java `ConcurrentMap<K,V>` that replicates all the updates over 
   
 + Kafka client is the only dependency of ReplicaMap.
 
-+ Supports Kafka versions 1.x.x and 2.x.x
++ Supports Kafka versions 3.x.x and 4.x.x
 
 ## Maven repository
 
@@ -99,7 +98,7 @@ flowers.putIfAbsent(3L, "Cactus");
 System.out.println(new TreeMap<>(flowers));
 ```
 
-## Achtung Minen!
+## Important details to keep in mind
 
 All the keys and values must correctly implement `hashCode` and `equals` because ReplicaMap
 heavily relies on that. The same for the map identifiers returned by `MapsHolder.getMapId(K key)`.
