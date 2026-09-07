@@ -15,6 +15,7 @@ import java.util.Map;
 
 import static java.util.Collections.emptyList;
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
+import static org.apache.kafka.common.config.ConfigDef.Importance.MEDIUM;
 import static org.apache.kafka.common.config.ConfigDef.Type.BOOLEAN;
 import static org.apache.kafka.common.config.ConfigDef.Type.CLASS;
 import static org.apache.kafka.common.config.ConfigDef.Type.INT;
@@ -48,8 +49,10 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String OPS_MAX_PARALLEL = "ops.max.parallel";
     public static final String OPS_SEND_TIMEOUT_MS = "ops.send.timeout.ms";
     public static final String OPS_WORKERS = "ops.workers";
+    public static final String STOP_TIMEOUT_MS = "stop.timeout.ms";
     public static final String FLUSH_TOPIC = "flush.topic";
     public static final String FLUSH_PERIOD_OPS = "flush.period.ops";
+    public static final String FLUSH_MAX_UNFLUSHED_MS = "flush.max.unflushed.ms";
     public static final String FLUSH_WORKERS = "flush.workers";
     public static final String MAPS_HOLDER = "maps.holder";
     public static final String MAPS_CHECK_PRECONDITION = "maps.check.precondition";
@@ -58,6 +61,16 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
     public static final String DEFAULT_DATA_TOPIC = "replicamap";
     public static final String DEFAULT_OPS_TOPIC_SUFFIX = "_ops";
     public static final String DEFAULT_FLUSH_TOPIC_SUFFIX = "_flush";
+
+    // Special values.
+
+    /**
+     * Value of the {@code *.ms} settings that accept it, meaning "no limit": no time-based flush for
+     * {@link #FLUSH_MAX_UNFLUSHED_MS}, an unbounded wait for {@link #STOP_TIMEOUT_MS}. Follows the
+     * Kafka convention where {@code -1} means "no limit"; {@code 0} is rejected, because on a
+     * {@code *.ms} setting it reads as "immediately", not as "never".
+     */
+    public static final long NO_LIMIT = -1;
 
     private static final ConfigDef CONFIG = new ConfigDef()
         .define(CLIENT_ID, STRING, null, HIGH,
@@ -73,10 +86,17 @@ public class KReplicaMapManagerConfig extends AbstractConfig {
             "Timeout in milliseconds after which operation will fail if it was not sent yet.")
         .define(OPS_WORKERS, INT, Math.max(1, Utils.cpus() / 3), HIGH,
             "Number of worker threads processing operations from Kafka operations topic.")
+        .define(STOP_TIMEOUT_MS, LONG, 60_000L, MEDIUM,
+            "Max time in milliseconds close() waits for the manager to stop. On timeout the stop still " +
+                "proceeds in the background. Use -1 to wait indefinitely.")
         .define(FLUSH_TOPIC, STRING, null, HIGH,
             "Kafka topic for flush requests.")
         .define(FLUSH_PERIOD_OPS, INT, 3000, HIGH,
             "A number of operations after which a client should issue a flush request.")
+        .define(FLUSH_MAX_UNFLUSHED_MS, LONG, 2000L, HIGH,
+            "Max time in milliseconds an update may stay unflushed before a flush is forced, so the data " +
+                "topic eventually reflects all the updates even on idle partitions. " +
+                "Use -1 to disable the time-based flush trigger.")
         .define(FLUSH_WORKERS, INT, Math.max(1, Utils.cpus() / 6), HIGH,
             "Number of workers periodically flushing the updated key-value pairs to the data topic.")
         .define(MAPS_HOLDER, CLASS, MapsHolderSingle.class, HIGH,

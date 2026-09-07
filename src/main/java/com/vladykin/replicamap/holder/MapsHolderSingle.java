@@ -5,6 +5,7 @@ import com.vladykin.replicamap.ReplicaMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import static com.vladykin.replicamap.base.ReplicaMapBase.interruptRunningOps;
 
@@ -54,6 +55,14 @@ public class MapsHolderSingle implements MapsHolder {
     @Override
     public <K> Object getMapId(K key) {
         return getDefaultMapId();
+    }
+
+    @Override
+    public void forEachMap(Consumer<ReplicaMap<?,?>> action) {
+        ReplicaMap<?,?> map = ref.get();
+
+        if (map != null)
+            action.accept(map);
     }
 
     @Override

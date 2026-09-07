@@ -154,20 +154,7 @@ public class AllowedOnlyPartitionAssignor extends AbstractPartitionAssignor impl
         return result;
     }
 
-    // @Override
-    @SuppressWarnings("unused")
-    public short version() {
-        return 2;
-    }
-
-    // @Override
-    @SuppressWarnings("unused")
-    public Subscription subscription(Set<String> topics) {
-        return new Subscription(new ArrayList<>(topics), subscriptionUserData(topics));
-    }
-
-    // @Override
-    @SuppressWarnings("unused")
+    @Override
     public ByteBuffer subscriptionUserData(Set<String> topics) {
         return allowedPartsBytes == null ? null : ByteBuffer.wrap(allowedPartsBytes);
     }

@@ -1,16 +1,14 @@
 package com.vladykin.replicamap.kafka.impl.util;
 
 import com.vladykin.replicamap.ReplicaMapException;
+import com.vladykin.replicamap.ReplicaMapManager;
 import org.apache.kafka.clients.consumer.Consumer;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.Configurable;
 import org.apache.kafka.common.PartitionInfo;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.errors.WakeupException;
-import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.utils.ByteUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +16,6 @@ import org.slf4j.LoggerFactory;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
@@ -28,6 +25,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -48,6 +47,9 @@ public final class Utils {
     public static final int UUID_SIZE_BYTES = 2 * Long.BYTES;
     public static final int NULL_ARRAY_LENGTH = -1;
 
+    /** Max number of causes {@link #isInterrupted(Throwable)} unwraps, so a cyclic chain terminates. */
+    private static final int MAX_CAUSE_CHAIN_DEPTH = 64;
+
     public static <K,V> ConsumerRecords<K,V> poll(Consumer<K,V> c, Duration timeout) {
         if (timeout.compareTo(MIN_POLL_TIMEOUT) < 0) // "poll" may often produce empty results and break tests for small timeouts
             timeout = MIN_POLL_TIMEOUT;
@@ -63,18 +65,6 @@ public final class Utils {
         return x != null ? x : dflt.get();
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    public static <K,V> ConsumerRecord<K,V> cast(ConsumerRecord<?,?> rec) {
-        ConsumerRecord result = rec;
-        return (ConsumerRecord<K,V>)result;
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    public static <K,V> ProducerRecord<K,V> cast(ProducerRecord<?,?> rec) {
-        ProducerRecord result = rec;
-        return (ProducerRecord<K,V>)result;
-    }
-
     public static void close(Iterable<? extends AutoCloseable> cs) {
         if (cs == null)
             return;
@@ -83,6 +73,13 @@ public final class Utils {
             close(c);
     }
 
+    /**
+     * Best effort release of an internal resource: a failure is logged and swallowed.
+     * Not for lifecycle objects whose {@code close()} blocks, like {@link ReplicaMapManager} —
+     * for those swallowing the failure would hide that the resources are still held.
+     *
+     * @param c Resource to close.
+     */
     public static void close(AutoCloseable c) {
         if (c != null) {
             try {
@@ -97,16 +94,32 @@ public final class Utils {
         }
     }
 
+    /**
+     * @param e Exception to inspect.
+     * @return {@code true} if the exception, or one of the exceptions it wraps, is an interruption.
+     */
     public static boolean isInterrupted(Throwable e) {
-        if (e == null)
-            return false;
+        // Bounded: real chains are a few levels deep, and a cyclic one must not spin forever.
+        int depth = MAX_CAUSE_CHAIN_DEPTH;
 
-        if (e instanceof ReplicaMapException)
-            return isInterrupted(e.getCause());
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof InterruptedException ||
+                t instanceof InterruptException ||
+                t instanceof WakeupException)
+                return true;
 
-        return e instanceof InterruptedException ||
-               e instanceof InterruptException ||
-               e instanceof WakeupException;
+            // Unwrap only the known wrappers: an arbitrary exception that merely happens to carry
+            // an interruption somewhere down its cause chain is a real failure, not an interruption.
+            if (!(t instanceof ReplicaMapException ||
+                  t instanceof ExecutionException ||
+                  t instanceof CompletionException))
+                return false;
+
+            if (--depth == 0)
+                return false;
+        }
+
+        return false;
     }
 
     public static String getMessage(Exception e) {
@@ -144,6 +157,22 @@ public final class Utils {
     public static void checkPositive(Duration x, String varName) {
         if (x.isNegative() || x.isZero())
             throw new ReplicaMapException(varName + " must be positive");
+    }
+
+    /**
+     * {@link Duration#toNanos()} that saturates instead of overflowing, so that a huge configured
+     * duration can never fail with an obscure {@link ArithmeticException}.
+     *
+     * @param x Duration.
+     * @return Nanoseconds, or {@link Long#MAX_VALUE} if the duration does not fit.
+     */
+    public static long toNanosSaturated(Duration x) {
+        try {
+            return x.toNanos();
+        }
+        catch (ArithmeticException ignored) {
+            return x.isNegative() ? Long.MIN_VALUE : Long.MAX_VALUE;
+        }
     }
 
     public static int cpus() {
@@ -236,10 +265,6 @@ public final class Utils {
             .collect(Collectors.toList());
     }
 
-    public static Map<TopicPartition,Long> endOffsets(Consumer<?,?> consumer, String topic) {
-        return consumer.endOffsets(partitions(consumer, topic));
-    }
-
     public static long endOffset(Consumer<?,?> consumer, TopicPartition part) {
         Map<TopicPartition,Long> endOffsets = consumer.endOffsets(singleton(part));
 
@@ -247,6 +272,15 @@ public final class Utils {
             throw new ReplicaMapException("Failed to fetch end offset for partition: " + part);
 
         return endOffsets.get(part);
+    }
+
+    public static long beginningOffset(Consumer<?,?> consumer, TopicPartition part) {
+        Map<TopicPartition,Long> beginningOffsets = consumer.beginningOffsets(singleton(part));
+
+        if (beginningOffsets == null || beginningOffsets.isEmpty())
+            throw new ReplicaMapException("Failed to fetch beginning offset for partition: " + part);
+
+        return beginningOffsets.get(part);
     }
 
     public static <T> T getConfiguredInstance(Class<T> clazz, Map<String,?> configs) {
@@ -321,16 +355,6 @@ public final class Utils {
         buf.putLong(lsb);
     }
 
-    public static byte[] serializeUuid(UUID id) {
-        byte[] bytes = new byte[UUID_SIZE_BYTES];
-        writeUuid(id, ByteBuffer.wrap(bytes));
-        return bytes;
-    }
-
-    public static UUID deserializeUuid(byte[] bytes) {
-        return readUuid(ByteBuffer.wrap(bytes));
-    }
-
     public static short[] deserializeShortArray(ByteBuffer buf) {
         if (buf == null || buf.remaining() == 0)
             return null;
@@ -352,23 +376,5 @@ public final class Utils {
 
     public static long deserializeVarlong(byte[] bytes) {
         return ByteUtils.readVarlong(ByteBuffer.wrap(bytes));
-    }
-
-    public static Iterable<Header> concat(Iterable<Header> a, Iterable<Header> b) {
-        if (a == null)
-            return b;
-
-        if (b == null)
-            return a;
-
-        List<Header> list = new ArrayList<>();
-
-        for (Header h : a)
-            list.add(h);
-
-        for (Header h : b)
-            list.add(h);
-
-        return list;
     }
 }

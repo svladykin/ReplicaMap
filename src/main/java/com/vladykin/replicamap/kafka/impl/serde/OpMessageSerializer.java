@@ -115,13 +115,15 @@ public class OpMessageSerializer<V> implements Serializer<OpMessage> {
     protected byte[] serializeFlushNotification(FlushNotification flushMsg) {
         int opTypeSize = 1;
         int flushOffsetOpsSize = ByteUtils.sizeOfVarlong(flushMsg.getOpsOffset());
+        int dataOffsetSize = ByteUtils.sizeOfVarlong(flushMsg.getDataOffset());
 
-        byte[] result = new byte[opTypeSize + UUID_SIZE_BYTES + flushOffsetOpsSize];
+        byte[] result = new byte[opTypeSize + UUID_SIZE_BYTES + flushOffsetOpsSize + dataOffsetSize];
         ByteBuffer buf = ByteBuffer.wrap(result);
 
         buf.put(flushMsg.getOpType());
         Utils.writeUuid(flushMsg.getClientId(), buf);
         ByteUtils.writeVarlong(flushMsg.getOpsOffset(), buf);
+        ByteUtils.writeVarlong(flushMsg.getDataOffset(), buf);
 
         assert buf.remaining() == 0;
         return result;

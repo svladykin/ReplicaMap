@@ -2,6 +2,7 @@ package com.vladykin.replicamap.kafka.impl.worker.flush;
 
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
+import com.vladykin.replicamap.kafka.KReplicaMapManager;
 import com.vladykin.replicamap.kafka.impl.msg.FlushNotification;
 import com.vladykin.replicamap.kafka.impl.msg.FlushRequest;
 import com.vladykin.replicamap.kafka.impl.util.LazyList;
@@ -31,6 +32,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.LongAdder;
@@ -50,6 +52,7 @@ import static java.util.stream.Collectors.toList;
 public class FlushWorker extends Worker implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(FlushWorker.class);
 
+    /** Header carrying the flushed ops offset, written on every flushed data record (resume pointer on load). */
     public static final String OPS_OFFSET_HEADER = "replicamap.ops";
 
     protected final UUID clientId;
@@ -69,7 +72,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
     protected final CompletableFuture<ReplicaMapManager> opsSteadyFut;
 
     protected final short[] allowedPartitions;
-    protected Set<TopicPartition> assignedPartitions = new HashSet<>();
+    protected final Set<TopicPartition> assignedPartitions = ConcurrentHashMap.newKeySet(); // Concurrent only for reads, updates done by the same thread.
 
     protected final LongAdder receivedFlushRequests;
     protected final LongAdder successfulFlushes;
@@ -80,6 +83,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         String opsTopic,
         String flushTopic,
         int workerId,
+        KReplicaMapManager manager,
         List<FlushQueue> flushQueues,
         CompletableFuture<ReplicaMapManager> opsSteadyFut,
         LongAdder receivedFlushRequests,
@@ -90,7 +94,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
         LazyList<Consumer<Object,FlushRequest>> flushConsumers,
         Supplier<Consumer<Object,FlushRequest>> flushConsumerFactory
     ) {
-        super("replicamap-flush-" + dataTopic + "-" + workerId + "-" + clientId);
+        super("replicamap-flush-" + dataTopic + "-" + workerId + "-" + clientId, manager);
 
         this.clientId = clientId;
         this.dataTopic = dataTopic;
@@ -183,12 +187,20 @@ public class FlushWorker extends Worker implements AutoCloseable {
     }
 
     protected void resetAll(Consumer<Object,FlushRequest> flushConsumer) {
-        assignedPartitions = new HashSet<>();
+        // Only clear ownership for the partitions this worker actually held: flushQueues is shared
+        // across the manager's flush workers, and each partition is owned by exactly one of them.
+        setFlushOwned(assignedPartitions, false);
+        assignedPartitions.clear();
 
         for (int part = 0; part < dataProducers.size(); part++)
             resetDataProducer(new TopicPartition(flushTopic, part));
 
         flushConsumers.reset(0, flushConsumer);
+    }
+
+    protected void setFlushOwned(Collection<TopicPartition> flushPartitions, boolean owned) {
+        for (TopicPartition part : flushPartitions)
+            flushQueues.get(part.partition()).setFlushOwned(owned);
     }
 
     protected void flushPartition(
@@ -252,50 +264,83 @@ public class FlushWorker extends Worker implements AutoCloseable {
         Consumer<Object,FlushRequest> flushConsumer
     ) throws ExecutionException, InterruptedException {
         int part = flushPart.partition();
+        Iterable<Header> opsOffsetHeader = newOpsOffsetHeader(dataBatch.opsOffset);
         Future<RecordMetadata> lastDataRecMetaFut = null;
-
-        int i = 0;
-        int batchSize = dataBatch.size();
 
         dataProducer.beginTransaction();
         for (Map.Entry<Object,Object> entry : dataBatch) {
+            // Header on every record (not just the last): whatever survives compaction still carries the
+            // ops offset, so the resume pointer is recoverable even from an all-DELETE (all-tombstone) batch.
             lastDataRecMetaFut = dataProducer.send(new ProducerRecord<>(
-                dataTopic, part, entry.getKey(), entry.getValue(),
-                ++i != batchSize ? null : newOpsOffsetHeader(dataBatch.opsOffset)));
+                dataTopic, part, entry.getKey(), entry.getValue(), opsOffsetHeader));
         }
 
-        // Send flush notification as part of tx.
-        dataProducer.send(new ProducerRecord<>(opsTopic, part, null, newFlushNotification(dataBatch.opsOffset)));
+        // The batch is never empty (collectBatch returns null otherwise), so we always have a last record.
+        // Since ReplicaMap checks preconditions locally before sending anything to Kafka, there is always a
+        // winner, so we can commit periodically.
+        assert lastDataRecMetaFut != null;
 
-        var flushConsumerOffset = new OffsetAndMetadata(dataBatch.getFlushRequestOffset() + 1); // We need to commit the offset of the next record, thus + 1.
+        // The flush notification must carry the offset of the last data record, so we have to learn it
+        // before sending the notification and committing. A transactional send's future completes on the
+        // produce ack (the broker assigns the offset at append, before commit), so flush() + get() yields
+        // the offset within the open transaction.
+        dataProducer.flush();
+        long flushOffsetData = lastDataRecMetaFut.get().offset();
+
+        // Send flush notification as part of tx (opsOffset + the last data offset above).
+        dataProducer.send(new ProducerRecord<>(opsTopic, part, null,
+            newFlushNotification(dataBatch.opsOffset, flushOffsetData)));
+
+        // We commit the offset of the next flush record (+1). We also (redundantly) stash the flushed ops
+        // offset in the commit metadata: the resume pointer is recovered from the data-record headers and
+        // flush notifications on load, but we keep the metadata for forensics / a possible future use.
+        var flushConsumerOffset = new OffsetAndMetadata(
+            dataBatch.getFlushRequestOffset() + 1, Long.toString(dataBatch.opsOffset));
         dataProducer.sendOffsetsToTransaction(singletonMap(flushPart, flushConsumerOffset), flushConsumer.groupMetadata());
         dataProducer.commitTransaction();
 
-        // We check that the batch is not empty, thus we have to have the last record non-null here.
-        // Since ReplicaMap checks preconditions locally before sending anything to Kafka,
-        // it is impossible to have a large number of failed update attempts,
-        // there must always be a winner, so we will be able to commit periodically.
-        assert lastDataRecMetaFut != null;
-        return lastDataRecMetaFut.get().offset();
+        return flushOffsetData;
     }
 
     public static Iterable<Header> newOpsOffsetHeader(long offset) {
         return singleton(new RecordHeader(OPS_OFFSET_HEADER, Utils.serializeVarlong(offset)));
     }
 
-    protected FlushNotification newFlushNotification(long opsOffset) {
-        return new FlushNotification(clientId, opsOffset);
+    protected FlushNotification newFlushNotification(long opsOffset, long dataOffset) {
+        return new FlushNotification(clientId, opsOffset, dataOffset);
     }
 
     protected Producer<Object,Object> newDataProducer(int part) {
         Producer<Object,Object> p = dataProducerFactory.apply(part);
-        p.initTransactions();
+
+        try {
+            p.initTransactions();
+        }
+        catch (Throwable e) {
+            // The producer never made it into the LazyList (it resets the slot when the factory
+            // fails), so nobody else is going to close it.
+            Utils.close(p);
+
+            throw e;
+        }
+
         return p;
     }
 
     protected Consumer<Object,FlushRequest> newFlushConsumer(int ignore) {
         Consumer<Object,FlushRequest> c = flushConsumerFactory.get();
-        c.subscribe(singleton(flushTopic), new PartitionRebalanceListener());
+
+        try {
+            c.subscribe(singleton(flushTopic), new PartitionRebalanceListener());
+        }
+        catch (Throwable e) {
+            // Same as in newDataProducer: the consumer never made it into the LazyList, so nobody
+            // else is going to close it.
+            Utils.close(c);
+
+            throw e;
+        }
+
         return c;
     }
 
@@ -321,7 +366,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
     }
 
     public Set<TopicPartition> getAssignedPartitions() {
-        return assignedPartitions;
+        return new HashSet<>(assignedPartitions);
     }
 
     protected List<TopicPartition> convert(Collection<TopicPartition> partitions, String topic) {
@@ -360,6 +405,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             resetFlushRequests(partitions);
             initDataProducers(partitions);
             assignedPartitions.addAll(partitions);
+            setFlushOwned(partitions, true);
         }
 
         @Override
@@ -370,6 +416,7 @@ public class FlushWorker extends Worker implements AutoCloseable {
             log.debug("Flush partitions revoked: {}", partitions);
             resetFlushRequests(partitions);
             resetDataProducers(partitions);
+            setFlushOwned(partitions, false);
             assignedPartitions.removeAll(partitions);
         }
     }

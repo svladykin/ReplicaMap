@@ -110,11 +110,12 @@ class OpMessageTest {
 
         UUID clientId = UUID.randomUUID();
         long flushOffsetOps = 7;
+        long dataOffset = 9;
 
-        FlushNotification msg = new FlushNotification(clientId, flushOffsetOps);
+        FlushNotification msg = new FlushNotification(clientId, flushOffsetOps, dataOffset);
 
         byte[] msgBytes = ser.serialize(null, msg);
-        assertEquals(1 + UUID_SIZE_BYTES + 1, msgBytes.length);
+        assertEquals(1 + UUID_SIZE_BYTES + 1 + 1, msgBytes.length); // opType + uuid + varlong opsOffset + varlong dataOffset
 
         FlushNotification msgx = (FlushNotification)des.deserialize(null, msgBytes);
         assertEqualsFull(msg, msgx);
@@ -122,6 +123,7 @@ class OpMessageTest {
         assertEquals(OP_FLUSH_NOTIFICATION, msgx.getOpType());
         assertEquals(clientId, msgx.getClientId());
         assertEquals(flushOffsetOps, msgx.getOpsOffset());
+        assertEquals(dataOffset, msgx.getDataOffset());
     }
 
     static class ConfigurableCloseable {

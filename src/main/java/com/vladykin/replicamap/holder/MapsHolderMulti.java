@@ -5,6 +5,7 @@ import com.vladykin.replicamap.base.ReplicaMapBase;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 
 /**
  * Convenience holder implementation that contains multiple maps.
@@ -44,6 +45,11 @@ public abstract class MapsHolderMulti implements MapsHolder {
         }
 
         return map;
+    }
+
+    @Override
+    public void forEachMap(Consumer<ReplicaMap<?,?>> action) {
+        maps.values().forEach(action);
     }
 
     @Override

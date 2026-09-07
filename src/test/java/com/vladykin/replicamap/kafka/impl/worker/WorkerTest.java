@@ -28,7 +28,7 @@ class WorkerTest {
         List<Worker> workers = new ArrayList<>();
 
         for (int i = 0; i < threads; i++) {
-            Worker w = new Worker("testGroup" + i) {
+            Worker w = new Worker("testGroup" + i, null) {
                 @Override
                 protected void doRun() throws Exception {
                     start.await();
@@ -39,9 +39,9 @@ class WorkerTest {
                 }
             };
 
-            assertTrue(w.getName().startsWith("testGroup"));
-            assertTrue(w.getName().endsWith(String.valueOf(i)));
-            assertTrue(w.toString().contains(w.getName()));
+            assertTrue(w.name.startsWith("testGroup"));
+            assertTrue(w.name.endsWith(String.valueOf(i)));
+            assertTrue(w.toString().contains(w.name));
 
             assertNull(w.thread);
             w.start();
@@ -67,7 +67,7 @@ class WorkerTest {
     void testWorkerFailure() throws InterruptedException {
         AtomicBoolean executed = new AtomicBoolean();
 
-        Worker w = new Worker("testGroup" + 1) {
+        Worker w = new Worker("testGroup" + 1, null) {
             @Override
             protected void doRun() {
                 executed.set(true);
@@ -81,7 +81,7 @@ class WorkerTest {
 
         w.start();
 
-        w.thread.join(3000);
+        w.thread.join();
 
         assertThrows(IllegalStateException.class, w::start);
         assertFalse(executed.get());

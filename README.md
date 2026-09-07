@@ -96,6 +96,8 @@ flowers.putIfAbsent(2L, "Magnolia");
 flowers.putIfAbsent(3L, "Cactus");
 
 System.out.println(new TreeMap<>(flowers));
+
+replicaMapManager.close();
 ```
 
 ## Important details to keep in mind
@@ -122,6 +124,36 @@ to the same partition.
 When using Optimized Compute you must never update values inplace, always create a modified copy of the value instead.
 Otherwise incorrect state may be flushed and data will be broken. For the same reason you must never modify
 keys and values in a listener.
+
+You must not call map update methods (neither the synchronous ones nor the `async*` ones) from within a
+listener or a `compute`/`merge` function: these run on the update-processing thread, and a nested update would
+dead-lock waiting for its own echo. Such an attempt is rejected with an exception. Do the follow-up update from
+another thread instead.
+
+The compute serializers/deserializers (`compute.serializer`/`compute.deserializer`) must be configured
+identically on all clients. If one client sends a `compute`/`merge` function that another client cannot
+deserialize, that is an unrecoverable condition: the affected client fails loudly (all subsequent map operations
+throw) rather than silently diverging.
+
+All managers that replicate the same `data` topic must be configured with the same `ops` and `flush` topics:
+the shared `ops` log replicates updates and the shared `flush` consumer group coordinates flushing across the
+replicas. Many managers attached to one `data` topic is the normal multi-master case, not a problem.
+
+A flush happens once a partition's `ops` offset crosses a multiple of `flush.period.ops`. On a low-traffic
+partition that does not reach the next multiple, a time-based trigger forces a flush once the oldest unflushed
+update is older than `flush.max.unflushed.ms` (2 seconds by default), so the `data` topic eventually reflects
+every update even on idle partitions. Only the client that currently owns the partition's flushing runs this
+trigger, so the requests are not duplicated by every replica. Each flush is a Kafka transaction, so on a
+deployment with many low-traffic partitions raising this value trades `data` topic freshness for a lower
+transaction rate; `-1` disables the time-based trigger entirely (`0` is rejected, since on a `*.ms` setting it
+reads as "immediately", not as "never"). The `ops` topic retention (see below) still must be large enough to
+never evict records a starting client needs to replay (from the last flushed position to the head).
+
+`stop()` is asynchronous and returns a `CompletableFuture`, while `close()` waits for the stop to complete —
+up to `stop.timeout.ms` (60 seconds by default, `-1` waits indefinitely). Hitting that timeout is not a leak:
+the stop keeps running in the background and the future returned by `stop()` completes when it is done.
+
+A `compute`/`merge` that recomputes a value `equals` to the current one is treated as a no-op and is not flushed.
 
 ## Protocol and architecture
 
@@ -163,6 +195,36 @@ To avoid flush reordering (when a slow client requests a flush for the data that
 flushed time ago by another client and newer updates can be overwritten by the older ones) 
 `FlushWorker` ignores the incoming out of order flush requests.
 
+When a client starts, the `OpsWorker` first loads the full compacted snapshot from the `data` topic, then 
+resumes the `ops` topic right after the latest flush the snapshot reflects and replays everything since. The 
+resume position must be exact (replayed `compute`/`merge` functions are re-executed, so nothing already 
+reflected by the snapshot may be replayed) and it is recovered from the records themselves — startup does not 
+depend on the flush consumer group coordinator. Two complementary markers are combined:
+
+- Every data record written by a flush carries a `replicamap.ops` header with the flushed `ops` offset. The 
+  maximum header over the loaded snapshot (the *candidate*) is consistent with the snapshot by construction 
+  and survives as long as the data itself does — but it may lag behind the latest flush when recent flushes 
+  were delete-only and compaction removed their tombstones together with the headers.
+- Every flush notification in the `ops` topic carries the offset of the last data record written by its 
+  flush. This makes notifications exact markers: the latest notification whose flushed data offset lies 
+  within the loaded snapshot identifies precisely the latest flush the snapshot reflects. Notifications, 
+  however, age out with the `ops` topic retention.
+
+The client scans the `ops` topic backward from the head in doubling windows (2×, 4×, 8×... `flush.period.ops`) 
+for the latest such notification. Notifications in a partition are strictly ordered (there is one fenced 
+flusher at a time), so a window that contains a matching notification yields the exact resume point, and an 
+empty window means the target lies further back; the scan never goes below the candidate (a notification is 
+always written after the operations it flushed).
+
+Deleted `ops` ranges are handled explicitly. Retention is allowed to delete only already flushed operations, 
+so when the range right after the resolved resume position turns out to be deleted, the client re-reads the 
+tail of the `data` topic: either it picks up the flush that made those records deletable (and retries the 
+resolution with the advanced snapshot), or the snapshot is stable, which proves the deleted range contains 
+nothing the snapshot does not already reflect — then it is safe to skip to the `ops` log start (logged as a 
+warning). This way partitions that were idle past the `ops` retention still start cleanly, while a genuine 
+retention violation (unflushed records deleted — check the retention configuration below) still fails loudly 
+at the replay instead of guessing.
+
 ## Topics configuration
 
 - All the topics (`data`, `ops` and `flush`) must be setup in a fault tolerant way:  
@@ -183,10 +245,14 @@ flushed time ago by another client and newer updates can be overwritten by the o
   `maxKeySize = 16B`, `maxValueSize = 1KiB`, `maxFlushLagOps = flushPeriodOps = 5000`, `flushFailures = 100`,  
   then we need to set retention size to `(16B + 2 * 1KiB + 70B) * (5000 + 5000) * 100 = 2GiB`:  
   `retention.bytes=2147483648`
-- Another important factor is not covered in the formula above: while a new client is loading data from the `data` topic
-  the respective flush notification record in `ops` topic should not be evicted. Thus, we have to configure `ops` topic with 
-  delayed file deletion:  
-  `file.delete.delay.ms=7200000` 
+- Another important factor is not covered in the formula above: the `ops` retention must cover not only the 
+  unflushed tail but also the worst-case client load/restart time — while a new client is loading data from 
+  the `data` topic, the `ops` records it still needs to replay (from the resume position up to the head) must 
+  not be evicted. Thus, we have to configure `ops` topic with delayed file deletion:  
+  `file.delete.delay.ms=7200000`  
+  Note that a violation of this rule (unflushed `ops` records deleted) is fundamentally undetectable by the 
+  clients — it looks identical to the legitimate aging out of already flushed records — so a starting client 
+  skips such a range with a warning in the log; correlate the skip warnings with the retention settings.
 
 ### Example configuration:
 
@@ -232,26 +298,23 @@ bin/kafka-topics.sh --list --bootstrap-server $BOOTSTRAP_SERVER | grep $DATA_TOP
 
 ### How to start with an existing key-value topic as the `data` topic:
 
+No special initialization step is needed: a fresh ReplicaMap client adopts an existing data topic 
+automatically. With empty `ops` and `flush` topics there is no committed flush offset, so the client 
+loads the full compacted snapshot from the `data` topic and resumes the `ops` topic from the very 
+beginning.
+
 0. Make sure other consumers of this data topic (if any) support `read_committed` isolation level.
 
 1. Create empty `ops` and `flush` topics according to the instructions above.
 
-2. Stop all the updates to your existing `data` topic.  
+2. Stop all the updates to your existing `data` topic while you adopt it.  
    __This step is very important, otherwise your data may be corrupted or lost 
    or ReplicaMap may have inconsistent state across the clients!!!__
 
 3. Alter the `data` topic configuration to meet the requirements above:
     ```shell script
-    ZOOKEEPER="localhost:2181"
-    bin/kafka-configs.sh --zookeeper $ZOOKEEPER --entity-type topics --entity-name $DATA_TOPIC --alter --add-config \
+    bin/kafka-configs.sh --bootstrap-server $BOOTSTRAP_SERVER --entity-type topics --entity-name $DATA_TOPIC --alter --add-config \
        min.insync.replicas=$MIN_INSYNC_REPLICAS,unclean.leader.election.enable=false,cleanup.policy=compact,min.compaction.lag.ms=0
     ```
 
-4. Run the following command to initialize `ops` topic with the last `data` topic offsets:  
-    ```shell script
-    java -cp slf4j-api-1.7.26.jar:kafka-clients-2.3.1.jar:replicamap-0.4.jar com.vladykin.replicamap.kafka.KReplicaMapTools \
-          initExisting $BOOTSTRAP_SERVER $DATA_TOPIC $OPS_TOPIC
-    ```
-    it must print `OK: ...`
-
-5. __PROFIT!!__ Start using ReplicaMap in your application, all the existing data will be loaded.
+4. __PROFIT!!__ Start using ReplicaMap in your application, all the existing data will be loaded.

@@ -26,8 +26,6 @@ public abstract class OpMessage {
     public static final byte OP_FLUSH_REQUEST = 'f';
     public static final byte OP_FLUSH_NOTIFICATION = 'F';
 
-    public static final byte OP_TX = 't';
-
     protected final UUID clientId;
     protected final byte opType;
 

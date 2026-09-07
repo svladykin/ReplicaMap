@@ -5,6 +5,8 @@ import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.KReplicaMapManager;
 import com.vladykin.replicamap.kafka.KReplicaMapManagerConfig;
 
+import java.util.function.Consumer;
+
 /**
  * Holds the maps for {@link ReplicaMapManager}.
  * For {@link KReplicaMapManager} can be set by {@link KReplicaMapManagerConfig#MAPS_HOLDER} configuration property.
@@ -43,4 +45,14 @@ public interface MapsHolder extends AutoCloseable {
     default Object getDefaultMapId() {
         throw new UnsupportedOperationException();
     }
+
+    /**
+     * Applies the given action to every currently held map. The manager uses it to propagate an
+     * unrecoverable failure to the in-flight operations of all the maps, so a custom holder must
+     * implement it — otherwise pending operations would silently hang when a worker dies, waiting
+     * for an echo that will never arrive.
+     *
+     * @param action Action to apply to each held map.
+     */
+    void forEachMap(Consumer<ReplicaMap<?,?>> action);
 }

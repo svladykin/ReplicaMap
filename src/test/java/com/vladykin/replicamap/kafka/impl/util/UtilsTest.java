@@ -1,11 +1,16 @@
 package com.vladykin.replicamap.kafka.impl.util;
 
 import com.vladykin.replicamap.ReplicaMapException;
+import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.errors.WakeupException;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 
 import static com.vladykin.replicamap.kafka.impl.util.Utils.assignPartitionsRoundRobin;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.deserializeShortArray;
@@ -25,6 +30,61 @@ class UtilsTest {
         assertThrows(ReplicaMapException.class, () -> Utils.checkPositive(0, "x"));
         assertThrows(ReplicaMapException.class, () -> Utils.checkPositive(-1, "x"));
         Utils.checkPositive(1, "x");
+    }
+
+    /**
+     * A worker blocked on {@code opsSteadyFut.get()} receives an interruption wrapped into
+     * {@link ExecutionException} / {@link CompletionException}. Missing those wrappers makes a clean
+     * shutdown look like an unrecoverable failure.
+     */
+    @Test
+    void testIsInterrupted() {
+        assertFalse(Utils.isInterrupted(null));
+
+        // Directly interrupted.
+        assertTrue(Utils.isInterrupted(new InterruptedException()));
+        assertTrue(Utils.isInterrupted(new InterruptException("x")));
+        assertTrue(Utils.isInterrupted(new WakeupException()));
+
+        // Through the known wrappers, in any combination.
+        assertTrue(Utils.isInterrupted(new ReplicaMapException("x", new InterruptedException())));
+        assertTrue(Utils.isInterrupted(new ExecutionException(new InterruptedException())));
+        assertTrue(Utils.isInterrupted(new CompletionException(new WakeupException())));
+        assertTrue(Utils.isInterrupted(
+            new CompletionException(new ReplicaMapException("x", new WakeupException()))));
+
+        // The real chain a flush worker sees when the ops workers are interrupted while starting.
+        assertTrue(Utils.isInterrupted(new ExecutionException(
+            new ReplicaMapException("failed to start",
+                new CompletionException(
+                    new ReplicaMapException("interrupted", new InterruptedException()))))));
+
+        // Real failures, including the ones wrapped the same way.
+        assertFalse(Utils.isInterrupted(new IllegalStateException("boom")));
+        assertFalse(Utils.isInterrupted(new ExecutionException(new IllegalStateException("boom"))));
+        assertFalse(Utils.isInterrupted(new ReplicaMapException("x", new IllegalStateException("boom"))));
+
+        // An unknown wrapper must not be unwrapped: a genuine failure that merely carries an
+        // interruption in its cause chain is still a failure.
+        assertFalse(Utils.isInterrupted(new IllegalStateException("boom", new InterruptedException())));
+
+        // A cyclic cause chain must terminate instead of spinning (Java forbids direct
+        // self-causation, but a->b->a is constructible).
+        ReplicaMapException a = new ReplicaMapException("a");
+        ReplicaMapException b = new ReplicaMapException("b", a);
+        a.initCause(b);
+        assertFalse(Utils.isInterrupted(a));
+    }
+
+    @Test
+    void testToNanosSaturated() {
+        assertEquals(0L, Utils.toNanosSaturated(Duration.ZERO));
+        assertEquals(1_000_000L, Utils.toNanosSaturated(Duration.ofMillis(1)));
+        assertEquals(-1_000_000L, Utils.toNanosSaturated(Duration.ofMillis(-1)));
+
+        // Would throw ArithmeticException from Duration.toNanos().
+        assertEquals(Long.MAX_VALUE, Utils.toNanosSaturated(Duration.ofMillis(Long.MAX_VALUE)));
+        assertEquals(Long.MIN_VALUE, Utils.toNanosSaturated(Duration.ofMillis(Long.MIN_VALUE)));
     }
 
     @Test

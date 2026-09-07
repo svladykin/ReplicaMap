@@ -231,10 +231,8 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
 
     /**
      * Must be called by the external processor of the updates queue.
-     *
      * Each call is not necessary will result in the actual map update because
      * state may asynchronously change and precondition may fail.
-     *
      * This method can be called from multiple threads simultaneously, but
      * for the same key there must be no parallel invocations.
      *
@@ -324,7 +322,6 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
                 default:
                     assert !myUpdate;
                     log.warn("Unexpected op type: {}", (char)updateType);
-                    result = null;
                     updated = false;
             }
         }
@@ -390,6 +387,19 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         // no-op
     }
 
+    /**
+     * Called when a new {@link AsyncOp} is created, for both synchronous and asynchronous updates,
+     * before it is started. Implementations may reject the update here — e.g. a nested update
+     * initiated from a thread that is currently processing updates for this map (a listener or a
+     * replicated compute/merge function), which would dead-lock waiting for an echo the same thread
+     * must process. No-op by default.
+     *
+     * @param op New operation.
+     */
+    protected void beforeNew(AsyncOp<?,K,V> op) {
+        // no-op
+    }
+
     protected void beforeTryRun(AsyncOp<?,K,V> op) {
         // no-op
     }
@@ -404,7 +414,19 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
     }
 
     public void interruptRunningOps() {
-        Exception e = new InterruptedException();
+        failRunningOps(new InterruptedException());
+    }
+
+    public static void failRunningOps(ReplicaMap<?,?> map, Throwable e) {
+        if (map instanceof ReplicaMapBase)
+            ((ReplicaMapBase<?, ?>)map).failRunningOps(e);
+    }
+
+    /**
+     * Completes all the in-flight operations of this map exceptionally, so the callers blocked
+     * waiting for an echo that will never arrive (e.g. a died worker) unblock with an error.
+     */
+    public void failRunningOps(Throwable e) {
         ops.values().forEach(op -> op.onError(e));
     }
 
@@ -505,6 +527,8 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
             this.upd = upd;
             this.function = function;
             opKey = new OpKey<>(key, map.nextOpId());
+
+            map.beforeNew(this); // Reject nested updates initiated from update-processing threads.
         }
 
         protected boolean casState(OpState exp, OpState upd) {
@@ -762,7 +786,7 @@ public abstract class ReplicaMapBase<K, V> implements ReplicaMap<K, V> {
         @Override
         public int hashCode() {
             int result = key.hashCode();
-            result = 31 * result + (int)(opId ^ (opId >>> 32));
+            result = 31 * result + Long.hashCode(opId);
             return result;
         }
     }

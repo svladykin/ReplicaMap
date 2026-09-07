@@ -5,6 +5,8 @@ import com.vladykin.replicamap.TestMap;
 import com.vladykin.replicamap.kafka.impl.util.Utils;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -12,6 +14,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.vladykin.replicamap.base.ReplicaMapBaseMultithreadedTest.executeThreads;
+import static java.util.Collections.emptyList;
+import static java.util.Collections.singletonList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -63,6 +67,61 @@ class MapsHolderTest {
         h.close();
 
         assertTrue(h.maps.isEmpty());
+    }
+
+    /**
+     * The manager propagates an unrecoverable failure to the in-flight operations of every map
+     * through {@code forEachMap}. A holder that misses a map would leave its operations hanging
+     * forever, waiting for an echo that will never arrive.
+     */
+    @Test
+    void testForEachMapMulti() {
+        MapsHolderMulti h = new MapsHolderMulti() {
+            @Override
+            public <K> Object getMapId(K key) {
+                return key;
+            }
+        };
+
+        List<ReplicaMap<?,?>> visited = new ArrayList<>();
+
+        h.forEachMap(visited::add);
+        assertEquals(emptyList(), visited, "Nothing is held yet");
+
+        ReplicaMap<Object,Object> r1 = h.getMapById(1, TestMap::new);
+        ReplicaMap<Object,Object> r2 = h.getMapById(2, TestMap::new);
+
+        h.forEachMap(visited::add);
+
+        assertEquals(2, visited.size());
+        assertTrue(visited.contains(r1) && visited.contains(r2), "Every held map must be visited: " + visited);
+
+        h.close();
+
+        visited.clear();
+        h.forEachMap(visited::add);
+        assertEquals(emptyList(), visited, "Nothing is held after close");
+    }
+
+    @Test
+    void testForEachMapSingle() {
+        MapsHolderSingle h = new MapsHolderSingle();
+
+        List<ReplicaMap<?,?>> visited = new ArrayList<>();
+
+        h.forEachMap(visited::add);
+        assertEquals(emptyList(), visited, "Nothing is held yet");
+
+        ReplicaMap<Object,Object> r = h.getMapById(h.getDefaultMapId(), TestMap::new);
+
+        h.forEachMap(visited::add);
+        assertEquals(singletonList(r), visited);
+
+        h.close();
+
+        visited.clear();
+        h.forEachMap(visited::add);
+        assertEquals(emptyList(), visited, "Nothing is held after close");
     }
 
     @Test

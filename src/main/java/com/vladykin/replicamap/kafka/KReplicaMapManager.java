@@ -3,6 +3,7 @@ package com.vladykin.replicamap.kafka;
 import com.vladykin.replicamap.ReplicaMap;
 import com.vladykin.replicamap.ReplicaMapException;
 import com.vladykin.replicamap.ReplicaMapManager;
+import com.vladykin.replicamap.base.ReplicaMapBase;
 import com.vladykin.replicamap.holder.MapsHolder;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
@@ -49,9 +50,8 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
@@ -70,6 +70,7 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.COMPUTE_SER
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_UNFLUSHED_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
@@ -77,15 +78,16 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_DESERIA
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_SERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.MAPS_CHECK_PRECONDITION;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.MAPS_HOLDER;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.NO_LIMIT;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_MAX_PARALLEL;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_SEND_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.PARTITIONER_CLASS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.STOP_TIMEOUT_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_SERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.assignPartitionsRoundRobin;
-import static com.vladykin.replicamap.kafka.impl.util.Utils.check;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.checkPositive;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.ifNull;
 import static com.vladykin.replicamap.kafka.impl.util.Utils.parseIntSet;
@@ -98,9 +100,6 @@ import static java.util.stream.Collectors.toList;
  */
 public class KReplicaMapManager implements ReplicaMapManager {
     private static final Logger log = LoggerFactory.getLogger(KReplicaMapManager.class);
-
-    protected static final AtomicReferenceFieldUpdater<KReplicaMapManager, State> STATE =
-        AtomicReferenceFieldUpdater.newUpdater(KReplicaMapManager.class, State.class, "state");
 
     protected static final String SUFFIX = "_replicamap";
 
@@ -115,7 +114,9 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final Semaphore opsSemaphore;
     protected final boolean mapsCheckPrecondition;
     protected final Duration opsSendTimeout;
+    protected final Duration stopTimeout;
     protected final int flushPeriodOps;
+    protected final Duration flushMaxUnflushed;
     protected final String flushConsumerGroupId;
     protected final String dataTransactionalId;
 
@@ -136,7 +137,8 @@ public class KReplicaMapManager implements ReplicaMapManager {
     protected final int totalPartitions;
     protected final short[] allowedPartitions;
 
-    protected volatile State state = NEW;
+    protected final AtomicReference<State> state = new AtomicReference<>(NEW);
+    protected final AtomicReference<Throwable> failure = new AtomicReference<>();
 
     protected final LongAdder sentUpdates = new LongAdder();
     protected final LongAdder receivedUpdates = new LongAdder();
@@ -173,8 +175,13 @@ public class KReplicaMapManager implements ReplicaMapManager {
         opsSendTimeout = Duration.ofMillis(cfg.getLong(OPS_SEND_TIMEOUT_MS));
         checkPositive(opsSendTimeout, OPS_SEND_TIMEOUT_MS);
 
+        stopTimeout = configMillisOrNoLimit(STOP_TIMEOUT_MS, "to wait indefinitely");
+
         flushPeriodOps = cfg.getInt(FLUSH_PERIOD_OPS);
         checkPositive(flushPeriodOps, FLUSH_PERIOD_OPS);
+
+        flushMaxUnflushed = configMillisOrNoLimit(FLUSH_MAX_UNFLUSHED_MS,
+            "to disable the time-based flush trigger");
 
         int opsWorkers = cfg.getInt(OPS_WORKERS);
         checkPositive(opsWorkers, OPS_WORKERS);
@@ -242,9 +249,19 @@ public class KReplicaMapManager implements ReplicaMapManager {
             }
         }
         catch (Exception e) {
-            Utils.close(this);
-            throw new ReplicaMapException("Failed to create ReplicaMap manager for topics [" +
+            ReplicaMapException ex = new ReplicaMapException("Failed to create ReplicaMap manager for topics [" +
                 dataTopic + ", " + opsTopic + ", " + flushTopic + "].", e);
+
+            try {
+                // No worker is started yet, thus this is fast. We do wait for it: the caller never
+                // gets a reference to this manager and can not release the resources itself.
+                stop(stopTimeout);
+            }
+            catch (Exception stopErr) {
+                ex.addSuppressed(stopErr); // Must not mask the construction failure, but must not vanish either.
+            }
+
+            throw ex;
         }
     }
 
@@ -305,6 +322,26 @@ public class KReplicaMapManager implements ReplicaMapManager {
                 topic1 + "(" + parts1 + ") vs " + topic2 + "(" + parts2 + ").");
     }
 
+    /**
+     * Reads a milliseconds setting that accepts either a positive value or
+     * {@link KReplicaMapManagerConfig#NO_LIMIT}.
+     * {@code 0} is rejected: on a {@code *.ms} setting it reads as "immediately", not as "never".
+     *
+     * @param name Configuration property name.
+     * @param noLimitMeaning What the no-limit value means for this property, for the error message.
+     * @return The configured duration, negative if it is {@link KReplicaMapManagerConfig#NO_LIMIT}.
+     */
+    protected Duration configMillisOrNoLimit(String name, String noLimitMeaning) {
+        long ms = cfg.getLong(name);
+
+        if (ms <= 0 && ms != NO_LIMIT) {
+            throw new ReplicaMapException(name + " must be positive, or " +
+                NO_LIMIT + " " + noLimitMeaning + ".");
+        }
+
+        return Duration.ofMillis(ms);
+    }
+
     protected void onNewReplicaMapManager() {
         // no-op
     }
@@ -327,6 +364,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
             opsTopic,
             flushTopic,
             workerId,
+            this,
             flushQueues,
             opsSteadyFut,
             receivedFlushRequests,
@@ -343,24 +381,47 @@ public class KReplicaMapManager implements ReplicaMapManager {
         if (log.isDebugEnabled())
             log.debug("Creating new ops worker {} for partitions: {}", workerId, assignedParts);
 
-        return new OpsWorker(
-            clientId,
-            dataTopic,
-            opsTopic,
-            flushTopic,
-            workerId,
-            assignedParts,
-            newKafkaConsumerData(),
-            newKafkaConsumerOps(),
-            flushProducer,
-            flushPeriodOps,
-            flushQueues,
-            this::applyReceivedUpdate,
-            sentFlushRequests,
-            receivedUpdates,
-            receivedDataRecords,
-            receivedFlushNotifications
-        );
+        // Keep the consumers in local vars: created as arguments they would be unreachable (and thus
+        // never closed) if the next argument or the constructor itself throws, since the failed
+        // worker never makes it into opsWorkers for close() to find.
+        Consumer<Object,Object> dataConsumer = null;
+        Consumer<Object,OpMessage> opsConsumer = null;
+
+        try {
+            dataConsumer = newKafkaConsumerData();
+            opsConsumer = newKafkaConsumerOps();
+
+            OpsWorker opsWorker = new OpsWorker(
+                clientId,
+                dataTopic,
+                opsTopic,
+                flushTopic,
+                workerId,
+                assignedParts,
+                dataConsumer,
+                opsConsumer,
+                flushProducer,
+                flushPeriodOps,
+                flushMaxUnflushed,
+                flushQueues,
+                this,
+                this::applyReceivedUpdate,
+                sentFlushRequests,
+                receivedUpdates,
+                receivedDataRecords,
+                receivedFlushNotifications
+            );
+
+            // Owned by the worker from now on, it closes them.
+            dataConsumer = null;
+            opsConsumer = null;
+
+            return opsWorker;
+        }
+        finally {
+            Utils.close(dataConsumer);
+            Utils.close(opsConsumer);
+        }
     }
 
     protected Set<Integer> assignPartitionsToWorker(int workerId, int allWorkers) {
@@ -504,15 +565,112 @@ public class KReplicaMapManager implements ReplicaMapManager {
      * @return Current state of this manager.
      */
     public State getState() {
-        return state;
+        return state.get();
     }
 
     protected boolean casState(State oldState, State newState) {
-        return STATE.compareAndSet(this, oldState, newState);
+        return state.compareAndSet(oldState, newState);
     }
 
-    protected void checkRunning() {
-        check(getState() == RUNNING, () -> "Manager is not running, actual state: " + getState());
+    public void checkRunning() {
+        State s = getState();
+
+        if (s != RUNNING)
+            throw new ReplicaMapException("Manager is not running, actual state: " + s, failure.get());
+
+        checkNotFailed();
+    }
+
+    /**
+     * Throws if an unrecoverable error was recorded (a worker died), regardless of the lifecycle
+     * state. Used by workers to bail out when any of them fails, without tripping during normal start.
+     */
+    public void checkNotFailed() {
+        Throwable ex = failure.get();
+
+        if (ex != null)
+            throw new ReplicaMapException("Manager hit unrecoverable error.", ex);
+    }
+
+    /**
+     * A manager that stopped itself ends up in the same {@link State#STOPPED} state as one the
+     * application stopped, this is how they are told apart.
+     *
+     * @return The exception the worker died with, or {@code null} if this manager was not stopped by
+     *         a failure. This is the worker's own exception, so the error that actually caused the
+     *         death is somewhere down its cause chain rather than the returned object itself.
+     */
+    public Throwable getFailure() {
+        return failure.get();
+    }
+
+    /**
+     * Records the first unrecoverable error (a worker died); called by {@code Worker.run}.
+     * The manager stops itself, so that all the workers exit and every Kafka client is released
+     * instead of lingering half alive, all the in-flight operations are completed exceptionally
+     * (their echoes may never arrive), and all subsequent map operations fail fast in
+     * {@link #checkRunning()} with this error as the cause.
+     */
+    public void onUnrecoverableError(Throwable e) {
+        assert e != null;
+
+        boolean first = failure.compareAndSet(null, e);
+
+        if (first)
+            log.error("Unrecoverable error, stopping.", e);
+
+        // Fail the in-flight ops unconditionally (not only on the first failure): an op may have
+        // registered after the previous sweep but before the failure became visible to its sender.
+        // Doing it before the stop below unblocks those callers right away instead of when the stop
+        // gets to Utils.close(maps). Ops registering after this sweep fail in doSendUpdate via
+        // checkRunning.
+        Throwable ex = failure.get();
+        maps.forEachMap(map -> ReplicaMapBase.failRunningOps(map, ex));
+
+        // We are on a worker thread here, thus we must only trigger the stop and never wait for it:
+        // the stopper joins all the workers, including this one.
+        if (first)
+            stop();
+    }
+
+    /**
+     * Runs {@link #doStop()} on a dedicated thread. It interrupts and joins every worker, so it must
+     * never run on one of them: {@link Worker#interruptAll} would interrupt that thread as well, its
+     * first join would throw {@link InterruptedException} instead of waiting, and the workers would
+     * then get their Kafka clients closed underneath them while still running. A dedicated thread
+     * makes that impossible by construction, whoever calls {@link #stop()}.
+     */
+    protected void doAsyncStop() {
+        log.info("Stopping for topics [{}, {}, {}], client id {}",
+            dataTopic, opsTopic, flushTopic, clientId);
+
+        Thread stopper = new Thread(() -> {
+            Throwable err = null;
+
+            try {
+                doStop();
+            }
+            catch (Throwable e) {
+                err = e; // doStop is never retried, so we still go to STOPPED below.
+            }
+
+            // Must be visible as STOPPED before anyone waiting in stop() wakes up, and the future
+            // must always be completed, otherwise those waiters hang.
+            state.set(STOPPED);
+
+            if (err == null)
+                stoppedFut.complete(this);
+            else {
+                stoppedFut.completeExceptionally(new ReplicaMapException("Failed to stop for topics [" +
+                    dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + clientId, err));
+            }
+
+            log.info("Stopped for topics [{}, {}, {}], client id: {}",
+                dataTopic, opsTopic, flushTopic, clientId);
+        }, "replicamap-stop-" + dataTopic + "-" + clientId);
+
+        stopper.setDaemon(true);
+        stopper.start();
     }
 
     /**
@@ -798,7 +956,11 @@ public class KReplicaMapManager implements ReplicaMapManager {
             return this;
         }
 
-        Utils.close(this);
+        // Runs on an ops worker thread (it completes the last steady future), thus only trigger the
+        // stop here, never wait for it: the stopper joins that very thread. Callers that need the
+        // cleanup to be finished can wait on stop() or close().
+        stop();
+
         throw new ReplicaMapException("Failed to start for topics [" +
             dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + clientId, ex);
     }
@@ -816,45 +978,37 @@ public class KReplicaMapManager implements ReplicaMapManager {
     }
 
     @Override
-    public void stop() {
+    public CompletableFuture<ReplicaMapManager> stop() {
         for (;;) {
             State s = getState();
 
-            if (s == STOPPED)
-                return;
+            if (s == STOPPING || s == STOPPED)
+                break; // Already stopping or stopped, just return the same future below.
 
-            if (s == STOPPING) {
-                try {
-                    stoppedFut.get();
-                }
-                catch (InterruptedException | ExecutionException e) {
-                    throw new ReplicaMapException(e);
-                }
-                return;
-            }
-
-            if (casState(s, STOPPING))
+            if (casState(s, STOPPING)) {
+                doAsyncStop();
                 break;
+            }
         }
 
-        log.info("Stopping for topics [{}, {}, {}], client id {}",
-            dataTopic, opsTopic, flushTopic, clientId);
-
-        try {
-            doStop();
-            state = STOPPED;
-            stoppedFut.complete(this);
-        }
-        catch (Exception e) {
-            stoppedFut.completeExceptionally(e);
-
-            throw new ReplicaMapException("Failed to stop for topics [" +
-                dataTopic + ", " + opsTopic + ", " + flushTopic + "], client id: " + clientId, e);
-        }
-
-        log.info("Stopped for topics [{}, {}, {}], client id: {}", dataTopic, opsTopic, flushTopic, clientId);
+        return stoppedFut;
     }
 
+    /**
+     * Stops and waits for {@code stop.timeout.ms} ({@link KReplicaMapManagerConfig#NO_LIMIT} waits
+     * indefinitely). Bounded by default because closing the Kafka clients can stall and the caller
+     * must not hang forever because of it; on timeout the stop still proceeds in the background.
+     */
+    @Override
+    public void close() {
+        stop(stopTimeout);
+    }
+
+    /**
+     * Interrupts every worker before joining any of them, so that a worker thread blocked in
+     * {@link #stop()} waiting for the stop to complete is always released. Runs on the stopper
+     * thread only, see {@link #doAsyncStop()}.
+     */
     protected void doStop() {
         Worker.interruptAll(opsWorkers);
         Worker.interruptAll(flushWorkers);
@@ -871,6 +1025,7 @@ public class KReplicaMapManager implements ReplicaMapManager {
         Utils.close(maps);
     }
 
+    @SuppressWarnings("unchecked")
     protected <K,V,M extends ReplicaMap<K,V>> M getMapById(Object mapId) {
         return (M)maps.getMapById(mapId, this::newReplicaMap);
     }

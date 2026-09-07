@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 import static com.vladykin.replicamap.kafka.impl.worker.flush.FlushQueue.NOT_INITIALIZED;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,6 +25,66 @@ class FlushQueueTest {
     private static final String FLUSH_TOPIC = "flush_topic";
     private static final int PART = 5;
     private static final UUID CLIENT_ID = new UUID(0,0);
+
+    @Test
+    void testInitUnflushedOpsOffsetResumeArming() {
+        // Armed: the resume flush notification must be replayed before any later one, and by steady state.
+        var q = new FlushQueue(new TopicPartition(DATA_TOPIC, PART));
+        q.initUnflushedOpsOffset(99, 50);
+
+        assertThrows(IllegalStateException.class, q::checkFoundResumeFlushNotification);
+        assertThrows(IllegalStateException.class,
+            () -> q.addOpsRecord(null, null, 100, false, new FlushNotification(CLIENT_ID, 60, 0)));
+
+        // Armed, happy path: the resume notification is replayed first, later ones are fine.
+        var q2 = new FlushQueue(new TopicPartition(DATA_TOPIC, PART));
+        q2.initUnflushedOpsOffset(99, 50);
+
+        q2.addOpsRecord(null, null, 100, false, new FlushNotification(CLIENT_ID, 50, 0));
+        q2.addOpsRecord(null, null, 101, false, new FlushNotification(CLIENT_ID, 60, 0));
+        q2.checkFoundResumeFlushNotification();
+
+        // Disarmed (-1): the resume notification is known to not be replayed (verified skip of a
+        // retention-deleted range) — later notifications and the steady check must pass.
+        var q3 = new FlushQueue(new TopicPartition(DATA_TOPIC, PART));
+        q3.initUnflushedOpsOffset(99, -1);
+
+        q3.checkFoundResumeFlushNotification();
+        q3.addOpsRecord(null, null, 100, false, new FlushNotification(CLIENT_ID, 60, 0));
+        q3.checkFoundResumeFlushNotification();
+    }
+
+    @Test
+    void testStaleFlushOffsetReArm() {
+        var q = new FlushQueue(new TopicPartition(DATA_TOPIC, PART));
+        q.initUnflushedOpsOffset(99);
+
+        long past = System.nanoTime() - TimeUnit.SECONDS.toNanos(10);
+        q.addOpsRecord("a", "A", 100, true, null, past);
+        q.addOpsRecord("b", "B", 101, true, null, past);
+
+        long maxAge = TimeUnit.MILLISECONDS.toNanos(500);
+
+        // Tail younger than the threshold -> no flush due.
+        assertEquals(-1, q.staleFlushOffset(TimeUnit.HOURS.toNanos(1)));
+
+        // Stale tail is returned once, then de-spammed.
+        assertEquals(101, q.staleFlushOffset(maxAge));
+        assertEquals(-1, q.staleFlushOffset(maxAge));
+
+        // Failed send for an outdated offset must not re-arm.
+        q.onStaleFlushRequestFailed(100);
+        assertEquals(-1, q.staleFlushOffset(maxAge));
+
+        // Failed send for the requested offset re-arms the trigger.
+        q.onStaleFlushRequestFailed(101);
+        assertEquals(101, q.staleFlushOffset(maxAge));
+        assertEquals(-1, q.staleFlushOffset(maxAge));
+
+        // A newer tail re-arms it naturally.
+        q.addOpsRecord("c", "C", 102, true, null, past);
+        assertEquals(102, q.staleFlushOffset(maxAge));
+    }
 
     @Test
     void testSimple() {
@@ -212,7 +273,7 @@ class FlushQueueTest {
         assertEquals(2, q.unflushedUpdates.size());
 
         assertEquals(2, q.addOpsRecord(null, null, 3, false,
-                new FlushNotification(CLIENT_ID, 2)));
+                new FlushNotification(CLIENT_ID, 2, 0)));
 
         assertEquals(3, q.getMaxFlushedOpsOffset());
         assertEquals(3, q.maxAddedOpsOffset);
@@ -227,21 +288,21 @@ class FlushQueueTest {
         assertEquals(3, q.unflushedUpdates.size());
 
         assertEquals(20, q.addOpsRecord(null, null, 21, false,
-                new FlushNotification(CLIENT_ID, 15)));
+                new FlushNotification(CLIENT_ID, 15, 0)));
 
         assertEquals(19, q.getMaxFlushedOpsOffset());
         assertEquals(21, q.maxAddedOpsOffset);
         assertEquals(1, q.unflushedUpdates.size());
 
         assertEquals(21, q.addOpsRecord(null, null, 22, false,
-                new FlushNotification(CLIENT_ID, 19)));
+                new FlushNotification(CLIENT_ID, 19, 0)));
 
         assertEquals(19, q.getMaxFlushedOpsOffset());
         assertEquals(22, q.maxAddedOpsOffset);
         assertEquals(1, q.unflushedUpdates.size());
 
         assertEquals(22, q.addOpsRecord(null, null, 23, false,
-                new FlushNotification(CLIENT_ID, 21)));
+                new FlushNotification(CLIENT_ID, 21, 0)));
 
         assertEquals(23, q.getMaxFlushedOpsOffset());
         assertEquals(23, q.maxAddedOpsOffset);

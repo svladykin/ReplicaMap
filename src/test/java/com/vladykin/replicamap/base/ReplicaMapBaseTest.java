@@ -23,6 +23,7 @@ import static com.vladykin.replicamap.base.ReplicaMapBase.interruptRunningOps;
 import static com.vladykin.replicamap.kafka.impl.msg.OpMessage.OP_PUT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -37,19 +38,19 @@ class ReplicaMapBaseTest {
         Map<Integer, String> map = new HashMap<>();
         Semaphore maxActiveOps = new Semaphore(10);
 
-        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', map, maxActiveOps) {
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<>('x', map, maxActiveOps) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 queue.add(update);
             }
 
             @Override
-            protected boolean canSendFunction(BiFunction<?,?,?> function) {
+            protected boolean canSendFunction(BiFunction<?, ?, ?> function) {
                 return true;
             }
         };
 
-        System.out.println(rmap.toString());
+        System.out.println(rmap);
 
         assertEquals('x', rmap.id());
         assertSame(map, rmap.unwrap());
@@ -217,6 +218,34 @@ class ReplicaMapBaseTest {
         }
     }
 
+    @Test
+    void testFailRunningOps() {
+        Map<Integer, String> map = new HashMap<>();
+        Semaphore maxActiveOps = new Semaphore(10);
+
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<>('x', map, maxActiveOps) {
+            @Override
+            protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
+                // No-op
+            }
+        };
+
+        // The op is pending: sent but the echo will never arrive (e.g. the processing worker died).
+        CompletableFuture<String> fut = rmap.asyncPut(1, "one");
+        assertFalse(fut.isDone());
+        assertEquals(9, maxActiveOps.availablePermits());
+
+        IllegalStateException failure = new IllegalStateException("worker died");
+        ReplicaMapBase.failRunningOps(rmap, failure);
+
+        ExecutionException e = assertThrows(ExecutionException.class, () -> fut.get(1, TimeUnit.SECONDS));
+        ReplicaMapException cause = (ReplicaMapException)e.getCause();
+        assertSame(failure, cause.getCause());
+
+        // The permit must be released so backpressure-blocked callers unblock too.
+        assertEquals(10, maxActiveOps.availablePermits());
+    }
+
     @SuppressWarnings("ConstantConditions")
     @Test
     void testFailedPreconditions() throws ExecutionException, InterruptedException {
@@ -224,14 +253,14 @@ class ReplicaMapBaseTest {
         Map<Integer, String> map = new HashMap<>();
         Semaphore maxActiveOps = new Semaphore(10);
 
-        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', map, maxActiveOps) {
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<>('x', map, maxActiveOps) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 queue.add(update);
             }
 
             @Override
-            protected boolean canSendFunction(BiFunction<?,?,?> function) {
+            protected boolean canSendFunction(BiFunction<?, ?, ?> function) {
                 return true;
             }
         };
@@ -270,8 +299,8 @@ class ReplicaMapBaseTest {
         Map<Integer, String> map = new HashMap<>();
         Semaphore maxActiveOps = new Semaphore(10);
 
-        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>(
-            'x', map, maxActiveOps, false, Duration.ofNanos(Long.MAX_VALUE)
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<>(
+                'x', map, maxActiveOps, false, Duration.ofNanos(Long.MAX_VALUE)
         ) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
@@ -279,7 +308,7 @@ class ReplicaMapBaseTest {
             }
 
             @Override
-            protected boolean canSendFunction(BiFunction<?,?,?> function) {
+            protected boolean canSendFunction(BiFunction<?, ?, ?> function) {
                 return true;
             }
         };
@@ -326,11 +355,11 @@ class ReplicaMapBaseTest {
 
     @Test
     void testSendTimeoutOnAcquirePermit() throws InterruptedException {
-        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
-            new Semaphore(0), true, Duration.ofMillis(1)) {
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<>('x', new HashMap<>(),
+                new Semaphore(0), true, Duration.ofMillis(1)) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
-                throw new  IllegalStateException();
+                throw new IllegalStateException();
             }
         };
 
@@ -350,11 +379,11 @@ class ReplicaMapBaseTest {
     @Test
     void testSendFailure() throws InterruptedException {
         Semaphore s = new Semaphore(10);
-        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
-            new Semaphore(10)) {
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<>('x', new HashMap<>(),
+                new Semaphore(10)) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
-                throw new  IllegalStateException("test");
+                throw new IllegalStateException("test");
             }
         };
 
@@ -377,7 +406,7 @@ class ReplicaMapBaseTest {
     @Test
     void testSimpleInterrupt() throws InterruptedException {
         Semaphore s = new Semaphore(10);
-        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(), s) {
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<>('x', new HashMap<>(), s) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
                 // no-op
@@ -405,9 +434,9 @@ class ReplicaMapBaseTest {
     @Test
     void testSimpleCancel() throws InterruptedException, ExecutionException {
         Semaphore s = new Semaphore(10);
-        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(), s) {
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<>('x', new HashMap<>(), s) {
             @Override
-            protected void beforeTryRun(AsyncOp<?,Integer,String> op) {
+            protected void beforeTryRun(AsyncOp<?, Integer, String> op) {
                 op.cancel(false);
             }
 
@@ -431,11 +460,11 @@ class ReplicaMapBaseTest {
 
     @Test
     void testForwardCompatibility() {
-        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(),
-            new Semaphore(10), true, Duration.ofMillis(1)) {
+        TestReplicaMapBase<Integer, String> rmap = new TestReplicaMapBase<>('x', new HashMap<>(),
+                new Semaphore(10), true, Duration.ofMillis(1)) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> update, Consumer<Throwable> callback) {
-                throw new  IllegalStateException();
+                throw new IllegalStateException();
             }
         };
 
@@ -445,7 +474,7 @@ class ReplicaMapBaseTest {
 
     @Test
     void testListener() {
-        TestReplicaMapBase<Integer,String> rmap = new TestReplicaMapBase<Integer, String>('x', new HashMap<>(), new Semaphore(10)) {
+        TestReplicaMapBase<Integer,String> rmap = new TestReplicaMapBase<>('x', new HashMap<>(), new Semaphore(10)) {
             @Override
             protected void doSendUpdate(TestReplicaMapUpdate<Integer, String> up, Consumer<Throwable> callback) {
                 assertEquals('x', up.srcId);

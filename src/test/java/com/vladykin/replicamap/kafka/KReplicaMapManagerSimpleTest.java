@@ -8,12 +8,16 @@ import com.vladykin.replicamap.ReplicaMapListener;
 import com.vladykin.replicamap.ReplicaMapManager;
 import com.vladykin.replicamap.kafka.compute.ComputeDeserializer;
 import com.vladykin.replicamap.kafka.compute.ComputeSerializer;
+import com.vladykin.replicamap.kafka.impl.util.LazyList;
+import com.vladykin.replicamap.kafka.impl.util.Utils;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
@@ -29,9 +33,12 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_DAT
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.NO_LIMIT;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.STOP_TIMEOUT_MS;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
 import static java.util.Collections.singletonList;
+import static java.util.concurrent.TimeUnit.MINUTES;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -120,6 +127,59 @@ class KReplicaMapManagerSimpleTest {
         assertTrue(utils.consumeAllRecordsFromTopic(dataTopic).isEmpty());
         assertTrue(utils.consumeAllRecordsFromTopic(opsTopic).isEmpty());
         assertTrue(utils.consumeAllRecordsFromTopic(flushTopic).isEmpty());
+    }
+
+    /**
+     * {@code stop.timeout.ms = -1} makes {@code close()} wait indefinitely instead of on a budget.
+     * That is the unbounded branch of {@code stop(long, TimeUnit)}, which nothing else exercises.
+     */
+    @Test
+    void testCloseWithoutTimeout() throws Exception {
+        // Own topics: testSimple creates the default ones on the same shared cluster.
+        String data = "close_no_timeout";
+        createTopics(sharedKafkaTestResource, data, data + "_ops", data + "_flush", 4);
+
+        // Qualified: DATA_TOPIC and friends are topic names in this class, not the config keys.
+        Map<String,Object> cfg = getDefaultConfig();
+        cfg.put(KReplicaMapManagerConfig.DATA_TOPIC, data);
+        cfg.put(KReplicaMapManagerConfig.OPS_TOPIC, data + "_ops");
+        cfg.put(KReplicaMapManagerConfig.FLUSH_TOPIC, data + "_flush");
+        cfg.put(STOP_TIMEOUT_MS, NO_LIMIT);
+
+        KReplicaMapManager m = new KReplicaMapManager(cfg);
+        m.start(START_TIMEOUT, SECONDS);
+
+        KReplicaMap<String,String> map = m.getMap();
+        map.put("a", "A");
+
+        m.close();
+
+        assertSame(KReplicaMapManager.State.STOPPED, m.getState());
+
+        m.close(); // Still idempotent.
+        assertSame(KReplicaMapManager.State.STOPPED, m.getState());
+    }
+
+    /**
+     * Stops all the given managers and waits for all of them at once.
+     *
+     * <p>Deliberately not {@code Utils.close(managers)}: that closes them one at a time, so the
+     * waits add up, and it swallows every failure, so a broken shutdown would pass unnoticed.
+     * Triggering all the stops first lets them proceed in parallel.
+     *
+     * @param managers Managers to stop.
+     */
+    static void stopAll(LazyList<KReplicaMapManager> managers) throws Exception {
+        List<CompletableFuture<?>> futs = new ArrayList<>();
+
+        for (int i = 0; i < managers.size(); i++) {
+            KReplicaMapManager m = managers.get(i, null);
+
+            if (m != null)
+                futs.add(m.stop());
+        }
+
+        Utils.allOf(futs).get(2, MINUTES);
     }
 
     @SuppressWarnings({"Convert2MethodRef"})

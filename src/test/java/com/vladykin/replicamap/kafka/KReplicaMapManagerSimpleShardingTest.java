@@ -30,10 +30,12 @@ import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_S
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_DATA_TOPIC;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_FLUSH_TOPIC_SUFFIX;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.DEFAULT_OPS_TOPIC_SUFFIX;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_MAX_UNFLUSHED_MS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_PERIOD_OPS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.FLUSH_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_DESERIALIZER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.KEY_SERIALIZER_CLASS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.NO_LIMIT;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.OPS_WORKERS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.PARTITIONER_CLASS;
 import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.VALUE_DESERIALIZER_CLASS;
@@ -59,6 +61,7 @@ class KReplicaMapManagerSimpleShardingTest {
         HashMap<String,Object> cfg = new HashMap<>();
         cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
         cfg.put(FLUSH_PERIOD_OPS, 2);
+        cfg.put(FLUSH_MAX_UNFLUSHED_MS, NO_LIMIT); // This test pins exact flush counts.
 
         cfg.put(OPS_WORKERS, 3);
         cfg.put(FLUSH_WORKERS, 2);
@@ -141,7 +144,7 @@ class KReplicaMapManagerSimpleShardingTest {
                 assertEquals(new HashSet<>(asList(0, 4, 8, 2, 6, 10)), shard4.getMap().keySet());
                 assertEquals(new HashSet<>(asList(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)), all.getMap().keySet());
 
-                all.stop(); // To make sure that only shards actually flush the data.
+                all.close(); // To make sure that only shards actually flush the data. Waits for the stop.
 
                 awaitFor(4, KReplicaMapManager::getAssignedFlushPartitions, shard1, shard2, shard3, shard4);
 

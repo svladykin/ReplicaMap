@@ -12,13 +12,21 @@ public class FlushNotification extends OpMessage {
 
     protected final long opsOffset;
 
-    public FlushNotification(UUID clientId, long opsOffset) {
+    /** Offset of the last data-topic record written by this flush (used to validate the resume point on load). */
+    protected final long dataOffset;
+
+    public FlushNotification(UUID clientId, long opsOffset, long dataOffset) {
         super(OP_FLUSH_NOTIFICATION, clientId);
         this.opsOffset = opsOffset;
+        this.dataOffset = dataOffset;
     }
 
     public long getOpsOffset() {
         return opsOffset;
+    }
+
+    public long getDataOffset() {
+        return dataOffset;
     }
 
     @Override
@@ -30,6 +38,7 @@ public class FlushNotification extends OpMessage {
 
         return opType == that.opType &&
                 opsOffset == that.opsOffset &&
+                dataOffset == that.dataOffset &&
                 Objects.equals(clientId, that.clientId);
 
     }
@@ -39,6 +48,7 @@ public class FlushNotification extends OpMessage {
         int result = opType;
         result = 31 * result + clientId.hashCode();
         result = 31 * result + Long.hashCode(opsOffset);
+        result = 31 * result + Long.hashCode(dataOffset);
         return result;
     }
 
@@ -48,6 +58,7 @@ public class FlushNotification extends OpMessage {
                 "opType=" + (char)opType +
                 ", clientId=" + clientId +
                 ", opsOffset=" + opsOffset +
+                ", dataOffset=" + dataOffset +
             '}';
     }
 }

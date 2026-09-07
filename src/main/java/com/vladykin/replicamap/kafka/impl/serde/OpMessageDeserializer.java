@@ -76,6 +76,7 @@ public class OpMessageDeserializer<V> implements Deserializer<OpMessage> {
             case OP_FLUSH_NOTIFICATION:
                 return new FlushNotification(
                     Utils.readUuid(buf),
+                    ByteUtils.readVarlong(buf),
                     ByteUtils.readVarlong(buf));
         }
 
