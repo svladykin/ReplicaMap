@@ -1,0 +1,87 @@
+package com.vladykin.replicamap.kafka;
+
+import com.salesforce.kafka.test.KafkaTestUtils;
+import com.salesforce.kafka.test.junit5.SharedKafkaTestResource;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.TimeUnit;
+
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerConfig.BOOTSTRAP_SERVERS;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.createTopics;
+import static com.vladykin.replicamap.kafka.KReplicaMapManagerSimpleTest.kafkaClusterWith3Brokers;
+import static java.util.Collections.singletonList;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+/**
+ * Adopting an existing data topic that contains transactional records: with {@code read_committed},
+ * records from an aborted transaction must not be loaded. No setup step is required.
+ */
+class AdoptExistingDataTopicTxTest {
+
+    static final String DATA = "my_data";
+    static final String OPS = "my_ops";
+    static final String FLUSH = "my_flush";
+
+    @RegisterExtension
+    public static final SharedKafkaTestResource sharedKafkaTestResource = kafkaClusterWith3Brokers();
+
+    Map<String,Object> getDefaultConfig() {
+        HashMap<String,Object> cfg = new HashMap<>();
+        cfg.put(BOOTSTRAP_SERVERS, singletonList(sharedKafkaTestResource.getKafkaConnectString()));
+
+        cfg.put(KReplicaMapManagerConfig.DATA_TOPIC, DATA);
+        cfg.put(KReplicaMapManagerConfig.OPS_TOPIC, OPS);
+        cfg.put(KReplicaMapManagerConfig.FLUSH_TOPIC, FLUSH);
+
+        return cfg;
+    }
+
+    @Test
+    void testAdoptExistingDataTopicWithAbortedTx() throws Exception {
+        KafkaTestUtils u = sharedKafkaTestResource.getKafkaTestUtils();
+        createTopics(sharedKafkaTestResource, DATA, OPS, FLUSH, 4);
+
+        Properties prodCfg = new Properties();
+        prodCfg.setProperty(ProducerConfig.TRANSACTIONAL_ID_CONFIG, "my_tx_id");
+
+        try (Producer<String,String> producer = u.getKafkaProducer(StringSerializer.class, StringSerializer.class, prodCfg)) {
+            producer.initTransactions();
+            producer.beginTransaction();
+
+            producer.send(new ProducerRecord<>(DATA, 1, "abc", "one"));
+            producer.send(new ProducerRecord<>(DATA, 1, "xy", "five"));
+            producer.send(new ProducerRecord<>(DATA, 3, "bla", "Bla"));
+
+            producer.commitTransaction();
+
+            producer.beginTransaction();
+
+            producer.send(new ProducerRecord<>(DATA, 1, "abc", "nnn"));
+            producer.send(new ProducerRecord<>(DATA, 3, "qwe", "543"));
+            producer.send(new ProducerRecord<>(DATA, 3, "bla", "123"));
+
+            producer.flush();
+            producer.abortTransaction();
+        }
+
+        // No setup step: a plain start adopts the existing data, ignoring the aborted transaction.
+        try (KReplicaMapManager m = new KReplicaMapManager(getDefaultConfig())) {
+            m.start(10, TimeUnit.SECONDS);
+            KReplicaMap<Object,Object> map = m.getMap();
+            assertEquals(3, map.size());
+            assertEquals("one", map.get("abc"));
+            assertEquals("five", map.get("xy"));
+            assertEquals("Bla", map.get("bla"));
+            assertNull(map.get("qwe")); // From the aborted transaction.
+        }
+    }
+}
